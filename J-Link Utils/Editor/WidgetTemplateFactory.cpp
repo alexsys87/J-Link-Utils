@@ -131,7 +131,7 @@ namespace WidgetTemplateFactory {
         auto elem = doc->NewElement("TextFormatted");
         auto fmt = doc->NewElement("Format"); fmt->SetText("%d"); elem->InsertEndChild(fmt);
         auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto color = doc->NewElement("Color"); color->SetText("0xCC000000"); elem->InsertEndChild(color);
+        auto color = doc->NewElement("Color"); color->SetText("#FFFFFF"); elem->InsertEndChild(color);
         auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
         return elem;
     }
@@ -139,7 +139,7 @@ namespace WidgetTemplateFactory {
     tinyxml2::XMLElement* CreateTextFormattedF(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("TextFormattedF");
         auto fmt = doc->NewElement("Format"); fmt->SetText("%.2f"); elem->InsertEndChild(fmt);
-        auto color = doc->NewElement("Color"); color->SetText("0xCC000000"); elem->InsertEndChild(color);
+        auto color = doc->NewElement("Color"); color->SetText("#FFFFFF"); elem->InsertEndChild(color);
         auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
         auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
         return elem;
@@ -514,7 +514,7 @@ namespace WidgetTemplateFactory {
         auto text = doc->NewElement("Text"); text->SetText("Knob"); elem->InsertEndChild(text);
         auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
         auto max = doc->NewElement("Max"); max->SetText("1"); elem->InsertEndChild(max);
-        auto factor = doc->NewElement("RadiusFactor"); factor->SetText("2.5"); elem->InsertEndChild(factor);
+        auto radius = doc->NewElement("Radius"); radius->SetText("50"); elem->InsertEndChild(radius);
         auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
         auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
         auto dtype = doc->NewElement("DataType"); dtype->SetText("3"); elem->InsertEndChild(dtype);

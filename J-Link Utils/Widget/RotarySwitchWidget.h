@@ -16,6 +16,8 @@ class RotarySwitchWidget : public LeafWidget {
 public:
     RotarySwitchWidget(const char* lbl, uint32_t addr, int minP, int maxP, float rad, bool le)
         : LeafWidget(lbl), address(addr), minPos(minP), maxPos(maxP), radius(rad), littleEndian(le) {
+        // A reversed range would give a negative number of positions.
+        if (maxPos < minPos) std::swap(minPos, maxPos);
     }
 
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
@@ -95,7 +97,8 @@ private:
 
         bool changed = (*p_value != oldValue);
 
-        float t = static_cast<float>(*p_value - min_pos) / (max_pos - min_pos);
+        // A single-position switch has no range to divide by.
+        float t = (max_pos > min_pos) ? static_cast<float>(*p_value - min_pos) / (max_pos - min_pos) : 0.0f;
         float current_angle = start_angle + t * (numPos - 1) * angle_step;
         current_angle = fmodf(current_angle, 2.0f * M_PI_F);
         if (current_angle < 0) current_angle += 2.0f * M_PI_F;

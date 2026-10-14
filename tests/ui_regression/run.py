@@ -58,9 +58,9 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     compiler = os.environ.get('CXX', 'g++')
     command = [compiler, '-std=c++17', '-g', '-O1', '-fno-omit-frame-pointer',
                '-fsanitize=address,undefined', '-fno-pie', '-no-pie',
-               '-I', str(build), '-I', str(SRC / 'include/freetype2'),
+               '-I', str(build), '-I', str(SRC / 'include'),
                str(HERE / 'ui_regression.cpp'),
-               str(SRC / 'include/freetype2/tinyxml2/tinyxml2.cpp'),
+               str(SRC / 'include/tinyxml2/tinyxml2.cpp'),
                '-o', str(build / 'ui_regression')]
     subprocess.run(command, check=True)
     subprocess.run([str(build / 'ui_regression')], check=True,

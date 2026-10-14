@@ -151,12 +151,13 @@ void free_context(MainContext* ctx)
 // Работа с диалогами открытия/сохранения файлов
 // ------------------------------------------------------------------
 
-inline const char* file_open_dialog(const char* filters)
+// Not inline: WatchWidget.cpp calls these through the declarations in widget_common.h.
+const char* file_open_dialog(const char* filters)
 {
     return (noc_file_dialog_open(NOC_FILE_DIALOG_OPEN, filters, NULL, NULL));
 }
 
-inline const char* file_save_dialog(const char* filters)
+const char* file_save_dialog(const char* filters)
 {
     return (noc_file_dialog_open(NOC_FILE_DIALOG_SAVE, filters, NULL, NULL));
 }
@@ -545,6 +546,9 @@ bool LoadStyleFromXML(const char* filename, ImGuiStyle& style)
 // ------------------------------------------------------------------
 void ShowStyleEditor(bool* p_open)
 {
+    // Reference style for the per-color Save/Revert buttons; the menu actions below update it too.
+    static ImGuiStyle ref_saved_style = ImGui::GetStyle();
+
     ImGui::Begin("Style Editor", p_open, ImGuiWindowFlags_MenuBar);
 
     if (ImGui::BeginMenuBar())
@@ -570,7 +574,6 @@ void ShowStyleEditor(bool* p_open)
                     if (LoadStyleFromXML(filename, ImGui::GetStyle()))
                     {
                         // Обновляем сохранённый эталон
-                        static ImGuiStyle ref_saved_style;
                         ref_saved_style = ImGui::GetStyle();
                     }
                     else
@@ -586,7 +589,6 @@ void ShowStyleEditor(bool* p_open)
             if (ImGui::MenuItem("Reset to Default"))
             {
                 ImGui::GetStyle() = ImGuiStyle();
-                static ImGuiStyle ref_saved_style;
                 ref_saved_style = ImGui::GetStyle();
             }
             ImGui::EndMenu();
@@ -611,15 +613,7 @@ void ShowStyleEditor(bool* p_open)
     if (ImGui::BeginTabBar("##tabs", ImGuiTabBarFlags_None))
     {
         ImGuiStyle& style = ImGui::GetStyle();
-        static ImGuiStyle ref_saved_style;
-        ImGuiStyle* ref = NULL;
-
-        static bool init = true;
-        if (init && ref == NULL)
-            ref_saved_style = style;
-        init = false;
-        if (ref == NULL)
-            ref = &ref_saved_style;
+        ImGuiStyle* ref = &ref_saved_style;
 
         ImGui::Spacing();
 
@@ -1250,6 +1244,9 @@ int main(int argc, char* argv[])
         if (ctx->Renderer == NULL)
         {
             DEBUG_PRINTF("Can't Create Software Renderer");
+            SDL_DestroyWindow(ctx->Wimdow);
+            free_context(ctx);
+            SDL_Quit();
             return 1;
         }
     }
@@ -1465,7 +1462,8 @@ int main(int argc, char* argv[])
         if (elapsed < target_frame_time) {
             SDL_Delay((Uint32)((target_frame_time - elapsed) * 1000));
         }
-        last_time = now;
+        // Measure the next frame from the end of the delay, otherwise the sleep is counted twice.
+        last_time = std::chrono::steady_clock::now();
     }
 
     // Остановка потока связи перед очисткой
