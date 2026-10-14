@@ -290,7 +290,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
     if (element) {
         // Редактирование имени элемента
         static char elemName[256];
-        strncpy(elemName, element->Name(), sizeof(elemName));
+        strncpy(elemName, element->Name(), sizeof(elemName) - 1);
         elemName[sizeof(elemName) - 1] = '\0';
         if (ImGui::InputText("Tag name", elemName, sizeof(elemName))) {
             element->SetName(elemName);
@@ -307,9 +307,9 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             for (size_t i = 0; i < attrs.size(); ++i) {
                 ImGui::PushID((int)i);
                 char nameBuf[128], valueBuf[256];
-                strncpy(nameBuf, attrs[i].first.c_str(), sizeof(nameBuf));
+                strncpy(nameBuf, attrs[i].first.c_str(), sizeof(nameBuf) - 1);
                 nameBuf[sizeof(nameBuf) - 1] = '\0';
-                strncpy(valueBuf, attrs[i].second.c_str(), sizeof(valueBuf));
+                strncpy(valueBuf, attrs[i].second.c_str(), sizeof(valueBuf) - 1);
                 valueBuf[sizeof(valueBuf) - 1] = '\0';
 
                 if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
@@ -355,7 +355,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
         if (ImGui::CollapsingHeader("Text content", ImGuiTreeNodeFlags_DefaultOpen)) {
             static char textBuf[1024];
             if (textChild) {
-                strncpy(textBuf, textChild->Value(), sizeof(textBuf));
+                strncpy(textBuf, textChild->Value(), sizeof(textBuf) - 1);
                 textBuf[sizeof(textBuf) - 1] = '\0';
                 if (ImGui::InputTextMultiline("##text", textBuf, sizeof(textBuf))) {
                     textChild->SetValue(textBuf);
@@ -470,7 +470,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                     else {
                         // Обычный текст
                         static char textBuf[1024];
-                        strncpy(textBuf, childText ? childText : "", sizeof(textBuf));
+                        strncpy(textBuf, childText ? childText : "", sizeof(textBuf) - 1);
                         textBuf[sizeof(textBuf) - 1] = '\0';
                         if (ImGui::InputText("##value", textBuf, sizeof(textBuf))) {
                             childElem->SetText(textBuf);
@@ -608,7 +608,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
     else if (textNode) {
         // Редактирование текстового узла
         static char textBuf[1024];
-        strncpy(textBuf, textNode->Value(), sizeof(textBuf));
+        strncpy(textBuf, textNode->Value(), sizeof(textBuf) - 1);
         textBuf[sizeof(textBuf) - 1] = '\0';
         if (ImGui::InputTextMultiline("Text", textBuf, sizeof(textBuf))) {
             textNode->SetValue(textBuf);
@@ -627,7 +627,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
         // Редактирование комментария
         ImGui::Text("Comment");
         static char commentBuf[1024];
-        strncpy(commentBuf, commentNode->Value(), sizeof(commentBuf));
+        strncpy(commentBuf, commentNode->Value(), sizeof(commentBuf) - 1);
         commentBuf[sizeof(commentBuf) - 1] = '\0';
         if (ImGui::InputTextMultiline("##comment", commentBuf, sizeof(commentBuf))) {
             commentNode->SetValue(commentBuf);

@@ -1,6 +1,7 @@
 // xml_window.cpp
 #include "widget_common.h"
 #include "Editor/XMLSafety.h"
+#include <cctype>
 
 // Включаем все виджеты
 #include "TextWidget.h"
@@ -80,6 +81,21 @@ std::vector<WindowData> g_Windows;
 
 using ui_safety::XmlChildText;
 
+// Parses "#RRGGBB" or "#AARRGGBB" (the format the XML editor writes and the other
+// widgets read) and packs it as 0xRRGGBBAA, the layout ColorConverter() expects.
+static bool ParseTextColor(const char* str, unsigned int* rgba) {
+    if (!str || str[0] != '#') return false;
+    const size_t len = strlen(str + 1);
+    if (len != 6 && len != 8) return false;
+    for (size_t i = 1; i <= len; ++i) {
+        if (!isxdigit(static_cast<unsigned char>(str[i]))) return false;
+    }
+    const unsigned long value = strtoul(str + 1, nullptr, 16);
+    const unsigned int alpha = (len == 8) ? ((value >> 24) & 0xFF) : 0xFF;
+    *rgba = (static_cast<unsigned int>(value & 0xFFFFFF) << 8) | alpha;
+    return true;
+}
+
 // Рекурсивная загрузка виджетов из XML
 static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     if (!elem) return nullptr;
@@ -91,10 +107,9 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     }
     else if (name == "TextColored") {
         const char* txt = XmlChildText(elem, "Text");
-        const char* colorStr = XmlChildText(elem, "Color", nullptr);
-        unsigned int hex = 0;
-        if (colorStr) { int ret = sscanf(colorStr, "#%08x", &hex); }
-        return std::make_unique<TextColoredWidget>(txt, hex);
+        unsigned int rgba = 0xFFFFFFFF; // opaque white when <Color> is missing or invalid
+        ParseTextColor(XmlChildText(elem, "Color", nullptr), &rgba);
+        return std::make_unique<TextColoredWidget>(txt, static_cast<int>(rgba));
     }
     else if (name == "Button") {
         const char* txt = XmlChildText(elem, "Text");
@@ -103,7 +118,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             elem->FirstChildElement("Width")->QueryFloatText(&w);
         if (elem->FirstChildElement("Height"))
             elem->FirstChildElement("Height")->QueryFloatText(&h);
-        int addr = 0;
+        uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
         int mode = 0;
@@ -215,7 +230,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         // Читаем дочерние линии из Items
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement()) {
+            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line")) {
                 PlotLineConfig line;
                 line.name = XmlChildText(lineElem, "Name", "");
                 if (lineElem->FirstChildElement("Address"))
@@ -326,7 +341,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         bool useColor = false;
         if (elem->FirstChildElement("Color")) {
             const char* colorStr = elem->FirstChildElement("Color")->GetText();
-            if (colorStr) { useColor = sscanf(colorStr, "#%08x", &hexColor) == 1; }
+            useColor = ParseTextColor(colorStr, &hexColor);
         }
         return std::make_unique<TextFormattedWidget>(fmt, addr, hexColor, useColor);
     }
@@ -341,7 +356,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         bool useColor = false;
         if (elem->FirstChildElement("Color")) {
             const char* colorStr = elem->FirstChildElement("Color")->GetText();
-            if (colorStr) { useColor = sscanf(colorStr, "#%08x", &hexColor) == 1; }
+            useColor = ParseTextColor(colorStr, &hexColor);
         }
         return std::make_unique<TextFormattedFWidget>(fmt, addr, le, hexColor, useColor);
     }
@@ -370,7 +385,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         auto group = std::make_unique<RadioButtonGroup>(addr, sameLine);
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            for (XMLElement* radio = items->FirstChildElement("Radio"); radio; radio = radio->NextSiblingElement()) {
+            for (XMLElement* radio = items->FirstChildElement("Radio"); radio; radio = radio->NextSiblingElement("Radio")) {
                 const char* lbl = XmlChildText(radio, "Label", "");
                 int val = 0;
                 if (radio->FirstChildElement("Value")) radio->FirstChildElement("Value")->QueryIntText(&val);
@@ -412,7 +427,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         auto combo = std::make_unique<ComboBoxWidget>(lbl, addr);
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            for (XMLElement* item = items->FirstChildElement("Combo"); item; item = item->NextSiblingElement()) {
+            for (XMLElement* item = items->FirstChildElement("Combo"); item; item = item->NextSiblingElement("Combo")) {
                 const char* label = XmlChildText(item, "Label", "");
                 int val = 0;
                 if (item->FirstChildElement("Value")) item->FirstChildElement("Value")->QueryIntText(&val);
@@ -499,7 +514,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
             std::vector<HistogramWidget::LineConfig> lineList;
-            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement()) {
+            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line")) {
                 HistogramWidget::LineConfig line;
                 line.name = XmlChildText(lineElem, "Name", "");
                 if (lineElem->FirstChildElement("Address"))
@@ -584,7 +599,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
             std::vector<DataLogWidget::LineConfig> lineList;
-            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement()) {
+            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line")) {
                 DataLogWidget::LineConfig line;
                 line.name = XmlChildText(lineElem, "Name", "");
                 if (lineElem->FirstChildElement("Address"))
@@ -685,7 +700,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         auto tabBar = std::make_unique<TabBarWidget>(name);
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            for (XMLElement* child = items->FirstChildElement("Tab"); child; child = child->NextSiblingElement()) {
+            for (XMLElement* child = items->FirstChildElement("Tab"); child; child = child->NextSiblingElement("Tab")) {
                 auto tabItem = LoadWidgetFromXML(child);
                 if (tabItem) tabBar->AddChild(std::move(tabItem));
             }
@@ -1182,7 +1197,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         std::vector<RPMZone> zones;
         XMLElement* zonesElem = elem->FirstChildElement("Zones");
         if (zonesElem) {
-            for (XMLElement* zoneElem = zonesElem->FirstChildElement("Zone"); zoneElem; zoneElem = zoneElem->NextSiblingElement()) {
+            for (XMLElement* zoneElem = zonesElem->FirstChildElement("Zone"); zoneElem; zoneElem = zoneElem->NextSiblingElement("Zone")) {
                 RPMZone zone;
                 float start = 0, end = 0;
                 const char* colorStr = nullptr;
@@ -1344,7 +1359,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         std::vector<SegmentItem> segments;
         XMLElement* itemsElem = elem->FirstChildElement("Items");
         if (itemsElem) {
-            for (XMLElement* segElem = itemsElem->FirstChildElement("Segment"); segElem; segElem = segElem->NextSiblingElement()) {
+            for (XMLElement* segElem = itemsElem->FirstChildElement("Segment"); segElem; segElem = segElem->NextSiblingElement("Segment")) {
                 SegmentItem item;
                 const char* text = XmlChildText(segElem, "Text", "");
                 int val = 0;
@@ -1454,12 +1469,14 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
     XMLDocument doc;
     if (doc.LoadFile(filename) != XML_SUCCESS) {
         printf("ERROR: Failed to load XML file: %s\n", filename);
+        // Do not retry on every frame; opening or saving the file resets the flag.
+        ctx->file_loaded = true;
         return;
     }
     printf("XML loaded successfully: %s\n", filename);
     g_Windows.clear();
     int winCount = 0;
-    for (XMLElement* win = doc.FirstChildElement("Window"); win; win = win->NextSiblingElement()) {
+    for (XMLElement* win = doc.FirstChildElement("Window"); win; win = win->NextSiblingElement("Window")) {
         winCount++;
         WindowData wd;
         const char* name = XmlChildText(win, "Text", "Unnamed");

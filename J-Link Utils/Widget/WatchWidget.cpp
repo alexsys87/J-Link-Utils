@@ -18,6 +18,10 @@ int WatchWidget::s_highlightedRow = -1;   // для подсветки строки
 int WatchWidget::s_contextMenuRow = -1;
 char WatchWidget::s_xmlPath[MAX_PATH] = "watch.xml";
 
+static bool IsSignedIntType(int dt) {
+    return dt == S08_DEC || dt == S16_DEC || dt == S32_DEC || dt == S64_DEC;
+}
+
 void WatchWidget::LoadFromXML(const char* path) {
     XMLDocument doc;
     if (doc.LoadFile(path) != XML_SUCCESS) {
@@ -39,7 +43,7 @@ void WatchWidget::LoadFromXML(const char* path) {
     if (!watch) return;
     XMLElement* items = watch->FirstChildElement("Items");
     if (!items) return;
-    for (XMLElement* line = items->FirstChildElement("WatchLine"); line; line = line->NextSiblingElement()) {
+    for (XMLElement* line = items->FirstChildElement("WatchLine"); line; line = line->NextSiblingElement("WatchLine")) {
         WatchRow row = {};
         if (line->FirstChildElement("Enabled"))
             line->FirstChildElement("Enabled")->QueryBoolText(&row.enabled);
@@ -314,33 +318,45 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
             case S64_DEC:
             case U64_DEC: {
                 int flags = row.hexMode ? ImGuiInputTextFlags_CharsHexadecimal : ImGuiInputTextFlags_CharsDecimal;
-                const char* format = nullptr;
-                if (row.hexMode) {
-                    int bits = GetDataTypeBits(row.dataType);
-                    if (bits == 8) format = "%02X";
-                    else if (bits == 16) format = "%04X";
-                    else if (bits == 32) format = "%08X";
-                    else if (bits == 64) format = "%016llX";
-                }
-                else {
-                    format = "%lld"; // для знаковых и беззнаковых
+                const int bits = GetDataTypeBits(row.dataType);
+                // Hex view shows the raw bits, so it always uses the unsigned type.
+                const bool isSigned = !row.hexMode && IsSignedIntType(row.dataType);
+
+                // Edit the value at its own width: signed types show negative numbers
+                // and the hex format is honored for every size.
+                union { ImU8 u8; ImU16 u16; ImU32 u32; ImU64 u64; } edit = {};
+                ImGuiDataType dataType;
+                const char* format;
+                switch (bits) {
+                case 8:
+                    edit.u8 = (ImU8)row.value;
+                    dataType = isSigned ? ImGuiDataType_S8 : ImGuiDataType_U8;
+                    format = row.hexMode ? "%02X" : (isSigned ? "%d" : "%u");
+                    break;
+                case 16:
+                    edit.u16 = (ImU16)row.value;
+                    dataType = isSigned ? ImGuiDataType_S16 : ImGuiDataType_U16;
+                    format = row.hexMode ? "%04X" : (isSigned ? "%d" : "%u");
+                    break;
+                case 32:
+                    edit.u32 = (ImU32)row.value;
+                    dataType = isSigned ? ImGuiDataType_S32 : ImGuiDataType_U32;
+                    format = row.hexMode ? "%08X" : (isSigned ? "%d" : "%u");
+                    break;
+                default:
+                    edit.u64 = row.value;
+                    dataType = isSigned ? ImGuiDataType_S64 : ImGuiDataType_U64;
+                    format = row.hexMode ? "%016llX" : (isSigned ? "%lld" : "%llu");
+                    break;
                 }
 
-                if (row.dataType == S64_DEC || row.dataType == U64_DEC) {
-                    ImGuiDataType dataType = (row.dataType == S64_DEC) ? ImGuiDataType_S64 : ImGuiDataType_U64;
-                    valueChanged = ImGui::InputScalar("##Value", dataType, &row.value, NULL, NULL, format, flags);
-                }
-                else {
-                    // Для меньших разрядностей используем временную переменную
-                    int tempVal = (int)row.value;
-                    valueChanged = ImGui::InputInt("##Value", &tempVal, 0, 0, flags);
-                    if (valueChanged) {
-                        row.value = tempVal;
-                        int bits = GetDataTypeBits(row.dataType);
-                        if (bits < 64) {
-                            uint64_t mask = (bits == 64) ? ~0ULL : ((1ULL << bits) - 1);
-                            row.value &= mask;
-                        }
+                valueChanged = ImGui::InputScalar("##Value", dataType, &edit, NULL, NULL, format, flags);
+                if (valueChanged) {
+                    switch (bits) {
+                    case 8:  row.value = edit.u8; break;
+                    case 16: row.value = edit.u16; break;
+                    case 32: row.value = edit.u32; break;
+                    default: row.value = edit.u64; break;
                     }
                 }
                 break;
