@@ -92,7 +92,7 @@
     <ClCompile Include="DataHelper.cpp" />
     <ClCompile Include="Editor\WidgetTemplateFactory.cpp" />
     <ClCompile Include="Editor\XMLEditor.cpp" />
-    <ClCompile Include="include\freetype2\ifqueue\lfqueue.c" />
+    <ClCompile Include="include\ifqueue\lfqueue.c" />
     <ClCompile Include="include\imgui\backends\imgui_impl_sdl2.cpp" />
     <ClCompile Include="include\imgui\backends\imgui_impl_sdlrenderer2.cpp" />
     <ClCompile Include="include\imgui\imgui.cpp" />
@@ -102,7 +102,7 @@
     <ClCompile Include="include\imgui\misc\freetype\imgui_freetype.cpp" />
     <ClCompile Include="include\implot\implot.cpp" />
     <ClCompile Include="include\implot\implot_items.cpp" />
-    <ClCompile Include="include\freetype2\tinyxml2\tinyxml2.cpp" />
+    <ClCompile Include="include\tinyxml2\tinyxml2.cpp" />
     <ClCompile Include="iniConfig.cpp" />
     <ClCompile Include="main.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
@@ -167,20 +167,20 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\freetype2\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\freetype2\ifqueue;$(ProjectDir)Widget;$(ProjectDir)Editor;$(ProjectDir)include\freetype2\JLinkSDK;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)Widget;$(ProjectDir)Editor;$(ProjectDir)include\JLinkSDK;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)lib\x86\debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\freetype2\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\freetype2\ifqueue;$(ProjectDir)include\freetype2\JLinkSDK;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)include\JLinkSDK;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)lib\x64\debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\freetype2\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\freetype2\ifqueue;$(ProjectDir)Widget;$(ProjectDir)Editor;$(ProjectDir)include\freetype2\JLinkSDK;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)Widget;$(ProjectDir)Editor;$(ProjectDir)include\JLinkSDK;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)lib\x86;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\freetype2\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\freetype2\ifqueue;$(ProjectDir)include\freetype2\JLinkSDK;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)include\JLinkSDK;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)lib\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">

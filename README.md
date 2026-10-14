@@ -16,14 +16,15 @@ Windows-приложение на C++17 для наблюдения и изме�
 
 ## Сборка Windows
 
-Откройте `J-Link Utils.sln` в Visual Studio с компонентами C++ и Windows SDK. Проект использует C++17 и toolset `v145`; нужен соответствующий установленный набор инструментов либо явный retarget проекта.
+Откройте `J-Link Utils/J-Link Utils.sln` в Visual Studio с компонентами C++ и Windows SDK. Проект использует C++17 и toolset `v145`; нужен соответствующий установленный набор инструментов либо явный retarget проекта.
 
 **Репозиторий пока не самодостаточен для полной сборки.** В нём отсутствуют:
 
 - исходники Dear ImGui в `J-Link Utils/include/imgui` (включая SDL2 backend и FreeType renderer);
-- исходники ImPlot в `J-Link Utils/include/implot`;
 - библиотеки SDL2, FreeType и их зависимостей, перечисленные в `.vcxproj`, в `J-Link Utils/lib`;
 - импортная библиотека J-Link: `JLinkARM_x64.lib` для x64 либо `JLinkARM.lib` для Win32, и соответствующая DLL для запуска.
+
+Сторонние заголовки лежат в `J-Link Utils/include`: `SDL2`, `tinyxml2`, `ifqueue` (lfqueue), `JLinkSDK`, `implot` и одиночные заголовки (`stb_image.h`, `gif_load.h`, `noc_file_dialog.h` и др.). В `J-Link Utils/include/freetype2` находятся только заголовки FreeType (`ft2build.h` и `freetype/`).
 
 Библиотеки должны соответствовать архитектуре, конфигурации Debug/Release и статическому CRT (`/MTd` либо `/MT`). Поставляйте SDK J-Link согласно лицензии SEGGER. Исправленные пути к уже включённым SDL2, tinyxml2 и lfqueue не заменяют отсутствующие зависимости. Полная Windows-сборка и работа на физическом J-Link **не подтверждены**.
 
