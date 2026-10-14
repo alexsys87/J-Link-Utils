@@ -1,0 +1,312 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Исходные файлы">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Файлы заголовков">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Файлы ресурсов">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Исходные файлы\imgui">
+      <UniqueIdentifier>{a0326515-396a-4970-825e-d12c2798fb7c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Исходные файлы\tinyxml2">
+      <UniqueIdentifier>{01d05c2f-c97e-418d-b362-3cb531a8d63f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Исходные файлы\imgui_sdl">
+      <UniqueIdentifier>{c545ceab-fd7e-4602-a021-1b008ce3f765}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Исходные файлы\implot">
+      <UniqueIdentifier>{74a86bb5-ce50-48f6-94f4-56116ae68925}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Исходные файлы\ifqueue">
+      <UniqueIdentifier>{2445003f-98db-42c0-a3f5-abfc9d4a9ddf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Исходные файлы\Widget">
+      <UniqueIdentifier>{3e388dd1-51f2-40b1-8c00-4244b9ab3377}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Исходные файлы\Editor">
+      <UniqueIdentifier>{a8795169-e378-422a-be0d-326faad6aff1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Main.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\AlignTextWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\BitControl8BitWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\BitControlWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\ButtonWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\CheckboxWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\ChildWindowWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\ColumnWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\ComboBoxWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\CustomVerticalSliderWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\DataLogWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\DummyWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\EqualizerWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\FixedWidthWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\GaugeWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\GlossyDisplayWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\GridWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\GroupWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\HeaderWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\HelpMarkerWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\HintBoxWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\HistogramWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\ImageWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\IndentWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\InputFloatWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\InputIntWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\KeypadWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\LabelTextWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\LCD_HD44780_Widget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\LedIndicatorWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\MechanicalSwitch2Widget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\MemoryViewWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\NeumorphicKnobWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\NewLineWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\PlotLinesWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\PlotTooltipWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\PopupWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\ProgressBarWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\RadioButtonGroup.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\RotarySwitchWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\RPMIndicatorWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SameLineWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\ScriptControlWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SegmentButtonWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SelectableTextWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SeparatorWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SetCursorPosWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SevenSegmentWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SliderFloatWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SliderIntWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\SpacingWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\StyledKnobWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TabBarWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TabItemWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TankWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TextColoredWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TextFormattedFWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TextFormattedWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TextWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TooltipWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\TreeNodeWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\VerticalGaugeWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\VUMeterWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\WatchWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\widget_common.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\GlossyButtonWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="GifWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Widget\MemoryEditorWidget.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="include\imgui\imgui.cpp">
+      <Filter>Исходные файлы\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\imgui_draw.cpp">
+      <Filter>Исходные файлы\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\tinyxml2\tinyxml2.cpp">
+      <Filter>Исходные файлы\tinyxml2</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\misc\freetype\imgui_freetype.cpp">
+      <Filter>Исходные файлы\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\ifqueue\lfqueue.c">
+      <Filter>Исходные файлы\ifqueue</Filter>
+    </ClCompile>
+    <ClCompile Include="DataHelper.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="iniConfig.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\backends\imgui_impl_sdlrenderer2.cpp">
+      <Filter>Исходные файлы\imgui_sdl</Filter>
+    </ClCompile>
+    <ClCompile Include="include\implot\implot.cpp">
+      <Filter>Исходные файлы\implot</Filter>
+    </ClCompile>
+    <ClCompile Include="include\implot\implot_items.cpp">
+      <Filter>Исходные файлы\implot</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\imgui_tables.cpp">
+      <Filter>Исходные файлы\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\imgui_widgets.cpp">
+      <Filter>Исходные файлы\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\backends\imgui_impl_sdl2.cpp">
+      <Filter>Исходные файлы\imgui_sdl</Filter>
+    </ClCompile>
+    <ClCompile Include="xml_window.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Widget\WatchWidget.cpp">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClCompile>
+    <ClCompile Include="Widget\image_loader_sdl2_stb.cpp">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClCompile>
+    <ClCompile Include="Editor\WidgetTemplateFactory.cpp">
+      <Filter>Исходные файлы\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="Editor\XMLEditor.cpp">
+      <Filter>Исходные файлы\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="Widget\GlossyButtonWidget.cpp">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClCompile>
+    <ClCompile Include="Widget\gif_loader.cpp">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClCompile>
+    <ClCompile Include="Widget\MemoryEditorWidget.cpp">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

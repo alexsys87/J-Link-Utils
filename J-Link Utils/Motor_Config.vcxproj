@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="GifWidget.h" />
+    <ClInclude Include="Main.h" />
+    <ClInclude Include="Widget\AlignTextWidget.h" />
+    <ClInclude Include="Widget\BitControl8BitWidget.h" />
+    <ClInclude Include="Widget\BitControlWidget.h" />
+    <ClInclude Include="Widget\ButtonWidget.h" />
+    <ClInclude Include="Widget\CheckboxWidget.h" />
+    <ClInclude Include="Widget\ChildWindowWidget.h" />
+    <ClInclude Include="Widget\ColumnWidget.h" />
+    <ClInclude Include="Widget\ComboBoxWidget.h" />
+    <ClInclude Include="Widget\CustomVerticalSliderWidget.h" />
+    <ClInclude Include="Widget\DataLogWidget.h" />
+    <ClInclude Include="Widget\DummyWidget.h" />
+    <ClInclude Include="Widget\EqualizerWidget.h" />
+    <ClInclude Include="Widget\FixedWidthWidget.h" />
+    <ClInclude Include="Widget\GaugeWidget.h" />
+    <ClInclude Include="Widget\GlossyButtonWidget.h" />
+    <ClInclude Include="Widget\GlossyDisplayWidget.h" />
+    <ClInclude Include="Widget\GridWidget.h" />
+    <ClInclude Include="Widget\GroupWidget.h" />
+    <ClInclude Include="Widget\HeaderWidget.h" />
+    <ClInclude Include="Widget\HelpMarkerWidget.h" />
+    <ClInclude Include="Widget\HintBoxWidget.h" />
+    <ClInclude Include="Widget\HistogramWidget.h" />
+    <ClInclude Include="Widget\ImageWidget.h" />
+    <ClInclude Include="Widget\IndentWidget.h" />
+    <ClInclude Include="Widget\InputFloatWidget.h" />
+    <ClInclude Include="Widget\InputIntWidget.h" />
+    <ClInclude Include="Widget\KeypadWidget.h" />
+    <ClInclude Include="Widget\LabelTextWidget.h" />
+    <ClInclude Include="Widget\LCD_HD44780_Widget.h" />
+    <ClInclude Include="Widget\LedIndicatorWidget.h" />
+    <ClInclude Include="Widget\MechanicalSwitch2Widget.h" />
+    <ClInclude Include="Widget\MemoryEditorWidget.h" />
+    <ClInclude Include="Widget\MemoryViewWidget.h" />
+    <ClInclude Include="Widget\NeumorphicKnobWidget.h" />
+    <ClInclude Include="Widget\NewLineWidget.h" />
+    <ClInclude Include="Widget\PlotLinesWidget.h" />
+    <ClInclude Include="Widget\PlotTooltipWidget.h" />
+    <ClInclude Include="Widget\PopupWidget.h" />
+    <ClInclude Include="Widget\ProgressBarWidget.h" />
+    <ClInclude Include="Widget\RadioButtonGroup.h" />
+    <ClInclude Include="Widget\RotarySwitchWidget.h" />
+    <ClInclude Include="Widget\RPMIndicatorWidget.h" />
+    <ClInclude Include="Widget\SameLineWidget.h" />
+    <ClInclude Include="Widget\ScriptControlWidget.h" />
+    <ClInclude Include="Widget\SegmentButtonWidget.h" />
+    <ClInclude Include="Widget\SelectableTextWidget.h" />
+    <ClInclude Include="Widget\SeparatorWidget.h" />
+    <ClInclude Include="Widget\SetCursorPosWidget.h" />
+    <ClInclude Include="Widget\SevenSegmentWidget.h" />
+    <ClInclude Include="Widget\SliderFloatWidget.h" />
+    <ClInclude Include="Widget\SliderIntWidget.h" />
+    <ClInclude Include="Widget\SpacingWidget.h" />
+    <ClInclude Include="Widget\StyledKnobWidget.h" />
+    <ClInclude Include="Widget\TabBarWidget.h" />
+    <ClInclude Include="Widget\TabItemWidget.h" />
+    <ClInclude Include="Widget\TankWidget.h" />
+    <ClInclude Include="Widget\TextColoredWidget.h" />
+    <ClInclude Include="Widget\TextFormattedFWidget.h" />
+    <ClInclude Include="Widget\TextFormattedWidget.h" />
+    <ClInclude Include="Widget\TextWidget.h" />
+    <ClInclude Include="Widget\TooltipWidget.h" />
+    <ClInclude Include="Widget\TreeNodeWidget.h" />
+    <ClInclude Include="Widget\VerticalGaugeWidget.h" />
+    <ClInclude Include="Widget\VUMeterWidget.h" />
+    <ClInclude Include="Widget\WatchWidget.h" />
+    <ClInclude Include="Widget\widget_common.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="DataHelper.cpp" />
+    <ClCompile Include="Editor\WidgetTemplateFactory.cpp" />
+    <ClCompile Include="Editor\XMLEditor.cpp" />
+    <ClCompile Include="include\ifqueue\lfqueue.c" />
+    <ClCompile Include="include\imgui\backends\imgui_impl_sdl2.cpp" />
+    <ClCompile Include="include\imgui\backends\imgui_impl_sdlrenderer2.cpp" />
+    <ClCompile Include="include\imgui\imgui.cpp" />
+    <ClCompile Include="include\imgui\imgui_draw.cpp" />
+    <ClCompile Include="include\imgui\imgui_tables.cpp" />
+    <ClCompile Include="include\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="include\imgui\misc\freetype\imgui_freetype.cpp" />
+    <ClCompile Include="include\implot\implot.cpp" />
+    <ClCompile Include="include\implot\implot_items.cpp" />
+    <ClCompile Include="include\tinyxml2\tinyxml2.cpp" />
+    <ClCompile Include="iniConfig.cpp" />
+    <ClCompile Include="main.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="Widget\gif_loader.cpp" />
+    <ClCompile Include="Widget\GlossyButtonWidget.cpp" />
+    <ClCompile Include="Widget\image_loader_sdl2_stb.cpp" />
+    <ClCompile Include="Widget\MemoryEditorWidget.cpp" />
+    <ClCompile Include="Widget\WatchWidget.cpp" />
+    <ClCompile Include="xml_window.cpp" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{AE8A8EDB-0187-497B-987E-2ABC007F79D0}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>MotorConfig</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>J-Link Utils</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)lib\x86\debug;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)include\JLinkSDK;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)lib\x64\debug;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)lib\x86;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(ProjectDir);$(ProjectDir)include\;$(ProjectDir)include\imgui;$(ProjectDir)include\implot;$(ProjectDir)include\SDL2;$(ProjectDir)include\imgui_sdl;$(ProjectDir)include\freetype2;$(ProjectDir)include\ifqueue;$(ProjectDir)include\JLinkSDK;$(ProjectDir)Widget;$(ProjectDir)Editor;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)lib\x64;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>SDL2-staticd.lib;SDL2main.lib;freetyped.lib;brotlicommon.lib;brotlidec.lib;bz2d.lib;libpng16d.lib;zlibd.lib;winmm.lib;setupapi.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_WIN64;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>SDL2-staticd.lib;SDL2main.lib;freetyped.lib;brotlicommon.lib;brotlidec.lib;brotlienc.lib;bz2d.lib;libpng16d.lib;zlibd.lib;winmm.lib;setupapi.lib;version.lib;JLinkARM_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>WIN32;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <DisableSpecificWarnings>4200</DisableSpecificWarnings>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>SDL2-static.lib;SDL2main.lib;freetype.lib;brotlicommon.lib;brotlidec.lib;bz2.lib;libpng16.lib;zlib.lib;winmm.lib;setupapi.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+      <StackCommitSize>
+      </StackCommitSize>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_WIN64;NDEBUG;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <DisableSpecificWarnings>4200</DisableSpecificWarnings>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>SDL2-static.lib;SDL2main.lib;freetype.lib;brotlicommon.lib;brotlidec.lib;bz2.lib;libpng16.lib;zlib.lib;winmm.lib;setupapi.lib;version.lib;JLinkARM_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

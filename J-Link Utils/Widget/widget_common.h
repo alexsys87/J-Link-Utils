@@ -1,0 +1,189 @@
+// widget_common.h
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <iostream>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <string>
+#include <vector>
+#include <memory>
+#include <unordered_map>
+#include <cmath>
+#include <cstdio>
+#include <algorithm>
+
+#include "imgui.h"
+#include "imgui_internal.h"
+
+#include "implot.h"
+#include <implot_internal.h>
+
+#include "Main.h"       
+
+// Константы
+constexpr auto MAX_BUFF = 64;
+constexpr auto BUFF_SIZE = 4096;
+constexpr auto MAX_ITEMS = 64;
+constexpr auto MAX_ITEM_LEN = 64;
+
+#define BOOLEAN      0
+#define S08_DEC      1
+#define U08_DEC      2
+#define S16_DEC      3
+#define U16_DEC      4
+#define S32_DEC      5
+#define U32_DEC      6
+#define FLOAT        7
+#define FLOAT_INV    8
+#define S64_DEC      9
+#define U64_DEC     10
+
+using namespace tinyxml2;
+
+// Вспомогательная функция для преобразования 16-битного порядка байт
+inline uint16_t Swap16(uint16_t v) {
+    return (v >> 8) | (v << 8);
+}
+
+inline uint32_t SwapLeToBe32(uint32_t u32Value) {
+    return ((u32Value >> 24) & 0x000000FF) |
+        ((u32Value >> 8) & 0x0000FF00) |
+        ((u32Value << 8) & 0x00FF0000) |
+        ((u32Value << 24) & 0xFF000000);
+}
+
+inline uint32_t SwapBeToLe32(uint32_t u32Value) {
+    return SwapLeToBe32(u32Value);
+}
+
+// Вспомогательные функции для 64-бит
+inline uint64_t SwapLeToBe64(uint64_t v) {
+    return ((v >> 56) & 0x00000000000000FFULL) |
+        ((v >> 40) & 0x000000000000FF00ULL) |
+        ((v >> 24) & 0x0000000000FF0000ULL) |
+        ((v >> 8) & 0x00000000FF000000ULL) |
+        ((v << 8) & 0x000000FF00000000ULL) |
+        ((v << 24) & 0x0000FF0000000000ULL) |
+        ((v << 40) & 0x00FF000000000000ULL) |
+        ((v << 56) & 0xFF00000000000000ULL);
+}
+
+inline uint64_t SwapBeToLe64(uint64_t v) {
+    return SwapLeToBe64(v);
+}
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+    extern bool DataReadWriteBoolean(MainContext* ctx, XMLElement* e, uint8_t* val, uint32_t* addr);
+    extern uint8_t DataReadWriteU08(MainContext* ctx, XMLElement* e, uint8_t* val, uint32_t* addr);
+    extern uint16_t DataReadWriteU16(MainContext* ctx, XMLElement* e, uint16_t* val, uint32_t* addr);
+    extern float DataReadWriteFT32(MainContext* ctx, XMLElement* e, float* val, uint32_t* addr);
+    extern uint32_t DataReadWriteU32(MainContext* ctx, XMLElement* e, uint32_t* val, uint32_t* addr);
+    extern uint64_t DataReadWriteU64(MainContext* ctx, XMLElement* e, uint64_t* val, uint32_t* addr);
+    extern uint16_t DataReadWriteArray(MainContext* ctx, XMLElement* e, uint8_t* data, uint32_t* phys_addr, uint16_t size);
+#ifdef __cplusplus
+}
+#endif
+
+// Остальные внешние функции (линковка C++ по умолчанию)
+extern const char* file_open_dialog(const char* filters);
+extern const char* file_save_dialog(const char* filters);
+extern XMLElement* TryFindElement(XMLElement* e, const char* name);
+extern uint32_t AddressFromHex(XMLElement* e);
+extern float average(const std::vector<float>& v);
+extern std::vector<float> smooth(const std::vector<float>& input, int window);
+
+// Вспомогательные функции (inline)
+
+struct ColorRGBA {
+    float R, G, B, A;
+};
+
+inline ColorRGBA ColorConverter(int hexValue) {
+    ColorRGBA C;
+    C.R = ((hexValue >> 24) & 0xFF) / 255.0f;
+    C.G = ((hexValue >> 16) & 0xFF) / 255.0f;
+    C.B = ((hexValue >> 8) & 0xFF) / 255.0f;
+    C.A = ((hexValue >> 0) & 0xFF) / 255.0f;
+    return C;
+}
+
+inline void EnsureXmlExtension(char* path, size_t maxLen) {
+    size_t len = strlen(path);
+    if (len < 4 || (SDL_strcasecmp(path + len - 4, ".xml") != 0)) {
+        // Нет .xml в конце (или меньше 4 символов) – добавляем
+        if (len + 5 <= maxLen) { // 5 = strlen(".xml") + 1
+            SDL_strlcat(path, ".xml", maxLen);
+        }
+    }
+}
+
+inline char* GetFilePath(const char* Config) {
+    char* data_path = NULL;
+    char* base_path = SDL_GetBasePath();
+
+    if (base_path) {
+        data_path = (char*)SDL_malloc(MAX_PATH);
+        if (!data_path)
+        {
+            fprintf(stderr, "Unable to allocate memory\r\n");
+            return NULL;
+        }
+
+        SDL_memset(data_path, 0, MAX_PATH);
+        SDL_strlcpy(&data_path[0], base_path, MAX_PATH);
+        SDL_strlcpy(&data_path[SDL_strlen(data_path)], Config, MAX_PATH - SDL_strlen(data_path));
+    }
+    else {
+        data_path = SDL_strdup(Config);
+        if (!data_path)
+            fprintf(stderr, "Unable to allocate memory\r\n");
+    }
+
+    return data_path;
+}
+
+// Глобальный буфер для графиков (определён в main cpp)
+extern float VirtualBuffer[MAX_BUFF][BUFF_SIZE];
+
+// Базовые классы виджетов
+struct MainContext; // уже определён в Main.h
+
+class UIWidget {
+public:
+    virtual ~UIWidget() = default;
+    virtual void Draw(MainContext* ctx, uint32_t* dynamicAddr = nullptr) = 0;
+};
+
+// Структура для хранения данных окна (определена здесь для доступа из других файлов)
+struct WindowData {
+    std::string name;
+    std::unique_ptr<UIWidget> root;
+    bool show = false;
+};
+
+// Глобальный вектор окон (определён в xml_window.cpp)
+extern std::vector<WindowData> g_Windows;
+
+class LeafWidget : public UIWidget {
+protected:
+    std::string text;
+public:
+    LeafWidget(const char* txt = "") : text(txt ? txt : "") {}
+};
+
+class ContainerWidget : public UIWidget {
+protected:
+    std::vector<std::unique_ptr<UIWidget>> children;
+public:
+    void AddChild(std::unique_ptr<UIWidget> child) {
+        if (child) children.push_back(std::move(child));
+    }
+};
