@@ -14,7 +14,7 @@ struct ScrollingData {
     int Offset;
     ImVector<ImVec2> Data;
 
-    ScrollingData(int maxSize = 2000) : MaxSize(maxSize), Offset(0) {
+    ScrollingData(int maxSize = 2000) : MaxSize(maxSize > 0 ? maxSize : 1), Offset(0) {
         Data.reserve(MaxSize);
     }
 

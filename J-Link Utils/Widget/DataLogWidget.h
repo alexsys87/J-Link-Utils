@@ -137,7 +137,7 @@ public:
     }
 
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
-        if (bufferSize > BUFF_SIZE) return;
+        if (!ctx || !ctx->IOMAP_Data || bufferSize > BUFF_SIZE) return;
 
         // Проверка флага готовности
         bool ready = true;
@@ -166,9 +166,14 @@ public:
         for (size_t l = 0; l < lines.size(); ++l) {
             const auto& line = lines[l];
             int elementSize = GetElementSize(line.dataType);
-            uint32_t offset = line.baseAddr - ctx->mcu_memory_base; // смещение в IOMAP_Data
-
             SDL_LockMutex(ctx->Datalock);
+            const size_t bytesToRead = static_cast<size_t>(bufferSize) * elementSize;
+            if (!ui_safety::IsMappedRange(line.baseAddr, ctx->mcu_memory_base, bytesToRead, IOMAP_SIZE)) {
+                std::fill(data[l].begin(), data[l].end(), 0.0f);
+                SDL_UnlockMutex(ctx->Datalock);
+                continue;
+            }
+            uint32_t offset = line.baseAddr - ctx->mcu_memory_base; // смещение в IOMAP_Data
             for (int i = 0; i < bufferSize; ++i) {
                 uint32_t byteOffset = offset + i * elementSize;
                 const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&ctx->IOMAP_Data[byteOffset]);
@@ -228,7 +233,7 @@ public:
                 }
                 else {
                     float avg = ::average({ plotData, plotData + bufferSize });
-                    snprintf(label, sizeof(label), format.c_str(), avg);
+                    ui_safety::FormatScalar(label, sizeof(label), format.c_str(), avg);
                 }
 
                 // Преобразуем цвет в ImVec4
@@ -247,6 +252,7 @@ public:
 
 private:
     void InitBuffers() {
+        bufferSize = std::clamp(bufferSize, 1, static_cast<int>(BUFF_SIZE));
         data.resize(lines.size());
         smoothed.resize(lines.size());
         for (size_t i = 0; i < lines.size(); ++i) {

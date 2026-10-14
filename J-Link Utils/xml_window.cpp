@@ -1,5 +1,6 @@
 // xml_window.cpp
 #include "widget_common.h"
+#include "Editor/XMLSafety.h"
 
 // Включаем все виджеты
 #include "TextWidget.h"
@@ -77,13 +78,7 @@ float VirtualBuffer[MAX_BUFF][BUFF_SIZE] = { 0 };
 
 std::vector<WindowData> g_Windows;
 
-static const char* XmlChildText(XMLElement* elem, const char* name, const char* def = "") {
-    if (!elem) return def;
-    XMLElement* child = elem->FirstChildElement(name);
-    if (!child) return def;
-    const char* txt = child->GetText();
-    return txt ? txt : def;
-}
+using ui_safety::XmlChildText;
 
 // Рекурсивная загрузка виджетов из XML
 static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
@@ -97,7 +92,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     else if (name == "TextColored") {
         const char* txt = XmlChildText(elem, "Text");
         const char* colorStr = XmlChildText(elem, "Color", nullptr);
-        int hex = 0;
+        unsigned int hex = 0;
         if (colorStr) { int ret = sscanf(colorStr, "#%08x", &hex); }
         return std::make_unique<TextColoredWidget>(txt, hex);
     }
@@ -200,7 +195,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return grid;
     }
     else if (name == "PlotLines") {
-        const char* txt = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* txt = XmlChildText(elem, "Text", "");
         float minV = 0, maxV = 0, w = -1, h = -1, f = 1;
         int sz = 100, sm = 0, maxSize = 2000;
         bool autosize = false;
@@ -222,7 +217,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (items) {
             for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement()) {
                 PlotLineConfig line;
-                line.name = lineElem->FirstChildElement("Name") ? lineElem->FirstChildElement("Name")->GetText() : "";
+                line.name = XmlChildText(lineElem, "Name", "");
                 if (lineElem->FirstChildElement("Address"))
                     line.address = AddressFromHex(lineElem->FirstChildElement("Address"));
                 if (lineElem->FirstChildElement("DataType"))
@@ -323,30 +318,30 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         );
     }
     else if (name == "TextFormatted") {
-        const char* fmt = elem->FirstChildElement("Format") ? elem->FirstChildElement("Format")->GetText() : "";
+        const char* fmt = XmlChildText(elem, "Format", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
-        int hexColor = 0;
+        unsigned int hexColor = 0;
         bool useColor = false;
         if (elem->FirstChildElement("Color")) {
             const char* colorStr = elem->FirstChildElement("Color")->GetText();
-            if (colorStr) { int ret = sscanf(colorStr, "#%08x", &hexColor); useColor = true; }
+            if (colorStr) { useColor = sscanf(colorStr, "#%08x", &hexColor) == 1; }
         }
         return std::make_unique<TextFormattedWidget>(fmt, addr, hexColor, useColor);
     }
     else if (name == "TextFormattedF") {
-        const char* fmt = elem->FirstChildElement("Format") ? elem->FirstChildElement("Format")->GetText() : "";
+        const char* fmt = XmlChildText(elem, "Format", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
         bool le = false;
         if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        int hexColor = 0;
+        unsigned int hexColor = 0;
         bool useColor = false;
         if (elem->FirstChildElement("Color")) {
             const char* colorStr = elem->FirstChildElement("Color")->GetText();
-            if (colorStr) { int ret = sscanf(colorStr, "#%08x", &hexColor); useColor = true; }
+            if (colorStr) { useColor = sscanf(colorStr, "#%08x", &hexColor) == 1; }
         }
         return std::make_unique<TextFormattedFWidget>(fmt, addr, le, hexColor, useColor);
     }
@@ -357,8 +352,8 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<NewLineWidget>();
     }
     else if (name == "LabelText") {
-        const char* lbl = elem->FirstChildElement("Label") ? elem->FirstChildElement("Label")->GetText() : "";
-        const char* fmt = elem->FirstChildElement("Format") ? elem->FirstChildElement("Format")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Label", "");
+        const char* fmt = XmlChildText(elem, "Format", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -376,7 +371,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
             for (XMLElement* radio = items->FirstChildElement("Radio"); radio; radio = radio->NextSiblingElement()) {
-                const char* lbl = radio->FirstChildElement("Label") ? radio->FirstChildElement("Label")->GetText() : "";
+                const char* lbl = XmlChildText(radio, "Label", "");
                 int val = 0;
                 if (radio->FirstChildElement("Value")) radio->FirstChildElement("Value")->QueryIntText(&val);
                 group->AddItem(lbl, val);
@@ -385,12 +380,12 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return group;
     }
     else if (name == "Tooltip") {
-        const char* txt = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* txt = XmlChildText(elem, "Text", "");
         return std::make_unique<TooltipWidget>(txt);
     }
     else if (name == "PlotTooltip") {
-        const char* txt = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
-        const char* fmt = elem->FirstChildElement("Format") ? elem->FirstChildElement("Format")->GetText() : "";
+        const char* txt = XmlChildText(elem, "Text", "");
+        const char* fmt = XmlChildText(elem, "Format", "");
         float minV = 0, maxV = 0;
         int sz = 100, id = 0;
         bool le = false;
@@ -410,7 +405,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<PlotTooltipWidget>(txt, fmt, minV, maxV, sz, id, addr, le, dtype, autoSz);
     }
     else if (name == "ComboBox") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -418,7 +413,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
             for (XMLElement* item = items->FirstChildElement("Combo"); item; item = item->NextSiblingElement()) {
-                const char* label = item->FirstChildElement("Label") ? item->FirstChildElement("Label")->GetText() : "";
+                const char* label = XmlChildText(item, "Label", "");
                 int val = 0;
                 if (item->FirstChildElement("Value")) item->FirstChildElement("Value")->QueryIntText(&val);
                 combo->AddItem(label, val);
@@ -427,7 +422,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return combo;
     }
     else if (name == "ImputInt") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -439,7 +434,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<InputIntWidget>(lbl, addr, minV, maxV, step, fast);
     }
     else if (name == "ImputFloat") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -450,7 +445,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
         if (elem->FirstChildElement("Step")) elem->FirstChildElement("Step")->QueryFloatText(&step);
         if (elem->FirstChildElement("Fast")) elem->FirstChildElement("Fast")->QueryFloatText(&fast);
-        if (elem->FirstChildElement("Format")) fmt = elem->FirstChildElement("Format")->GetText();
+        if (elem->FirstChildElement("Format")) fmt = XmlChildText(elem, "Format", fmt);
         if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<InputFloatWidget>(lbl, addr, minV, maxV, step, fast, fmt, le);
     }
@@ -479,8 +474,8 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<IndentWidget>(w);
     }
     else if (name == "Histogram") {
-        const char* txt = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
-        const char* fmt = elem->FirstChildElement("Format") ? elem->FirstChildElement("Format")->GetText() : "";
+        const char* txt = XmlChildText(elem, "Text", "");
+        const char* fmt = XmlChildText(elem, "Format", "");
         float minV = 0, maxV = 0, w = 0, h = 0, xs = 1.0f;
         int sz = 100, sm = 0;
         uint32_t done = 0;
@@ -506,7 +501,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             std::vector<HistogramWidget::LineConfig> lineList;
             for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement()) {
                 HistogramWidget::LineConfig line;
-                line.name = lineElem->FirstChildElement("Name") ? lineElem->FirstChildElement("Name")->GetText() : "";
+                line.name = XmlChildText(lineElem, "Name", "");
                 if (lineElem->FirstChildElement("Address"))
                     line.baseAddr = AddressFromHex(lineElem->FirstChildElement("Address"));
                 line.yScale = 1.0f;
@@ -566,8 +561,8 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             addr, ys, color, dtype);
     }
     else if (name == "DataLog") {
-        const char* txt = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
-        const char* fmt = elem->FirstChildElement("Format") ? elem->FirstChildElement("Format")->GetText() : "";
+        const char* txt = XmlChildText(elem, "Text", "");
+        const char* fmt = XmlChildText(elem, "Format", "");
         float minV = 0, maxV = 0, w = 0, h = 0, xs = 1;
         int sz = 100, sm = 0;
         uint32_t done = 0;
@@ -591,7 +586,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             std::vector<DataLogWidget::LineConfig> lineList;
             for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement()) {
                 DataLogWidget::LineConfig line;
-                line.name = lineElem->FirstChildElement("Name") ? lineElem->FirstChildElement("Name")->GetText() : "";
+                line.name = XmlChildText(lineElem, "Name", "");
                 if (lineElem->FirstChildElement("Address"))
                     line.baseAddr = AddressFromHex(lineElem->FirstChildElement("Address"));
                 line.yScale = 1.0f;
@@ -659,7 +654,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<ProgressBarWidget>(w, h, addr, le);
     }
     else if (name == "SliderFloat") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         float minV = 0, maxV = 0, step = 0;
         const char* fmt = "%.3f";
@@ -669,12 +664,12 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
         if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
         if (elem->FirstChildElement("Step")) elem->FirstChildElement("Step")->QueryFloatText(&step);
-        if (elem->FirstChildElement("Format")) fmt = elem->FirstChildElement("Format")->GetText();
+        if (elem->FirstChildElement("Format")) fmt = XmlChildText(elem, "Format", fmt);
         if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<SliderFloatWidget>(lbl, addr, minV, maxV, fmt, step, le);
     }
     else if (name == "SliderInt") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         int minV = 0, maxV = 0;
         const char* fmt = "%d";
         uint32_t addr = 0;
@@ -682,11 +677,11 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             addr = AddressFromHex(elem->FirstChildElement("Address"));
         if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryIntText(&minV);
         if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryIntText(&maxV);
-        if (elem->FirstChildElement("Format")) fmt = elem->FirstChildElement("Format")->GetText();
+        if (elem->FirstChildElement("Format")) fmt = XmlChildText(elem, "Format", fmt);
         return std::make_unique<SliderIntWidget>(lbl, addr, minV, maxV, fmt);
     }
     else if (name == "TabBar") {
-        const char* name = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* name = XmlChildText(elem, "Text", "");
         auto tabBar = std::make_unique<TabBarWidget>(name);
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
@@ -698,7 +693,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return tabBar;
     }
     else if (name == "Tab") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         auto tab = std::make_unique<TabItemWidget>(lbl);
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
@@ -723,7 +718,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return col;
     }
     else if (name == "SelectableText") {
-        const char* fmt = elem->FirstChildElement("Format") ? elem->FirstChildElement("Format")->GetText() : "";
+        const char* fmt = XmlChildText(elem, "Format", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -732,7 +727,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<SelectableTextWidget>(fmt, addr, useBool);
     }
     else if (name == "ChildWindow") {
-        const char* name = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* name = XmlChildText(elem, "Text", "");
         float w = 0, h = 0;
         if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
         if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&h);
@@ -747,7 +742,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return child;
     }
     else if (name == "Header") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         auto header = std::make_unique<HeaderWidget>(lbl);
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
@@ -781,14 +776,14 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return hint;
     }
     else if (name == "HelpMarker") {
-        const char* txt = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* txt = XmlChildText(elem, "Text", "");
         return std::make_unique<HelpMarkerWidget>(txt);
     }
     else if (name == "Watch") {
         return std::make_unique<WatchWidget>();
     }
     else if (name == "SevenSegment") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -804,7 +799,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<SevenSegmentWidget>(lbl, addr, w, h, le);
     }
     else if (name == "MechanicalSwitch2") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -820,7 +815,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<MechanicalSwitch2Widget>(lbl, addr, w, h, le);
     }
     else if (name == "Gauge") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -833,14 +828,14 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("Radius"))
             elem->FirstChildElement("Radius")->QueryFloatText(&rad);
         if (elem->FirstChildElement("Unit"))
-            unit = elem->FirstChildElement("Unit")->GetText();
+            unit = XmlChildText(elem, "Unit");
         bool le = false;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<GaugeWidget>(lbl, addr, minV, maxV, rad, unit, le);
     }
     else if (name == "GlossyDisplay") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -873,12 +868,12 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             elem->FirstChildElement("DecimalPlaces")->QueryIntText(&decimalPlaces);
 
         return std::make_unique<GlossyDisplayWidget>(
-            lbl, (uint16_t)addr, w, h, le,
+            lbl, addr, w, h, le,
             dataType, hexMode, digits, decimalPlaces
         );
     }
     else if (name == "LCD_HD44780") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr1 = 0, addr2 = 0;
         const char* line1 = "";
         const char* line2 = "";
@@ -888,9 +883,9 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("Line2Address"))
             addr2 = AddressFromHex(elem->FirstChildElement("Line2Address"));
         if (elem->FirstChildElement("Line1Text"))
-            line1 = elem->FirstChildElement("Line1Text")->GetText();
+            line1 = XmlChildText(elem, "Line1Text");
         if (elem->FirstChildElement("Line2Text"))
-            line2 = elem->FirstChildElement("Line2Text")->GetText();
+            line2 = XmlChildText(elem, "Line2Text");
 
         float pSize = 2.5f;
         if (elem->FirstChildElement("PixelSize"))
@@ -907,7 +902,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<LCD_HD44780_Widget>(lbl, addr1, line1, addr2, line2, pSize, le, useFixed);
     }
     else if (name == "VerticalGauge") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -931,7 +926,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<VerticalGaugeWidget>(lbl, addr, minV, maxV, w, h, le, dataType);
     }
     else if (name == "NeumorphicKnob") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -952,7 +947,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<NeumorphicKnobWidget>(lbl, addr, minV, maxV, rad, le, dataType);
     }
     else if (name == "StyledKnob") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -973,7 +968,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<StyledKnobWidget>(lbl, addr, minV, maxV, radius, le, dataType);
     }
     else if (name == "CustomVerticalSlider") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -997,7 +992,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<CustomVerticalSliderWidget>(lbl, addr, minV, maxV, w, h, le, dataType);
     }
     else if (name == "BitControl8Bit") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1012,7 +1007,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<BitControl8BitWidget>(lbl, addr, le, scale);
     }
     else if (name == "BitControl") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1029,7 +1024,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<BitControlWidget>(lbl, addr, mode, le, switchable);
     }
     else if (name == "RotarySwitch") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1047,7 +1042,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<RotarySwitchWidget>(lbl, addr, minPos, maxPos, rad, le);
     }
     else if (name == "LedIndicator") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1092,8 +1087,8 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<LedIndicatorWidget>(lbl, addr, rad, colorOn, colorOff, le);
     }
     else if (name == "Image") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
-        const char* file = elem->FirstChildElement("File") ? elem->FirstChildElement("File")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
+        const char* file = XmlChildText(elem, "File", "");
         float scale = 1.0f;
         if (elem->FirstChildElement("Scale"))
             elem->FirstChildElement("Scale")->QueryFloatText(&scale);
@@ -1147,8 +1142,8 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<ImageWidget>(lbl, file, scale, fixW, fixH, uv0, uv1, tint, border);
     }
     else if (name == "Gif") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
-        const char* file = elem->FirstChildElement("File") ? elem->FirstChildElement("File")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
+        const char* file = XmlChildText(elem, "File", "");
         float scale = 1.0f;
         if (elem->FirstChildElement("Scale"))
             elem->FirstChildElement("Scale")->QueryFloatText(&scale);
@@ -1166,7 +1161,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<GifWidget>(lbl, file, fixW, fixH, scale, loop, speed);
     }
     else if (name == "RPMIndicator") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1179,7 +1174,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             elem->FirstChildElement("Radius")->QueryFloatText(&rad);
         const char* unit = "rpm";
         if (elem->FirstChildElement("Unit"))
-            unit = elem->FirstChildElement("Unit")->GetText();
+            unit = XmlChildText(elem, "Unit");
         bool le = false;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
@@ -1214,7 +1209,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<RPMIndicatorWidget>(lbl, addr, minV, maxV, rad, unit, zones, le);
     }
     else if (name == "Keypad") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1232,7 +1227,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<KeypadWidget>(lbl, addr, minV, maxV, digits, le);
     }
     else if (name == "Equalizer") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1249,7 +1244,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             elem->FirstChildElement("BandWidth")->QueryFloatText(&bandWidth);
         if (elem->FirstChildElement("Height"))
             elem->FirstChildElement("Height")->QueryFloatText(&height);
-        const char* typeStr = elem->FirstChildElement("DataType") ? elem->FirstChildElement("DataType")->GetText() : "float";
+        const char* typeStr = XmlChildText(elem, "DataType", "float");
         EqDataType dtype = EQ_FLOAT;
         if (strcmp(typeStr, "int16") == 0) dtype = EQ_INT16;
         bool le = false;
@@ -1262,7 +1257,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<EqualizerWidget>(lbl, addr, bands, minV, maxV, bandWidth, height, dtype, le, step);
     }
     else if (name == "Tank") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1275,7 +1270,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (!heightElem) heightElem = elem->FirstChildElement("Height");
         if (heightElem) heightElem->QueryFloatText(&h);
         const char* unit = "";
-        if (elem->FirstChildElement("Unit")) unit = elem->FirstChildElement("Unit")->GetText();
+        if (elem->FirstChildElement("Unit")) unit = XmlChildText(elem, "Unit");
         bool le = true;
         if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
 
@@ -1308,7 +1303,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<TankWidget>(lbl, addr, minV, maxV, w, h, unit, liquidColor, metalColor, le, dataType);
     }
     else if (name == "VUMeter") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1317,7 +1312,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             elem->FirstChildElement("Min")->QueryFloatText(&minV);
         if (elem->FirstChildElement("Max"))
             elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        const char* orientStr = elem->FirstChildElement("Orientation") ? elem->FirstChildElement("Orientation")->GetText() : "horizontal";
+        const char* orientStr = XmlChildText(elem, "Orientation", "horizontal");
         VUOrientation orient = VU_HORIZONTAL;
         if (strcmp(orientStr, "vertical") == 0) orient = VU_VERTICAL;
         float w = 200.0f, h = 30.0f;
@@ -1328,7 +1323,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (heightElem) heightElem->QueryFloatText(&h);
         const char* unit = "";
         if (elem->FirstChildElement("Unit"))
-            unit = elem->FirstChildElement("Unit")->GetText();
+            unit = XmlChildText(elem, "Unit");
         bool le = false;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
@@ -1338,7 +1333,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<VUMeterWidget>(lbl, addr, minV, maxV, orient, w, h, unit, le, peak);
     }
     else if (name == "SegmentButton") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1351,7 +1346,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (itemsElem) {
             for (XMLElement* segElem = itemsElem->FirstChildElement("Segment"); segElem; segElem = segElem->NextSiblingElement()) {
                 SegmentItem item;
-                const char* text = segElem->FirstChildElement("Text") ? segElem->FirstChildElement("Text")->GetText() : "";
+                const char* text = XmlChildText(segElem, "Text", "");
                 int val = 0;
                 if (segElem->FirstChildElement("Value"))
                     segElem->FirstChildElement("Value")->QueryIntText(&val);
@@ -1370,7 +1365,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<SegmentButtonWidget>(lbl, addr, segments, le);
     }
     else if (name == "GlossyButton") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
@@ -1389,7 +1384,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<GlossyButtonWidget>(lbl, addr, le, (GlossyButtonMode)mode, writeVal, radius);
     }
     else if (name == "MemoryView") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t base = 0;
         if (elem->FirstChildElement("BaseAddress"))
             base = AddressFromHex(elem->FirstChildElement("BaseAddress"));
@@ -1405,7 +1400,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<MemoryViewWidget>(lbl, base, bytes, bpl, le);
     }
     else if (name == "MemoryEditor") {
-        const char* lbl = elem->FirstChildElement("Text") ? elem->FirstChildElement("Text")->GetText() : "";
+        const char* lbl = XmlChildText(elem, "Text", "");
         uint32_t base = 0;
         if (elem->FirstChildElement("BaseAddress"))
             base = AddressFromHex(elem->FirstChildElement("BaseAddress"));
@@ -1467,7 +1462,7 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
     for (XMLElement* win = doc.FirstChildElement("Window"); win; win = win->NextSiblingElement()) {
         winCount++;
         WindowData wd;
-        const char* name = win->FirstChildElement("Text") ? win->FirstChildElement("Text")->GetText() : "Unnamed";
+        const char* name = XmlChildText(win, "Text", "Unnamed");
         wd.name = name;
         wd.show = true;
         //ctx->w[winCount].name = name;

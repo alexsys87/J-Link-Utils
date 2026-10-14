@@ -11,7 +11,7 @@ class SliderFloatWidget : public LeafWidget {
     bool littleEndian;
 public:
     SliderFloatWidget(const char* lbl, uint32_t addr, float minV, float maxV, const char* fmt, float st, bool le)
-        : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), format(fmt ? fmt : "%.3f"), step(st), littleEndian(le) {
+        : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), format(ui_safety::ScalarFormatOrDefault(fmt, ui_safety::ScalarKind::Floating)), step(st), littleEndian(le) {
     }
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;

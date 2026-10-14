@@ -7,6 +7,12 @@
 #include <cstdint>
 #include <vector>
 #include <cstddef>
+#include <atomic>
+#include <cerrno>
+#include <cstdlib>
+#include <cctype>
+#include <mutex>
+#include <algorithm>
 
 using namespace tinyxml2;
 
@@ -14,7 +20,8 @@ using namespace tinyxml2;
 #define CHECK_PHYSICAL_ADDR(addr, size) \
     do { \
         if ((addr) == 0 || (addr) < ctx->mcu_memory_base) return 0; \
-        if ((uint64_t)(addr) + (uint64_t)(size) > (uint64_t)ctx->mcu_memory_base + (uint64_t)IOMAP_SIZE) return 0; \
+        if ((uint64_t)(addr) + (uint64_t)(size) > (uint64_t)ctx->mcu_memory_base + (uint64_t)IOMAP_SIZE || \
+            (uint64_t)(addr) + (uint64_t)(size) > UINT64_C(0x100000000)) return 0; \
     } while (0)
 
 // Поиск дочернего элемента по имени
@@ -34,15 +41,20 @@ uint32_t AddressFromHex(XMLElement* e)
 {
     if (!e || !e->GetText()) return 0;
     const char* text = e->GetText();
-    int hex = 0;
-    if (*text == '#') {
-        sscanf(text + 1, "%x", &hex);
-    }
-    else {
-        sscanf(text, "%i", &hex);
-    }
-    return hex;
+    while (std::isspace(static_cast<unsigned char>(*text))) ++text;
+    int base = 0;
+    if (*text == '#') { ++text; base = 16; }
+    if (*text == '-') return 0;
+    errno = 0;
+    char* end = nullptr;
+    const unsigned long long value = std::strtoull(text, &end, base);
+    if (end == text || errno == ERANGE || value > UINT32_MAX) return 0;
+    while (std::isspace(static_cast<unsigned char>(*end))) ++end;
+    return *end == '\0' ? static_cast<uint32_t>(value) : 0;
 }
+
+// Protect the bundled queue's node reclamation from concurrent access.
+static std::mutex g_queueMutex;
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,8 +73,7 @@ extern "C" {
         if (!ctx) return false;
         CHECK_PHYSICAL_ADDR(phys_addr, 1);
         uint8_t v = val ? (*val & 0x01) : 0;
-        DataWriteArray(ctx, phys_addr, &v, 1);
-        return true;
+        return DataWriteArray(ctx, phys_addr, &v, 1) == 1;
     }
 
     uint8_t DataWriteU08(MainContext* ctx, uint8_t* val, uint32_t phys_addr)
@@ -105,14 +116,15 @@ extern "C" {
         if (!ctx) return 0.0f;
         CHECK_PHYSICAL_ADDR(phys_addr, 4);
         FT32 f;
-        f.real = val ? *val : 0.0f;
+        const float value = val ? *val : 0.0f;
+        memcpy(&f.hex, &value, sizeof(value));
         uint8_t buf[4];
         buf[0] = f.hex & 0xFF;
         buf[1] = (f.hex >> 8) & 0xFF;
         buf[2] = (f.hex >> 16) & 0xFF;
         buf[3] = (f.hex >> 24) & 0xFF;
         DataWriteArray(ctx, phys_addr, buf, 4);
-        return f.real;
+        return value;
     }
 
     uint64_t DataWriteU64(MainContext* ctx, uint64_t* val, uint32_t phys_addr)
@@ -136,7 +148,7 @@ extern "C" {
     // Запись массива данных
     uint16_t DataWriteArray(MainContext* ctx, uint32_t phys_addr, const uint8_t* data, uint16_t size)
     {
-        if (!ctx || !data || size == 0) return 0;
+        if (!ctx || !ctx->StartComunication || !data || size == 0) return 0;
         CHECK_PHYSICAL_ADDR(phys_addr, size);
         uint32_t offset = phys_addr - ctx->mcu_memory_base;
         iodata_t* io_mem = (iodata_t*)SDL_malloc(sizeof(iodata_t));
@@ -148,7 +160,8 @@ extern "C" {
         io_mem->q.addr = offset;
         io_mem->q.size = size;
         io_mem->value = buf; // признак записи + данные
-        if (lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
+        std::lock_guard<std::mutex> guard(g_queueMutex);
+        if (!ctx->StartComunication || lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
             SDL_free(buf);
             SDL_free(io_mem);
             return 0;
@@ -226,7 +239,9 @@ extern "C" {
             ((uint32_t)ctx->IOMAP_Data[offset + 3] << 24);
         SDL_UnlockMutex(ctx->Datalock);
         DataReadArray(ctx, phys_addr, 4);
-        return f.real;
+        float value;
+        memcpy(&value, &f.hex, sizeof(value));
+        return value;
     }
 
     uint64_t DataReadU64(MainContext* ctx, uint32_t phys_addr)
@@ -252,7 +267,7 @@ extern "C" {
     // Чтение массива данных (заполняет IOMAP_Data)
     uint16_t DataReadArray(MainContext* ctx, uint32_t phys_addr, uint16_t size)
     {
-        if (!ctx || size == 0) return 0;
+        if (!ctx || !ctx->StartComunication || size == 0) return 0;
         CHECK_PHYSICAL_ADDR(phys_addr, size);
         uint32_t offset = phys_addr - ctx->mcu_memory_base;
         iodata_t* io_mem = (iodata_t*)SDL_malloc(sizeof(iodata_t));
@@ -260,7 +275,8 @@ extern "C" {
         io_mem->q.addr = offset;
         io_mem->q.size = size;
         io_mem->value = nullptr; // признак чтения
-        if (lfqueue_enq(&ctx->rx_Queue, io_mem) != 0) {
+        std::lock_guard<std::mutex> guard(g_queueMutex);
+        if (!ctx->StartComunication || lfqueue_enq(&ctx->rx_Queue, io_mem) != 0) {
             SDL_free(io_mem);
             return 0;
         }
@@ -405,7 +421,23 @@ extern "C" {
     // В очереди лежат смещения (offset). Для J‑Link используем физический адрес = база + offset
     // ------------------------------------------------------------------
     static SDL_Thread* g_commThread = nullptr;
-    static volatile bool g_commRunning = false;
+    static std::atomic<bool> g_commRunning{false};
+
+    // Queue nodes do not own their payloads. Always release both allocations.
+    static void DrainQueue(lfqueue_t* queue)
+    {
+        while (void* item = lfqueue_deq(queue)) {
+            iodata_t* io = static_cast<iodata_t*>(item);
+            SDL_free(io->value);
+            SDL_free(io);
+        }
+    }
+
+    static void* Dequeue(lfqueue_t* queue)
+    {
+        std::lock_guard<std::mutex> guard(g_queueMutex);
+        return lfqueue_deq(queue);
+    }
 
     static int CommunicationThreadFunc(void* data)
     {
@@ -423,17 +455,15 @@ extern "C" {
                 continue;
             }
             // Обработка очереди записи
-            void* item = lfqueue_deq(&ctx->tx_Queue);
+            void* item = Dequeue(&ctx->tx_Queue);
             if (item)
             {
                 iodata_t* io = (iodata_t*)item;
                 if (ctx->jlink_opened) {
                     uint32_t real_addr = ctx->mcu_memory_base + io->q.addr;
                     if (io->value != nullptr) {
-                        JLINKARM_BeginDownload(0);
                         int err = JLINKARM_WriteMem(real_addr, io->q.size, io->value);
-                        JLINKARM_EndDownload();
-                        if (err < 0) {
+                        if (err != io->q.size) {
                             ctx->StartComunication = false;
                         }
                         SDL_free(io->value);
@@ -446,16 +476,16 @@ extern "C" {
             }
 
             // Обработка очереди чтения
-            item = lfqueue_deq(&ctx->rx_Queue);
+            item = Dequeue(&ctx->rx_Queue);
             if (item)
             {
                 iodata_t* io = (iodata_t*)item;
-                if (ctx->jlink_opened && io->value == nullptr) {
+                if (ctx->StartComunication && ctx->jlink_opened && io->value == nullptr) {
                     uint32_t real_addr = ctx->mcu_memory_base + io->q.addr;
                     uint8_t* tmp = (uint8_t*)SDL_malloc(io->q.size);
                     if (tmp) {
                         int err = JLINKARM_ReadMem(real_addr, io->q.size, tmp);
-                        if (err < 0) {
+                        if (err != io->q.size) {
                             ctx->StartComunication = false;
                         }
                         else {
@@ -479,7 +509,10 @@ extern "C" {
 
     void StartCommunication(MainContext* ctx)
     {
-        if (!ctx) return;
+        if (!ctx || !ctx->Datalock || !ctx->IOMAP_Data) return;
+        if (ctx->StartComunication && g_commThread) return;
+        // Reconnect after an I/O failure must not reuse the failed session.
+        StopCommunication(ctx);
 
         if (!ctx->jlink_opened) {
             const char* err = JLINKARM_Open();
@@ -492,10 +525,16 @@ extern "C" {
             char acOut[1024];
             char cmd[128];
             snprintf(cmd, sizeof(cmd), "device = %s", ctx->jlink_device);
-            JLINKARM_ExecCommand(cmd, acOut, sizeof(acOut));
-            JLINKARM_TIF_Select(JLINKARM_TIF_SWD);
+            if (JLINKARM_ExecCommand(cmd, acOut, sizeof(acOut)) != 0 ||
+                JLINKARM_TIF_Select(JLINKARM_TIF_SWD) < 0) {
+                JLINKARM_Close();
+                return;
+            }
             GetSetMaxSpeed();
-            JLINKARM_Connect();
+            if (JLINKARM_Connect() < 0) {
+                JLINKARM_Close();
+                return;
+            }
             ctx->jlink_opened = true;
             ctx->StartComunication = true;
         }
@@ -506,11 +545,18 @@ extern "C" {
         if (!g_commThread) {
             g_commRunning = true;
             g_commThread = SDL_CreateThread(CommunicationThreadFunc, "CommThread", ctx);
+            if (!g_commThread) {
+                g_commRunning = false;
+                ctx->StartComunication = false;
+                JLINKARM_Close();
+                ctx->jlink_opened = false;
+            }
         }
     }
 
     void StopCommunication(MainContext* ctx)
     {
+        if (ctx) ctx->StartComunication = false;
         g_commRunning = false;
         if (g_commThread) {
             SDL_WaitThread(g_commThread, NULL);
@@ -522,8 +568,16 @@ extern "C" {
             ctx->jlink_opened = false;
         }
 
-        if (ctx)
-            ctx->StartComunication = false;
+        if (ctx) {
+            std::lock_guard<std::mutex> guard(g_queueMutex);
+            DrainQueue(&ctx->rx_Queue);
+            DrainQueue(&ctx->tx_Queue);
+            if (ctx->IOMAP_Data && ctx->Datalock) {
+                SDL_LockMutex(ctx->Datalock);
+                memset(ctx->IOMAP_Data, 0, IOMAP_SIZE);
+                SDL_UnlockMutex(ctx->Datalock);
+            }
+        }
     }
 
 #ifdef __cplusplus
@@ -548,22 +602,17 @@ float average(const std::vector<float>& v) {
 std::vector<float> smooth(const std::vector<float>& input, int window) {
     if (input.empty() || window <= 0) return {};
 
-    if (window % 2 == 0) ++window;
-    int hw = (window - 1) / 2;
+    const std::size_t hw = static_cast<std::size_t>(window / 2);
 
     std::vector<float> output(input.size());
 
     for (std::size_t i = 0; i < input.size(); ++i) {
-        int start = static_cast<int>(i) - hw;
-        int end = static_cast<int>(i) + hw;
-
-        if (start < 0) start = 0;
-        if (end >= static_cast<int>(input.size())) end = static_cast<int>(input.size()) - 1;
-
-        int count = end - start + 1;
+        const std::size_t start = i > hw ? i - hw : 0;
+        const std::size_t end = i + std::min(hw, input.size() - 1 - i);
+        const std::size_t count = end - start + 1;
         float sum = 0.0f;
 
-        for (int j = start; j <= end; ++j) {
+        for (std::size_t j = start; j <= end; ++j) {
             sum += input[j];
         }
 

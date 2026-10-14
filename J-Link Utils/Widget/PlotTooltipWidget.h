@@ -72,6 +72,9 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         static int writePos[MAX_BUFF] = { 0 };
 
+        // Shared buffer IDs may be used by tooltips with different lengths.
+        writePos[bufferId] %= sizeVal;
+
         uint32_t addr = address ? address : (dynamicAddr ? *dynamicAddr : 0);
         if (addr != 0 && bufferId >= 0 && bufferId < MAX_BUFF && sizeVal > 0 && sizeVal <= BUFF_SIZE) {
             float val = ReadValue(ctx, addr);
@@ -91,7 +94,7 @@ public:
             int lastIdx = (wp - 1 + sizeVal) % sizeVal;
             float lastVal = VirtualBuffer[bufferId][lastIdx];
             char label[64];
-            snprintf(label, sizeof(label), format.c_str(), lastVal);
+            ui_safety::FormatScalar(label, sizeof(label), format.c_str(), static_cast<double>(lastVal));
 
             float plotMin = minVal, plotMax = maxVal;
             if (autosize) {

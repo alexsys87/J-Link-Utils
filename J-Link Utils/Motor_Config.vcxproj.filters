@@ -234,7 +234,7 @@
     <ClInclude Include="Widget\GlossyButtonWidget.h">
       <Filter>Исходные файлы\Widget</Filter>
     </ClInclude>
-    <ClInclude Include="GifWidget.h">
+    <ClInclude Include="Widget\GifWidget.h">
       <Filter>Исходные файлы\Widget</Filter>
     </ClInclude>
     <ClInclude Include="Widget\MemoryEditorWidget.h">
@@ -248,7 +248,7 @@
     <ClCompile Include="include\imgui\imgui_draw.cpp">
       <Filter>Исходные файлы\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="include\tinyxml2\tinyxml2.cpp">
+    <ClCompile Include="include\freetype2\tinyxml2\tinyxml2.cpp">
       <Filter>Исходные файлы\tinyxml2</Filter>
     </ClCompile>
     <ClCompile Include="main.cpp">
@@ -257,7 +257,7 @@
     <ClCompile Include="include\imgui\misc\freetype\imgui_freetype.cpp">
       <Filter>Исходные файлы\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="include\ifqueue\lfqueue.c">
+    <ClCompile Include="include\freetype2\ifqueue\lfqueue.c">
       <Filter>Исходные файлы\ifqueue</Filter>
     </ClCompile>
     <ClCompile Include="DataHelper.cpp">

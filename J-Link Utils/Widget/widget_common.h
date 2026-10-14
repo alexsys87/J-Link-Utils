@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
+#include "ScalarFormat.h"
+#include "MemoryBounds.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"

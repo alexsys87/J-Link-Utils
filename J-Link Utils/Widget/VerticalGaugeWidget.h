@@ -3,7 +3,7 @@
 
 class VerticalGaugeWidget : public UIWidget {
     std::string label;
-    uint16_t address;
+    uint32_t address;
     float minVal;
     float maxVal;
     float width;
@@ -12,7 +12,7 @@ class VerticalGaugeWidget : public UIWidget {
     int dataType;   // тип данных: FLOAT, S16_DEC, U16_HEX, S32_DEC, U32_HEX и т.д.
 
 public:
-    VerticalGaugeWidget(const char* lbl, uint16_t addr, float minV, float maxV, float w, float h, bool le, int dtype = FLOAT)
+    VerticalGaugeWidget(const char* lbl, uint32_t addr, float minV, float maxV, float w, float h, bool le, int dtype = FLOAT)
         : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), width(w), height(h), littleEndian(le), dataType(dtype) {
     }
 

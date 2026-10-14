@@ -1,0 +1,22 @@
+name: Regression tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transport:
+    name: J-Link transport (ASan and UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compile and run regression tests
+        run: sh tests/run_transport_tests.sh
+  ui:
+    name: XML and widget safety (ASan and UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compile and run headless UI regression tests
+        run: python3 tests/ui_regression/run.py

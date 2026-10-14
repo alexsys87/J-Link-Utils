@@ -10,8 +10,12 @@
 #include <functional>
 #include <cctype>
 #include <cstdlib>
+#include <cerrno>
+#include <climits>
+#include <cmath>
 
 #include "WidgetTemplateFactory.h"
+#include "XMLSafety.h"
 
 // ------------------------------------------------------------------
 // Вспомогательные функции для преобразования цвета
@@ -20,6 +24,9 @@ static bool ParseColor(const char* str, ImVec4& outColor) {
     if (!str || str[0] != '#') return false;
     unsigned int hex = 0;
     int len = (int)strlen(str);
+    for (int i = 1; i < len; ++i) {
+        if (!std::isxdigit(static_cast<unsigned char>(str[i]))) return false;
+    }
     if (len == 7) { // #RRGGBB
         if (sscanf(str + 1, "%06x", &hex) == 1) {
             outColor.x = ((hex >> 16) & 0xFF) / 255.0f;
@@ -64,7 +71,7 @@ static std::string FormatColor(const ImVec4& col, bool withAlpha = true) {
 static bool IsBooleanString(const char* str, bool& outValue) {
     if (!str) return false;
     std::string lower;
-    for (const char* p = str; *p; ++p) lower.push_back((char)std::tolower(*p));
+    for (const char* p = str; *p; ++p) lower.push_back((char)std::tolower(static_cast<unsigned char>(*p)));
     if (lower == "true") {
         outValue = true;
         return true;
@@ -82,15 +89,24 @@ static bool IsBooleanString(const char* str, bool& outValue) {
 static bool IsNumberString(const char* str, bool& isFloat) {
     if (!str || *str == '\0') return false;
     char* endptr;
+    errno = 0;
     float f = strtof(str, &endptr);
+    if (errno == ERANGE || !std::isfinite(f)) return false;
     if (endptr == str) return false; // не удалось преобразовать
     // проверяем, остались ли после числа только пробелы
     while (*endptr) {
-        if (!std::isspace(*endptr)) return false;
+        if (!std::isspace(static_cast<unsigned char>(*endptr))) return false;
         endptr++;
     }
     // определяем тип: если есть точка или экспонента, то float
     isFloat = (strchr(str, '.') != nullptr || strchr(str, 'e') != nullptr || strchr(str, 'E') != nullptr);
+    if (!isFloat) {
+        errno = 0;
+        long value = strtol(str, &endptr, 10);
+        if (errno == ERANGE || endptr == str || value < INT_MIN || value > INT_MAX) return false;
+        while (*endptr && std::isspace(static_cast<unsigned char>(*endptr))) ++endptr;
+        if (*endptr) return false;
+    }
     return true;
 }
 
@@ -469,13 +485,11 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                             tinyxml2::XMLNode* parent = childElem->Parent();
                             tinyxml2::XMLNode* prev = childElem->PreviousSibling();
                             tinyxml2::XMLNode* prevPrev = prev ? prev->PreviousSibling() : nullptr;
-                            tinyxml2::XMLElement* copy = childElem->DeepClone(doc)->ToElement();
-                            parent->DeleteChild(childElem);
                             if (prevPrev) {
-                                parent->InsertAfterChild(prevPrev, copy);
+                                parent->InsertAfterChild(prevPrev, childElem);
                             }
                             else {
-                                parent->InsertFirstChild(copy);
+                                parent->InsertFirstChild(childElem);
                             }
                             ctx->xml_modified = true;
                             ImGui::PopID();
@@ -487,10 +501,8 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                         if (ImGui::ArrowButton("##down", ImGuiDir_Down)) {
                             tinyxml2::XMLNode* parent = childElem->Parent();
                             tinyxml2::XMLNode* next = childElem->NextSibling();
-                            tinyxml2::XMLElement* copy = childElem->DeepClone(doc)->ToElement();
-                            parent->DeleteChild(childElem);
                             if (next) {
-                                parent->InsertAfterChild(next, copy);
+                                parent->InsertAfterChild(next, childElem);
                             }
                             ctx->xml_modified = true;
                             ImGui::PopID();
@@ -533,6 +545,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                 parent->DeleteChild(node);
             g_selectedNode = nullptr;
             ctx->xml_modified = true;
+            return;
         }
 
         // Попап для выбора типа дочернего виджета
@@ -607,6 +620,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                 parent->DeleteChild(node);
             g_selectedNode = nullptr;
             ctx->xml_modified = true;
+            return;
         }
     }
     else if (commentNode) {
@@ -625,6 +639,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                 parent->DeleteChild(node);
             g_selectedNode = nullptr;
             ctx->xml_modified = true;
+            return;
         }
     }
     else if (declNode) {
@@ -646,7 +661,7 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         return;
     }
 
-    if (g_selectedNode && g_selectedNode->GetDocument() != ctx->CurrentXMLDoc) {
+    if (g_selectedNode && !ui_safety::ContainsXMLNode(ctx->CurrentXMLDoc, g_selectedNode)) {
         g_selectedNode = nullptr;   // узел из старого документа, сбрасываем выбор
     }
 

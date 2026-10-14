@@ -19,7 +19,8 @@ public:
     GlossyDisplayWidget(const char* lbl, uint32_t addr, float w, float h, bool le,
         int dtype = U16_DEC, bool hex = false, int dig = 0, int dec = 2)
         : LeafWidget(lbl), address(addr), size(w, h), littleEndian(le),
-        dataType(dtype), hexMode(hex), digits(dig), decimalPlaces(dec) {
+        dataType(dtype), hexMode(hex), digits(std::clamp(dig, 0, 63)),
+        decimalPlaces(std::clamp(dec, 0, 63)) {
     }
 
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
@@ -39,16 +40,16 @@ public:
             if (dataType == S08_DEC) {
                 int8_t v = (int8_t)raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*X" : "%X", digits, (uint8_t)v);
+                    snprintf(buf, sizeof(buf), "%0*X", digits, static_cast<unsigned int>(static_cast<uint8_t>(v)));
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*d" : "%d", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*d", digits, v);
             }
             else {
                 uint8_t v = (uint8_t)raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*X" : "%X", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*X", digits, static_cast<unsigned int>(v));
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*u" : "%u", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*u", digits, static_cast<unsigned int>(v));
             }
             break;
         }
@@ -59,16 +60,16 @@ public:
             if (dataType == S16_DEC) {
                 int16_t v = (int16_t)raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*X" : "%X", digits, (uint16_t)v);
+                    snprintf(buf, sizeof(buf), "%0*X", digits, static_cast<unsigned int>(static_cast<uint16_t>(v)));
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*d" : "%d", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*d", digits, v);
             }
             else {
                 uint16_t v = raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*X" : "%X", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*X", digits, static_cast<unsigned int>(v));
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*u" : "%u", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*u", digits, static_cast<unsigned int>(v));
             }
             break;
         }
@@ -79,16 +80,16 @@ public:
             if (dataType == S32_DEC) {
                 int32_t v = (int32_t)raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*X" : "%X", digits, (uint32_t)v);
+                    snprintf(buf, sizeof(buf), "%0*X", digits, (uint32_t)v);
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*d" : "%d", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*d", digits, v);
             }
             else {
                 uint32_t v = raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*X" : "%X", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*X", digits, static_cast<unsigned int>(v));
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*u" : "%u", digits, v);
+                    snprintf(buf, sizeof(buf), "%0*u", digits, static_cast<unsigned int>(v));
             }
             break;
         }
@@ -99,16 +100,16 @@ public:
             if (dataType == S64_DEC) {
                 int64_t v = (int64_t)raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*llX" : "%llX", digits, (unsigned long long)v);
+                    snprintf(buf, sizeof(buf), "%0*llX", digits, (unsigned long long)v);
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*lld" : "%lld", digits, (long long)v);
+                    snprintf(buf, sizeof(buf), "%0*lld", digits, (long long)v);
             }
             else {
                 uint64_t v = raw;
                 if (hexMode)
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*llX" : "%llX", digits, (unsigned long long)v);
+                    snprintf(buf, sizeof(buf), "%0*llX", digits, (unsigned long long)v);
                 else
-                    snprintf(buf, sizeof(buf), digits > 0 ? "%0*llu" : "%llu", digits, (unsigned long long)v);
+                    snprintf(buf, sizeof(buf), "%0*llu", digits, (unsigned long long)v);
             }
             break;
         }
@@ -130,9 +131,9 @@ public:
             uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
             if (hexMode) {
                 if (digits > 0)
-                    snprintf(buf, sizeof(buf), "%0*X", digits, raw);
+                    snprintf(buf, sizeof(buf), "%0*X", digits, static_cast<unsigned int>(raw));
                 else
-                    snprintf(buf, sizeof(buf), "%X", raw);
+                    snprintf(buf, sizeof(buf), "%X", static_cast<unsigned int>(raw));
             }
             else {
                 if (digits > 0)

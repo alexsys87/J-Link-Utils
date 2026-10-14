@@ -22,7 +22,7 @@ public:
             value = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
         }
         char buffer[MAX_ITEM_LEN];
-        snprintf(buffer, sizeof(buffer), format.c_str(), value);
+        ui_safety::FormatScalar(buffer, sizeof(buffer), format.c_str(), value);
         ImGui::LabelText(label.c_str(), "%s", buffer);
     }
 };

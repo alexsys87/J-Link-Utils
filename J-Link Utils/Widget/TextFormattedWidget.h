@@ -19,7 +19,7 @@ public:
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
         int value = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
         char buffer[MAX_ITEM_LEN];
-        _snprintf_s(buffer, sizeof(buffer), format.c_str(), value);
+        ui_safety::FormatScalar(buffer, sizeof(buffer), format.c_str(), value);
         if (hasColor)
             ImGui::TextColored(color, "%s", buffer);
         else

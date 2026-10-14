@@ -2,6 +2,7 @@
 #define __MAIN_H__
 
 #define main SDL_main
+#include <atomic>
 #include <SDL.h>
 #include <SDL_syswm.h>
 
@@ -40,8 +41,7 @@
 // Play it nice with Windows users.
 #ifdef _WIN32
 #define IM_NEWLINE  "\r\n"
-#define snprintf    _snprintf_s
-#define vsnprintf   _vsnprintf
+// Modern MSVC provides standard snprintf/vsnprintf, including safe truncation.
 #define sscanf      sscanf_s
 #define sprintf     sprintf_s
 #define strcpy	    strcpy_s
@@ -124,7 +124,7 @@ typedef struct MainContext {
     bool StateMinimized;
     uint8_t* IOMAP_Data;
     bool Sync;
-    bool StartComunication;
+    std::atomic<bool> StartComunication{false};
 
     tinyxml2::XMLDocument* CurrentXMLDoc; // текущий загруженный XML
 	bool show_style_editor;               // флаг отображения редактора стилей

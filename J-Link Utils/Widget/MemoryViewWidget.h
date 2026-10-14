@@ -17,7 +17,7 @@ class MemoryViewWidget : public UIWidget {
 
 public:
     MemoryViewWidget(const char* lbl, uint32_t base, uint16_t bytes, int bpl = 16, bool le = true)
-        : baseAddress(base), numBytes(bytes), bytesPerLine(bpl), littleEndian(le),
+        : baseAddress(base), numBytes(bytes), bytesPerLine(std::clamp(bpl, 1, 256)), littleEndian(le),
         m_cache(bytes, 0), m_lastUpdateTime(0.0) {
         label = lbl ? lbl : "";
     }
@@ -44,9 +44,13 @@ private:
 
         // ѕосле постановки запроса копируем текущее содержимое IOMAP_Data в кэш
         // (оно может быть устаревшим, но будет обновлено в следующих кадрах)
-        uint32_t offset = baseAddress - ctx->mcu_memory_base;
         SDL_LockMutex(ctx->Datalock);
-        memcpy(m_cache.data(), ctx->IOMAP_Data + offset, numBytes);
+        if (ui_safety::IsMappedRange(baseAddress, ctx->mcu_memory_base, numBytes, IOMAP_SIZE)) {
+            uint32_t offset = baseAddress - ctx->mcu_memory_base;
+            memcpy(m_cache.data(), ctx->IOMAP_Data + offset, numBytes);
+        } else {
+            std::fill(m_cache.begin(), m_cache.end(), 0);
+        }
         SDL_UnlockMutex(ctx->Datalock);
 
         m_lastUpdateTime = now;

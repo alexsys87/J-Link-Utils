@@ -15,7 +15,7 @@ public:
         if (useBool) {
             bool val = DataReadWriteBoolean(ctx, nullptr, nullptr, &addr);
             char buffer[MAX_ITEM_LEN];
-            snprintf(buffer, sizeof(buffer), format.c_str(), val);
+            ui_safety::FormatScalar(buffer, sizeof(buffer), format.c_str(), val);
             if (ImGui::Selectable(buffer, &val)) {
                 uint8_t v = val;
                 DataReadWriteBoolean(ctx, nullptr, &v, &addr);
@@ -24,7 +24,7 @@ public:
         else {
             bool val = DataReadWriteU16(ctx, nullptr, nullptr, &addr) != 0;
             char buffer[MAX_ITEM_LEN];
-            snprintf(buffer, sizeof(buffer), format.c_str(), val);
+            ui_safety::FormatScalar(buffer, sizeof(buffer), format.c_str(), val);
             if (ImGui::Selectable(buffer, &val)) {
                 uint16_t v = val;
                 DataReadWriteU16(ctx, nullptr, &v, &addr);

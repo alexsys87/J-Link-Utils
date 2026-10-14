@@ -187,7 +187,7 @@ _enqueue(lfqueue_t *lfqueue, void* value) {
 	node = (lfqueue_cas_node_t*) lfqueue->_malloc(lfqueue->pl, sizeof(lfqueue_cas_node_t));
 	if (node == NULL) {
 		perror("malloc");
-		return errno;
+		return ENOMEM;
 	}
 	node->value = value;
 	node->next = NULL;
@@ -256,7 +256,9 @@ lfqueue_init_mf(lfqueue_t *lfqueue, void* pl, lfqueue_malloc_fn lfqueue_malloc, 
 	lfqueue_cas_node_t *freebase = lfqueue_malloc(pl, sizeof(lfqueue_cas_node_t));
 	if (base == NULL || freebase == NULL) {
 		perror("malloc");
-		return errno;
+		if (base) lfqueue_free(pl, base);
+		if (freebase) lfqueue_free(pl, freebase);
+		return ENOMEM;
 	}
 	base->value = NULL;
 	base->next = NULL;

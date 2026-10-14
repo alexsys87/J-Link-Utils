@@ -9,7 +9,7 @@ class SliderIntWidget : public LeafWidget {
     std::string format;
 public:
     SliderIntWidget(const char* lbl, uint32_t addr, int minV, int maxV, const char* fmt)
-        : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), format(fmt ? fmt : "%d") {
+        : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), format(ui_safety::ScalarFormatOrDefault(fmt, ui_safety::ScalarKind::Integer)) {
     }
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;

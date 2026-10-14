@@ -58,12 +58,11 @@ size_t getFileNameFromPath(const char* path)
 // ------------------------------------------------------------------
 
 MainContext* allocate_context() {
-    MainContext* ctx = (MainContext*)SDL_malloc(sizeof(MainContext));
+    MainContext* ctx = new (std::nothrow) MainContext{};
     if (ctx == NULL) {
         fprintf(stderr, "Couldn't allocate memory");
         return NULL;
     }
-    SDL_memset(ctx, 0, sizeof(MainContext));
     ctx->Win_width = WINDOW_WIDTH;
     ctx->Win_height = WINDOW_HEIGHT;
     ctx->FontSize = 2;
@@ -71,6 +70,12 @@ MainContext* allocate_context() {
     ctx->Style = 1;
     ctx->Datalock = SDL_CreateMutex();
     ctx->Datacond = SDL_CreateCond();
+    if (!ctx->Datalock || !ctx->Datacond) {
+        if (ctx->Datalock) SDL_DestroyMutex(ctx->Datalock);
+        if (ctx->Datacond) SDL_DestroyCond(ctx->Datacond);
+        delete ctx;
+        return nullptr;
+    }
     ctx->IsClosing = false;
     ctx->StartComunication = false;
     ctx->Sync = 0;
@@ -93,7 +98,7 @@ MainContext* allocate_context() {
         fprintf(stderr, "Failed to allocate 1MB IOMAP memory\n");
         if (ctx->Datacond) SDL_DestroyCond(ctx->Datacond);
         if (ctx->Datalock) SDL_DestroyMutex(ctx->Datalock);
-        SDL_free(ctx);
+        delete ctx;
         return NULL;
     }
     SDL_memset(ctx->IOMAP_Data, 0, 1024 * 1024);
@@ -105,13 +110,31 @@ MainContext* allocate_context() {
     SDL_memset(ctx->jlink_device, 0, sizeof(ctx->jlink_device));
     strcpy(ctx->jlink_device, "Cortex-M0");
 
+    if (lfqueue_init(&ctx->rx_Queue) != 0) {
+        SDL_free(ctx->IOMAP_Data);
+        SDL_DestroyCond(ctx->Datacond);
+        SDL_DestroyMutex(ctx->Datalock);
+        delete ctx;
+        return nullptr;
+    }
+    if (lfqueue_init(&ctx->tx_Queue) != 0) {
+        lfqueue_destroy(&ctx->rx_Queue);
+        SDL_free(ctx->IOMAP_Data);
+        SDL_DestroyCond(ctx->Datacond);
+        SDL_DestroyMutex(ctx->Datalock);
+        delete ctx;
+        return nullptr;
+    }
+
     return ctx;
 }
 
 void free_context(MainContext* ctx)
 {
     if (!ctx) return;
+    StopCommunication(ctx);
     ResetXMLEditorState();
+    ClearAllWindows();
     if (ctx->CurrentXMLDoc) delete ctx->CurrentXMLDoc;
 
     lfqueue_destroy(&ctx->rx_Queue);
@@ -121,7 +144,7 @@ void free_context(MainContext* ctx)
     SDL_DestroyMutex(ctx->Datalock);
 
     SDL_free(ctx->IOMAP_Data);
-    SDL_free(ctx);
+    delete ctx;
 }
 
 // ------------------------------------------------------------------
@@ -162,7 +185,7 @@ bool NewFile(MainContext* ctx) {
     EnsureXmlExtension(ctx->File_path, sizeof(ctx->File_path));
 
     // Обновляем заголовок главного окна
-    sprintf(ctx->File_label, "J-Link Utils - %s", &ctx->File_path[getFileNameFromPath(ctx->File_path)]);
+    SDL_snprintf(ctx->File_label, sizeof(ctx->File_label), "J-Link Utils - %s", &ctx->File_path[getFileNameFromPath(ctx->File_path)]);
 
     // Сохраняем путь в INI
     SaveIniSettings(ctx);
@@ -202,7 +225,7 @@ bool OpenFile(MainContext* ctx)
     SDL_strlcpy(ctx->File_path, s, MAX_PATH);
 
     // Обновляем заголовок главного окна
-    sprintf(ctx->File_label, "J-Link Utils - %s", &ctx->File_path[getFileNameFromPath(ctx->File_path)]);
+    SDL_snprintf(ctx->File_label, sizeof(ctx->File_label), "J-Link Utils - %s", &ctx->File_path[getFileNameFromPath(ctx->File_path)]);
 
     // Сохраняем путь в INI
     SaveIniSettings(ctx);
@@ -766,6 +789,9 @@ void ShowMenuSettings(MainContext* ctx)
     if (ImGui::InputScalar("##mcu_base_menu", ImGuiDataType_U32, &addr, NULL, NULL,
         "%08X", ImGuiInputTextFlags_CharsHexadecimal))
     {
+        // Pending requests are offsets relative to the old base address.
+        // Stop and discard them before changing the mapping.
+        StopCommunication(ctx);
         ctx->mcu_memory_base = addr;
         SaveIniSettings(ctx);
     }
@@ -817,12 +843,12 @@ void ShowMenuSettings(MainContext* ctx)
         int numDevices = JLINKARM_DEVICE_GetInfo(-1, NULL);
         if (numDevices > 0) {
             for (int i = 0; i < numDevices; ++i) {
-                JLINKARM_DEVICE_INFO info;
+                JLINKARM_DEVICE_INFO info{};
                 info.SizeOfStruct = sizeof(JLINKARM_DEVICE_INFO);
-                if (JLINKARM_DEVICE_GetInfo(i, &info) == 0) {
+                if (JLINKARM_DEVICE_GetInfo(i, &info) == 0 && info.sName) {
                     all_devices.push_back(info.sName);
                     std::string lower = info.sName;
-                    for (auto& c : lower) c = tolower(c);
+                    for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
                     all_devices_lower.push_back(lower);
                 }
             }
@@ -831,7 +857,7 @@ void ShowMenuSettings(MainContext* ctx)
         if (all_devices.empty()) {
             all_devices.push_back(ctx->jlink_device);
             std::string lower = ctx->jlink_device;
-            for (auto& c : lower) c = tolower(c);
+            for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
             all_devices_lower.push_back(lower);
         }
 
@@ -854,7 +880,7 @@ void ShowMenuSettings(MainContext* ctx)
         }
         else {
             std::string filter_lower = filter_buf;
-            for (auto& c : filter_lower) c = tolower(c);
+            for (auto& c : filter_lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
             for (size_t i = 0; i < all_devices.size(); ++i) {
                 if (all_devices_lower[i].find(filter_lower) != std::string::npos) {
                     filtered_indices.push_back((int)i);
@@ -894,6 +920,7 @@ void ShowMenuSettings(MainContext* ctx)
             const char* item = all_devices[idx].c_str();
             bool is_selected = (strcmp(item, ctx->jlink_device) == 0);
             if (ImGui::Selectable(item, is_selected)) {
+                if (!is_selected) StopCommunication(ctx);
                 // При клике сразу сохраняем выбранное устройство
                 strncpy(ctx->jlink_device, item, sizeof(ctx->jlink_device) - 1);
                 ctx->jlink_device[sizeof(ctx->jlink_device) - 1] = '\0';
@@ -1144,6 +1171,7 @@ int main(int argc, char* argv[])
     int window_flag = 0;
 
     MainContext* ctx = allocate_context();
+    if (!ctx) return 1;
 
     LoadIniSettings(ctx);
 
@@ -1159,11 +1187,6 @@ int main(int argc, char* argv[])
         delete ctx->CurrentXMLDoc;
         ctx->CurrentXMLDoc = nullptr;
     }
-
-    if (lfqueue_init(&ctx->rx_Queue) == -1)
-        return -1;
-    if (lfqueue_init(&ctx->tx_Queue) == -1)
-        return -1;
 
     // Получаем масштаб DPI (используется для ограничения размеров окна и загрузки шрифтов)
     float dpiScale = GetDPIScale();
@@ -1182,6 +1205,8 @@ int main(int argc, char* argv[])
 
     if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
+        free_context(ctx);
+        SDL_Quit();
         return 1;
     }
 
@@ -1195,6 +1220,8 @@ int main(int argc, char* argv[])
     if (ctx->Wimdow == NULL)
     {
         DEBUG_PRINTF("Can't Create Window");
+        free_context(ctx);
+        SDL_Quit();
         return 1;
     }
     else
@@ -1444,6 +1471,9 @@ int main(int argc, char* argv[])
     // Остановка потока связи перед очисткой
     StopCommunication(ctx);
 
+    // Widgets own SDL textures: destroy them before their renderer and ImGui.
+    ClearAllWindows();
+
     ImGui_ImplSDL2_Shutdown();
     ImGui_ImplSDLRenderer2_Shutdown();
 
@@ -1454,6 +1484,8 @@ int main(int argc, char* argv[])
     ImGui::DestroyContext();
 
     free_context(ctx);
+
+    SDL_Quit();
 
     return 0;
 }

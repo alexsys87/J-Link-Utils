@@ -10,7 +10,7 @@ class InputFloatWidget : public LeafWidget {
     bool littleEndian;
 public:
     InputFloatWidget(const char* lbl, uint32_t addr, float minV, float maxV, float st, float fast, const char* fmt, bool le)
-        : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), step(st), fastStep(fast), format(fmt ? fmt : "%.3f"), littleEndian(le) {
+        : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), step(st), fastStep(fast), format(ui_safety::ScalarFormatOrDefault(fmt, ui_safety::ScalarKind::Floating)), littleEndian(le) {
     }
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
