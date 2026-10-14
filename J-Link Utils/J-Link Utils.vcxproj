@@ -118,7 +118,7 @@
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{AE8A8EDB-0187-497B-987E-2ABC007F79D0}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>MotorConfig</RootNamespace>
+    <RootNamespace>JLinkUtils</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>J-Link Utils</ProjectName>
   </PropertyGroup>
