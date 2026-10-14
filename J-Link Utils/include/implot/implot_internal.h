@@ -294,10 +294,10 @@ struct ImPlotDateTimeSpec {
         UseISO8601     = use_iso_8601;
         Use24HourClock = use_24_hr_clk;
     }
-    ImPlotDateFmt Date;
-    ImPlotTimeFmt Time;
-    bool UseISO8601;
-    bool Use24HourClock;
+    ImPlotDateFmt Date           = ImPlotDateFmt_None;
+    ImPlotTimeFmt Time           = ImPlotTimeFmt_None;
+    bool          UseISO8601     = false;
+    bool          Use24HourClock = false;
 };
 
 // Two part timestamp struct.
@@ -558,7 +558,7 @@ struct ImPlotTick
     bool   Major;
     bool   ShowLabel;
     int    Level;
-    int    Idx;
+    int    Idx = -1;
 
     ImPlotTick() {
         PlotPos      = 0;
@@ -668,7 +668,7 @@ struct ImPlotAxis
     ImPlotTicker         Ticker;
     ImPlotFormatter      Formatter;
     void*                FormatterData;
-    char                 FormatSpec[16];
+    char                 FormatSpec[16] = {};
     ImPlotLocator        Locator;
 
     double*              LinkedMin;
@@ -703,6 +703,7 @@ struct ImPlotAxis
         Flags            = PreviousFlags = ImPlotAxisFlags_None;
         Range.Min        = 0;
         Range.Max        = 1;
+        RangeCond        = ImPlotCond_None;
         Scale            = ImPlotScale_Linear;
         TransformForward = TransformInverse = nullptr;
         TransformData    = nullptr;
@@ -715,13 +716,15 @@ struct ImPlotAxis
         PickerLevel      = 0;
         Datum1           = Datum2 = 0;
         PixelMin         = PixelMax = 0;
+        ScaleMin         = ScaleMax = 0;
+        ScaleToPixel     = 0;
         LabelOffset      = -1;
         ColorMaj         = ColorMin = ColorTick = ColorTxt = ColorBg = ColorHov = ColorAct = 0;
         ColorHiLi        = IM_COL32_BLACK_TRANS;
         Formatter        = nullptr;
         FormatterData    = nullptr;
         Locator          = nullptr;
-        Enabled          = Hovered = Held = FitThisFrame = HasRange = HasFormatSpec = false;
+        Enabled          = Vertical = Hovered = Held = FitThisFrame = HasRange = HasFormatSpec = false;
         ShowDefaultTicks = true;
     }
 

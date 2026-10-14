@@ -649,6 +649,9 @@ struct MemoryEditor
     {
         const char* descs[] = { "Bin", "Dec", "Hex" };
         IM_ASSERT(data_format >= 0 && data_format < DataFormat_COUNT);
+        // IM_ASSERT is compiled out in Release, so check both bounds before indexing.
+        if (data_format < 0 || data_format >= DataFormat_COUNT)
+            return "";
         return descs[data_format];
     }
 

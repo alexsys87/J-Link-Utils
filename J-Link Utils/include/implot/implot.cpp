@@ -1065,10 +1065,10 @@ ImPlotTime FloorTime(const ImPlotTime& t, ImPlotTimeUnit unit) {
         case ImPlotTimeUnit_S:   return ImPlotTime(t.S, 0);
         case ImPlotTimeUnit_Ms:  return ImPlotTime(t.S, (t.Us / 1000) * 1000);
         case ImPlotTimeUnit_Us:  return t;
-        case ImPlotTimeUnit_Yr:  gp.Tm.tm_mon  = 0; // fall-through
-        case ImPlotTimeUnit_Mo:  gp.Tm.tm_mday = 1; // fall-through
-        case ImPlotTimeUnit_Day: gp.Tm.tm_hour = 0; // fall-through
-        case ImPlotTimeUnit_Hr:  gp.Tm.tm_min  = 0; // fall-through
+        case ImPlotTimeUnit_Yr:  gp.Tm.tm_mon  = 0; [[fallthrough]];
+        case ImPlotTimeUnit_Mo:  gp.Tm.tm_mday = 1; [[fallthrough]];
+        case ImPlotTimeUnit_Day: gp.Tm.tm_hour = 0; [[fallthrough]];
+        case ImPlotTimeUnit_Hr:  gp.Tm.tm_min  = 0; [[fallthrough]];
         case ImPlotTimeUnit_Min: gp.Tm.tm_sec  = 0; break;
         default:                 return t;
     }
