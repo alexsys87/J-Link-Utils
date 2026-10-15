@@ -3,6 +3,7 @@
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_sdlrenderer2.h"
 #include <SDL.h>
+#include "MainWindowChrome.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -92,7 +93,7 @@ static void TestFullDpiRendering()
 {
     ConfigureDpiAwareness();
     assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
-    SDL_Window* window = SDL_CreateWindow("DPI test", 0, 0, 640, 480, SDL_WINDOW_HIDDEN);
+    SDL_Window* window = SDL_CreateWindow("DPI test", 0, 0, 640, 480, SDL_WINDOW_HIDDEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE);
     assert(window);
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -116,19 +117,24 @@ static void TestFullDpiRendering()
         assert(ImGui_ImplSDLRenderer2_Init(renderer));
 
         int clicks = 0;
+        int titleClicks[3] = {};
+        MainWindowChrome chrome;
         // Two warm-up frames let a newly created ImGui window leave its initial
         // hidden/layout frame before the mouse press is delivered.
-        for (int phase = 0; phase < 5; ++phase) {
+        for (int phase = 0; phase < 14; ++phase) {
             // Real SDL event -> platform backend -> ImGui logical hit testing.
             SDL_Event event = {};
             event.type = SDL_MOUSEMOTION;
             event.motion.windowID = SDL_GetWindowID(window);
-            event.motion.x = 100;
-            event.motion.y = 100;
+            const int control = phase >= 11 ? 2 : phase >= 8 ? 1 : 0;
+            const float titleHeight = 13.0f + ImGui::GetStyle().FramePadding.y * 2.0f;
+            const float buttonWidth = titleHeight * 1.6f;
+            event.motion.x = phase < 5 ? 100 : (int)(640 - buttonWidth * (2.5f - control));
+            event.motion.y = phase < 5 ? 100 : (int)(titleHeight * 0.5f);
             ImGui_ImplSDL2_ProcessEvent(&event);
-            if (phase == 2 || phase == 3) {
+            if (phase == 2 || phase == 3 || phase == 5 || phase == 6 || phase == 8 || phase == 9 || phase == 11 || phase == 12) {
                 event = {};
-                event.type = phase == 2 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+                event.type = (phase == 2 || phase == 5 || phase == 8 || phase == 11) ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
                 event.button.windowID = SDL_GetWindowID(window);
                 event.button.button = SDL_BUTTON_LEFT;
                 ImGui_ImplSDL2_ProcessEvent(&event);
@@ -143,14 +149,29 @@ static void TestFullDpiRendering()
             assert(io.FontDefault == selected);
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(640, 480));
-            ImGui::Begin("DPI widgets", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
+            ImGui::Begin("###ChromeTest", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
+            const MainWindowAction action = DrawMainWindowTitleBar(window, "DPI widgets with a long title", chrome);
+            if (action != MainWindowAction::None) {
+                const int index = action == MainWindowAction::Minimize ? 0 : action == MainWindowAction::ToggleMaximize ? 1 : 2;
+                ++titleClicks[index];
+                assert(phase == 6 || phase == 9 || phase == 12);
+                assert(index == control);
+            }
             assert(ImGui::GetFontSize() == 13.0f);
             assert(std::fabs(ImGui::GetFontBaked()->RasterizerDensity - scale) < 0.01f);
-            const SDL_Point title = {100, 5}, collapse = {5, 5}, close = {635, 5}, menu = {100, 30};
-            assert(MainWindowHitTest(window, &title, nullptr) == SDL_HITTEST_DRAGGABLE);
-            assert(MainWindowHitTest(window, &collapse, nullptr) == SDL_HITTEST_NORMAL);
-            assert(MainWindowHitTest(window, &close, nullptr) == SDL_HITTEST_NORMAL);
-            assert(MainWindowHitTest(window, &menu, nullptr) == SDL_HITTEST_NORMAL);
+            const SDL_Point title = {100, 10}, buttons = {620, 10}, menu = {100, 30};
+            assert(MainWindowHitTest(window, &title, &chrome) == SDL_HITTEST_DRAGGABLE);
+            assert(MainWindowHitTest(window, &buttons, &chrome) == SDL_HITTEST_NORMAL);
+            assert(MainWindowHitTest(window, &menu, &chrome) == SDL_HITTEST_NORMAL);
+            const SDL_Point edges[] = {{0, 0}, {320, 0}, {639, 0}, {0, 240}, {639, 240}, {0, 479}, {320, 479}, {639, 479}};
+            const SDL_HitTestResult expected[] = {SDL_HITTEST_RESIZE_TOPLEFT, SDL_HITTEST_RESIZE_TOP, SDL_HITTEST_RESIZE_TOPRIGHT,
+                SDL_HITTEST_RESIZE_LEFT, SDL_HITTEST_RESIZE_RIGHT, SDL_HITTEST_RESIZE_BOTTOMLEFT, SDL_HITTEST_RESIZE_BOTTOM, SDL_HITTEST_RESIZE_BOTTOMRIGHT};
+            for (int i = 0; i < 8; ++i)
+                assert(MainWindowHitTest(window, &edges[i], &chrome) == expected[i]);
+            chrome.blocked = true;
+            assert(MainWindowHitTest(window, &title, &chrome) == SDL_HITTEST_NORMAL);
+            assert(MainWindowHitTest(window, &edges[0], &chrome) == SDL_HITTEST_NORMAL);
+            chrome.blocked = false;
             ImGui::SetCursorPos(ImVec2(40, 80));
             if (ImGui::Button("Logical button", ImVec2(120, 40))) ++clicks;
             assert(ImGui::GetItemRectMin().x == 40 && ImGui::GetItemRectMin().y == 80);
@@ -174,6 +195,12 @@ static void TestFullDpiRendering()
             assert(!IsRed(surface, (int)(270 * scale), (int)(240 * scale)));
         }
         assert(clicks == 1);
+        for (int count : titleClicks) assert(count == 1);
+        bool closing = false;
+        ApplyMainWindowAction(window, MainWindowAction::None, closing);
+        assert(!closing);
+        ApplyMainWindowAction(window, MainWindowAction::Close, closing);
+        assert(closing);
         ImGui_ImplSDLRenderer2_Shutdown();
         ImGui_ImplSDL2_Shutdown();
         SDL_DestroyRenderer(renderer);
@@ -190,5 +217,6 @@ int main()
     TestFonts(true);
     TestFullDpiRendering();
     puts("FreeType fonts: system/fallback, Cyrillic, selection and 100-200% DPI passed");
+    puts("ImGui chrome: all eight resize zones, title/buttons/menu separation and control clicks at 100-200% DPI passed");
     puts("Full DPI: logical layout, SDL mouse clicks, framebuffer density and rendered clipping passed");
 }

@@ -38,6 +38,9 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #include "DesignMode.h"
 #include "widget_common.h"
 #include "res/app_icon.h"
+#include "MainWindowChrome.h"
+
+static MainWindowChrome g_MainWindowChrome;
 
 #ifdef _WIN32
 // The supplied JLink.lib/JLink_x64.lib expose a cdecl, explicit DLL loader.
@@ -308,6 +311,8 @@ void ConfigureDpiAwareness() {
     // SDL also resizes the native window when its monitor DPI changes. This
     // scales ALL geometry, including explicit XML sizes and custom draw lists.
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
+    // Keep native taskbar/system-menu/minimize behavior without drawing an OS frame.
+    SDL_SetHint("SDL_BORDERLESS_WINDOWED_STYLE", "1");
 #endif
 }
 
@@ -327,21 +332,6 @@ void PrepareUiFrame(SDL_Renderer* renderer) {
     if (io.FontDefault)
         ImGui::GetStyle().FontSizeBase = io.FontDefault->LegacySize;
     ImGui::NewFrame();
-}
-
-static SDL_HitTestResult SDLCALL MainWindowHitTest(SDL_Window* window, const SDL_Point* point, void*) {
-    if (!ImGui::GetCurrentContext()) return SDL_HITTEST_NORMAL;
-    int width;
-    SDL_GetWindowSize(window, &width, nullptr);
-    const float titleHeight = ImGui::GetFrameHeight();
-    // Keep the collapse/close buttons and the menu bar interactive. Let the OS
-    // move the title bar: adding client deltas to desktop coordinates is not
-    // valid across SDL's mixed-DPI monitor origins. Native dragging also lets
-    // Windows apply WM_DPICHANGED continuously while crossing monitors.
-    if (point->y >= 0 && point->y < titleHeight &&
-        point->x > titleHeight && point->x < width - titleHeight)
-        return SDL_HITTEST_DRAGGABLE;
-    return SDL_HITTEST_NORMAL;
 }
 
 // ------------------------------------------------------------------
@@ -1102,28 +1092,25 @@ void ShowAbout(bool* p_open)
     ImGui::End();
 }
 
-static void MenuWindow(bool* p_open, MainContext* ctx)
+static void MenuWindow(MainContext* ctx)
 {
-    static ImVec2 prev_size;
-
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2((float)ctx->Win_width, (float)ctx->Win_height), ImGuiCond_Once);
+    // The native client area is the only source of truth. Never resize the OS
+    // window to fit an internal ImGui window (or its collapsed title bar).
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
+    ImGui::SetNextWindowCollapsed(false, ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.9f);
-    // "###" keeps the window ID stable while the visible title follows the opened file.
-    char title[sizeof(ctx->File_label) + 16];
-    SDL_snprintf(title, sizeof(title), "%s###MainWindow", ctx->File_label[0] ? ctx->File_label : "J-Link Utils");
-    if (ImGui::Begin(title, p_open, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus))
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoBringToFrontOnFocus;
+    if (ImGui::Begin("###MainWindow", nullptr, flags))
     {
-        ImVec2 size = ImGui::GetWindowSize();
-        // Persist logical dimensions, never physical pixels from a monitor.
-        ctx->Win_width = (int)size.x;
-        ctx->Win_height = (int)size.y;
-        ctx->StateMinimized = 0;
-        if (prev_size.x != size.x || prev_size.y != size.y)
-        {
-            SDL_SetWindowSize(ctx->Wimdow, (int)size.x, (int)size.y);
-            prev_size = size;
-        }
+        const char* title = ctx->File_label[0] ? ctx->File_label : "J-Link Utils";
+        if (SDL_strcmp(SDL_GetWindowTitle(ctx->Wimdow), title) != 0)
+            SDL_SetWindowTitle(ctx->Wimdow, title);
+        ApplyMainWindowAction(ctx->Wimdow,
+            DrawMainWindowTitleBar(ctx->Wimdow, title, g_MainWindowChrome), ctx->IsClosing);
 
         if (ImGui::BeginMenuBar())
         {
@@ -1171,18 +1158,8 @@ static void MenuWindow(bool* p_open, MainContext* ctx)
                 : "No XML file loaded. Use File > New or File > Open.");
         }
     }
-    else
-    {
-        const ImVec2 size = ImGui::GetWindowSize();
-        if (prev_size.x != size.x || prev_size.y != size.y)
-        {
-            prev_size = size;
-            SDL_SetWindowSize(ctx->Wimdow, (int)size.x, (int)size.y);
-        }
-        ctx->StateMinimized = 1;
-    }
-
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 
@@ -1320,7 +1297,7 @@ int main(int argc, char* argv[])
     if (ctx->TopMost)
         window_flag = SDL_WINDOW_ALWAYS_ON_TOP;
 
-    ctx->Wimdow = SDL_CreateWindow("J-Link Utils", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, ctx->Win_width, ctx->Win_height, SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_BORDERLESS | window_flag);
+    ctx->Wimdow = SDL_CreateWindow("J-Link Utils", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, ctx->Win_width, ctx->Win_height, SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | window_flag);
 
     if (ctx->Wimdow == NULL)
     {
@@ -1366,7 +1343,7 @@ int main(int argc, char* argv[])
     else
         SDL_Log("Renderer Initialized successfully");
 
-    SDL_SetWindowResizable(ctx->Wimdow, SDL_TRUE);
+    SDL_SetWindowMinimumSize(ctx->Wimdow, 240, 120);
 
     g_AppIconTexture = CreateAppIconTexture(ctx->Renderer);
 
@@ -1417,8 +1394,8 @@ int main(int argc, char* argv[])
     default: ImGui::StyleColorsNord(); break;
     }
 
-    if (SDL_SetWindowHitTest(ctx->Wimdow, MainWindowHitTest, nullptr) != 0)
-        SDL_Log("Native title-bar dragging is unavailable: %s", SDL_GetError());
+    if (SDL_SetWindowHitTest(ctx->Wimdow, MainWindowHitTest, &g_MainWindowChrome) != 0)
+        SDL_Log("Native title-bar dragging/resizing is unavailable: %s", SDL_GetError());
 
     // Frame rate limiting
     auto last_time = std::chrono::steady_clock::now();
@@ -1434,7 +1411,6 @@ int main(int argc, char* argv[])
         StartCommunication(ctx);
     }
 
-    bool show = true;
     while (!ctx->IsClosing)
     {
         SDL_Event event;
@@ -1450,12 +1426,9 @@ int main(int argc, char* argv[])
                 ctx->IsClosing = true;
                 break;
             case SDL_WINDOWEVENT:
-                if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && !ctx->StateMinimized) {
-                    // Keep the root window aligned after a native resize/snap;
-                    // SDL event dimensions are already in logical points.
-                    ImGui::SetWindowSize("###MainWindow",
-                        ImVec2((float)event.window.data1, (float)event.window.data2));
-                }
+                if (event.window.windowID != SDL_GetWindowID(ctx->Wimdow)) break;
+                if (event.window.event == SDL_WINDOWEVENT_CLOSE)
+                    ctx->IsClosing = true;
                 break;
             case SDL_KEYDOWN:
                 break;
@@ -1491,18 +1464,22 @@ int main(int argc, char* argv[])
 
         }
 
-        if (!show) ctx->IsClosing = true;
+        if (ctx->IsClosing) break;
+        const Uint32 flags = SDL_GetWindowFlags(ctx->Wimdow);
+        ctx->StateMinimized = (flags & SDL_WINDOW_MINIMIZED) != 0;
+        if (ctx->StateMinimized) {
+            // Keep pumping restore/close events without rendering a hidden UI.
+            SDL_Delay(25);
+            last_time = std::chrono::steady_clock::now();
+            continue;
+        }
+        // Preserve normal logical dimensions, not a maximized monitor's size.
+        if (!(flags & SDL_WINDOW_MAXIMIZED))
+            SDL_GetWindowSize(ctx->Wimdow, &ctx->Win_width, &ctx->Win_height);
         PrepareUiFrame(ctx->Renderer);
 
-
-        if (!ctx->StateMinimized)
-        {
-
-            Draw_Window(ctx);
-
-        }
-
-        MenuWindow(&show, ctx);
+        Draw_Window(ctx);
+        MenuWindow(ctx);
 
         if (ctx->show_xml_editor && ctx->CurrentXMLDoc) {
             ShowWidgetEditor(&ctx->show_xml_editor, ctx);
@@ -1542,6 +1519,7 @@ int main(int argc, char* argv[])
 
     // Stop the communication thread before cleanup
     StopCommunication(ctx);
+    SaveIniSettings(ctx);
 
     // Widgets own SDL textures: destroy them before their renderer and ImGui.
     ClearAllWindows();

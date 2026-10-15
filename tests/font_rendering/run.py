@@ -29,7 +29,13 @@ loader = function(source, 'void LoadFonts(MainContext* ctx)')
 # Check Windows-specific wiring; Linux cannot exercise WM_DPICHANGED itself.
 configuration = function(source, 'void ConfigureDpiAwareness()')
 frame = function(source, 'void PrepareUiFrame(SDL_Renderer* renderer)')
-hit_test = function(source, 'static SDL_HitTestResult SDLCALL MainWindowHitTest(')
+chrome = (ROOT / 'MainWindowChrome.h').read_text()
+menu = function(source, 'static void MenuWindow(')
+assert 'SDL_SetWindowSize(' not in menu
+assert 'ImGui::GetIO().DisplaySize, ImGuiCond_Always' in menu
+assert 'ImGuiWindowFlags_NoCollapse' in menu and 'ImGuiWindowFlags_NoResize' in menu
+assert 'SDL_MinimizeWindow(window)' in chrome
+assert 'SDL_MaximizeWindow(window)' in chrome and 'SDL_RestoreWindow(window)' in chrome
 assert 'SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2")' in configuration
 assert 'SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1")' in configuration
 entry = function(source, 'int main(int argc, char* argv[])')
@@ -44,13 +50,13 @@ assert 'io.Fonts->Build()' not in loader
 
 with tempfile.TemporaryDirectory(prefix='font-rendering-') as directory:
     build = Path(directory)
-    (build / 'loader.h').write_text(configuration + frame + hit_test + loader)
+    (build / 'loader.h').write_text(configuration + frame + loader)
     flags = shlex.split(subprocess.check_output(
         ['pkg-config', '--cflags', '--libs', 'freetype2', 'sdl2'], text=True))
     command = [os.environ.get('CXX', 'g++'), '-std=c++17', '-g', '-O0',
                '-fno-omit-frame-pointer', '-fsanitize=address,undefined',
                '-fno-pie', '-no-pie', '-I', str(build),
-               '-I', str(ROOT / 'include/imgui'),
+               '-I', str(ROOT / 'include/imgui'), '-I', str(ROOT),
                str(HERE / 'font_rendering.cpp')]
     command += [str(ROOT / 'include/imgui' / name) for name in (
         'imgui.cpp', 'imgui_draw.cpp', 'imgui_widgets.cpp', 'imgui_tables.cpp',
