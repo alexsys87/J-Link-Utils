@@ -1,7 +1,7 @@
 // gif_loader.cpp
 #define GIF_LOAD_IMPLEMENTATION
 #pragma warning(push)
-#pragma warning(disable: 4244) // отключаем предупреждение о потере данных
+#pragma warning(disable: 4244) // disable the possible loss of data warning
 #include "gif_load.h"
 #pragma warning(pop)
 

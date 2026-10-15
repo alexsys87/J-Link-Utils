@@ -2,14 +2,14 @@
 #include "widget_common.h"
 #include <cmath>
 
-// Типы данных для значения
+// Value data types
 enum TankDataType {
     TANK_FLOAT = 0,
     TANK_U16 = 1,
     TANK_S16 = 2,
     TANK_U32 = 3,
     TANK_S32 = 4,
-    // можно добавить другие
+    // more can be added
 };
 
 class TankWidget : public UIWidget {
@@ -23,7 +23,7 @@ class TankWidget : public UIWidget {
     ImU32 liquidColor;
     ImU32 metalColor;
     bool littleEndian;
-    int dataType; // используем значения из enum, но int для простоты
+    int dataType; // values from the enum, int for simplicity
 
 public:
     TankWidget(const char* lbl, uint32_t addr, float minV, float maxV,
@@ -37,7 +37,7 @@ public:
 
         float value = 0.0f;
 
-        // Чтение в зависимости от типа данных
+        // Read according to the data type
         if (dataType == TANK_FLOAT) {
             if (littleEndian) {
                 uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
@@ -100,23 +100,20 @@ private:
         liquidLevel = ImClamp(liquidLevel, 0.0f, 1.0f);
         float liquidY = pos.y + height - margin - liquidLevel * innerHeight;
 
-        // --- Металлический корпус с градиентом и бликами ---
-        // Разложим metalColor на компоненты
-        float r = ((metalColor >> 16) & 0xFF) / 255.0f;
-        float g = ((metalColor >> 8) & 0xFF) / 255.0f;
-        float b = (metalColor & 0xFF) / 255.0f;
-        float a = ((metalColor >> 24) & 0xFF) / 255.0f; // обычно 255
+        // --- Metal body with a gradient and highlights ---
+        // Lighter and darker metal; IM_COL32 keeps red in the low byte and the
+        // float conversion clamps the brightened channels instead of overflowing.
+        const ImVec4 metal = ImGui::ColorConvertU32ToFloat4(metalColor);
+        ImU32 metalLight = ImGui::ColorConvertFloat4ToU32(ImVec4(metal.x * 1.2f, metal.y * 1.2f, metal.z * 1.2f, metal.w));
+        ImU32 metalDark = ImGui::ColorConvertFloat4ToU32(ImVec4(metal.x * 0.7f, metal.y * 0.7f, metal.z * 0.7f, metal.w));
 
-        ImU32 metalLight = IM_COL32((int)(r * 255 * 1.2f), (int)(g * 255 * 1.2f), (int)(b * 255 * 1.2f), (int)(a * 255));
-        ImU32 metalDark = IM_COL32((int)(r * 255 * 0.7f), (int)(g * 255 * 0.7f), (int)(b * 255 * 0.7f), (int)(a * 255));
-
-        // Основной корпус (градиент сверху вниз)
+        // Main body (gradient from top to bottom)
         draw->AddRectFilledMultiColor(
             bb.Min, bb.Max,
             metalLight, metalLight, metalDark, metalDark
         );
 
-        // Блик в верхней части
+        // Highlight at the top
         float highlightHeight = height * 0.15f;
         ImVec2 hlMin(bb.Min.x, bb.Min.y);
         ImVec2 hlMax(bb.Max.x, bb.Min.y + highlightHeight);
@@ -126,13 +123,13 @@ private:
             IM_COL32(255, 255, 255, 10), IM_COL32(255, 255, 255, 10)
         );
 
-        // Внешняя обводка
+        // Outer outline
         draw->AddRect(bb.Min, bb.Max, col_border, style.FrameRounding, 0, 2.0f);
 
-        // Внутренняя полость (стекло) с градиентом
+        // Inner cavity (glass) with a gradient
         ImVec2 innerMin(pos.x + margin, pos.y + margin);
         ImVec2 innerMax(pos.x + width - margin, pos.y + height - margin);
-        // Стекло: полупрозрачное с голубоватым оттенком и градиентом от света
+        // Glass: translucent, slightly bluish, with a light gradient
         draw->AddRectFilledMultiColor(
             innerMin, innerMax,
             IM_COL32(200, 220, 240, 30), IM_COL32(200, 220, 240, 30),
@@ -140,24 +137,20 @@ private:
         );
         draw->AddRect(innerMin, innerMax, IM_COL32(100, 100, 120, 100), style.FrameRounding * 0.7f, 0, 1.0f);
 
-        // Жидкость с градиентом и пузырьками (для красоты)
+        // Liquid with a gradient and bubbles (cosmetic)
         if (liquidLevel > 0.0f) {
             ImVec2 liqMin(innerMin.x, liquidY);
             ImVec2 liqMax(innerMax.x, innerMax.y);
-            // градиент жидкости (светлее сверху)
-            ImU32 liqLight = liquidColor; // можно сделать светлее
-            ImU32 liqDark = IM_COL32(
-                (int)(((liquidColor >> 16) & 0xFF) * 0.7f),
-                (int)(((liquidColor >> 8) & 0xFF) * 0.7f),
-                (int)((liquidColor & 0xFF) * 0.7f),
-                (int)(((liquidColor >> 24) & 0xFF))
-            );
+            // liquid gradient (lighter at the top)
+            ImU32 liqLight = liquidColor; // could be made lighter
+            const ImVec4 liquid = ImGui::ColorConvertU32ToFloat4(liquidColor);
+            ImU32 liqDark = ImGui::ColorConvertFloat4ToU32(ImVec4(liquid.x * 0.7f, liquid.y * 0.7f, liquid.z * 0.7f, liquid.w));
             draw->AddRectFilledMultiColor(
                 liqMin, liqMax,
                 liqLight, liqLight, liqDark, liqDark
             );
 
-            // Пузырьки (несколько полупрозрачных кружков)
+            // Bubbles (a few translucent circles)
             if (liquidLevel > 0.2f) {
                 for (int i = 0; i < 5; ++i) {
                     float bubbleX = innerMin.x + (i * innerWidth / 6.0f) + innerWidth / 12.0f;
@@ -168,14 +161,14 @@ private:
             }
         }
 
-        // Блик на поверхности жидкости
+        // Highlight on the liquid surface
         if (liquidLevel > 0.0f && liquidLevel < 1.0f) {
             draw->AddLine(ImVec2(innerMin.x + 4, liquidY),
                 ImVec2(innerMax.x - 4, liquidY),
                 IM_COL32(255, 255, 255, 180), 2.0f);
         }
 
-        // Шкала сбоку (риски и цифры)
+        // Side scale (ticks and numbers)
         int numTicks = 5;
         for (int i = 0; i <= numTicks; ++i) {
             float t = static_cast<float>(i) / numTicks;
@@ -190,20 +183,20 @@ private:
             draw->AddText(ImVec2(innerMax.x + 20, y - textSize.y * 0.5f), col_text, buf);
         }
 
-        // Цифровое табло снизу с рамкой
+        // Digital display with a frame at the bottom
         char valBuf[32];
         snprintf(valBuf, sizeof(valBuf), "%.1f %s", value, unit);
         ImVec2 valSize = ImGui::CalcTextSize(valBuf);
         float panelWidth = valSize.x + 20;
         float panelHeight = valSize.y + 8;
         ImVec2 panelPos(pos.x + (width - panelWidth) * 0.5f, pos.y + height + 5);
-        // фон табло
+        // display background
         draw->AddRectFilled(panelPos, ImVec2(panelPos.x + panelWidth, panelPos.y + panelHeight), IM_COL32(0, 0, 0, 180), 4.0f);
         draw->AddRect(panelPos, ImVec2(panelPos.x + panelWidth, panelPos.y + panelHeight), col_border, 4.0f);
-        // текст
+        // text
         draw->AddText(ImVec2(panelPos.x + 10, panelPos.y + 4), col_text, valBuf);
 
-        // Занимаемое место (включая табло)
+        // Reserved space (including the display)
         ImGui::Dummy(ImVec2(width, height + panelHeight + 10));
     }
 };

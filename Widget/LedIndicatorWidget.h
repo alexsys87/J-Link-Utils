@@ -1,6 +1,6 @@
 #pragma once
 #include "widget_common.h"
-#include "imgui_internal.h"  // для ImGuiItemFlags_Disabled
+#include "imgui_internal.h"  // ImGuiItemFlags_Disabled
 #include <cmath>
 
 class LedIndicatorWidget : public LeafWidget {
@@ -8,7 +8,7 @@ class LedIndicatorWidget : public LeafWidget {
     float radius;
     ImU32 colorOn;
     ImU32 colorOff;
-    bool littleEndian;   // для чтения значения
+    bool littleEndian;   // for reading the value
 
 public:
     LedIndicatorWidget(const char* lbl, uint32_t addr, float rad, ImU32 onCol, ImU32 offCol, bool le)
@@ -39,7 +39,7 @@ private:
         ImGui::ItemSize(bb);
         if (!ImGui::ItemAdd(bb, 0)) return;
 
-        // Проверяем, отключён ли элемент через флаги (например, при использовании BeginDisabled)
+        // Is the item disabled through the flags (e.g. with BeginDisabled)?
         bool disabled = (ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) != 0;
 
         ImU32 baseColor;
@@ -50,14 +50,14 @@ private:
             baseColor = state ? colorOn : colorOff;
         }
 
-        // Основной круг
+        // Main circle
         draw->AddCircleFilled(center, radius, baseColor, 32);
 
-        // Блик (светлый полупрозрачный круг в верхней левой части)
+        // Highlight (light translucent circle at the top left)
         ImVec2 highlightPos = ImVec2(center.x - radius * 0.25f, center.y - radius * 0.25f);
         draw->AddCircleFilled(highlightPos, radius * 0.3f, IM_COL32(255, 255, 255, 100), 16);
 
-        // Внешнее свечение (glow) – только для включённого состояния
+        // Outer glow, only when on
         if (state && !disabled) {
             for (int i = 0; i < 3; ++i) {
                 float r = radius + i * 2.0f;
@@ -66,7 +66,7 @@ private:
             }
         }
 
-        // Текст под индикатором (если задан)
+        // Text under the indicator (if set)
         if (label && label[0] != '\0') {
             ImVec2 textSize = ImGui::CalcTextSize(label);
             ImVec2 textPos = ImVec2(center.x - textSize.x * 0.5f, center.y + radius + 5.0f);

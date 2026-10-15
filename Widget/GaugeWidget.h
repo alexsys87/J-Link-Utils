@@ -12,7 +12,7 @@ class GaugeWidget : public UIWidget {
     float minVal;
     float maxVal;
     float radius;
-    std::string unit;          // единица измерения (например "km/h", "rpm")
+    std::string unit;          // unit (e.g. "km/h", "rpm")
     bool littleEndian;
 
 public:
@@ -23,7 +23,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        // Читаем значение как float (предполагается 32-битное)
+        // Read the value as a 32-bit float
         float value;
         if (littleEndian) {
             uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
@@ -59,8 +59,8 @@ private:
         ImDrawList* draw = window->DrawList;
         ImVec2 center = ImVec2(pos.x + radius, pos.y + radius);
 
-        // Цвета из стиля с небольшими модификациями
-        ImU32 col_bg_dark = ImGui::GetColorU32(ImGuiCol_FrameBg);          // тёмный фон
+        // Style colors with small adjustments
+        ImU32 col_bg_dark = ImGui::GetColorU32(ImGuiCol_FrameBg);          // dark background
         ImU32 col_bg_light = ImGui::ColorConvertFloat4ToU32(ImVec4(
             style.Colors[ImGuiCol_FrameBg].x * 1.2f,
             style.Colors[ImGuiCol_FrameBg].y * 1.2f,
@@ -73,13 +73,13 @@ private:
         ImU32 col_accent = ImGui::GetColorU32(ImGuiCol_SliderGrabActive);
         ImU32 col_display_bg = ImGui::GetColorU32(ImGuiCol_WindowBg);
 
-        // Параметры шкалы
+        // Scale parameters
         float start_angle = 150.0f;
         float end_angle = 390.0f;
         float angle_range = end_angle - start_angle;
 
-        // --- Фон циферблата с радиальным градиентом ---
-        // Имитация градиента несколькими концентрическими окружностями
+        // --- Dial background with a radial gradient ---
+        // Gradient imitated by several concentric circles
         for (int i = 0; i < 5; i++) {
             float t = i / 4.0f;
             float r = radius * (0.7f + t * 0.3f);
@@ -92,114 +92,106 @@ private:
             draw->AddCircleFilled(center, r, col, 64);
         }
 
-        // Внешний ободок с фаской
+        // Beveled outer rim
         draw->AddCircle(center, radius, col_border, 64, 2.0f);
         draw->AddCircle(center, radius * 0.96f, col_border, 64, 1.0f);
 
-        // --- Цветные зоны (дуги) с небольшим свечением ---
+        // --- Colored zones (arcs) with a slight glow ---
         auto draw_arc_zone = [&](float val_start, float val_end, ImU32 color, float thickness_scale = 1.0f) {
             float a_start = DegToRad(start_angle + (val_start / max_val) * angle_range);
             float a_end = DegToRad(start_angle + (val_end / max_val) * angle_range);
-            // Основная дуга
+            // Main arc
             draw->PathArcTo(center, radius * 0.88f, a_start, a_end, 32);
             draw->PathStroke(color, 0, radius * 0.08f * thickness_scale);
-            // Добавляем внешнюю подсветку (более светлую)
-            ImU32 glow = ImGui::ColorConvertFloat4ToU32(ImVec4(
-                ((color >> 16) & 0xFF) / 255.0f * 1.5f,
-                ((color >> 8) & 0xFF) / 255.0f * 1.5f,
-                (color & 0xFF) / 255.0f * 1.5f,
-                0.3f
-            ));
+            // Lighter outer glow
+            // IM_COL32 keeps red in the low byte; the float conversion also clamps the brightened color.
+            const ImVec4 base = ImGui::ColorConvertU32ToFloat4(color);
+            ImU32 glow = ImGui::ColorConvertFloat4ToU32(ImVec4(base.x * 1.5f, base.y * 1.5f, base.z * 1.5f, 0.3f));
             draw->PathArcTo(center, radius * 0.89f, a_start, a_end, 32);
             draw->PathStroke(glow, 0, radius * 0.02f);
             };
 
-        // Здесь зоны жёстко заданы для диапазона 0-200, но можно сделать параметризуемыми
-        draw_arc_zone(0, 120, IM_COL32(100, 200, 80, 200), 1.2f);   // Зелёная с утолщением
+        // The zones are fixed for the 0-200 range; they could be made configurable
+        draw_arc_zone(0, 120, IM_COL32(100, 200, 80, 200), 1.2f);   // green, thicker
         draw_arc_zone(120, 150, IM_COL32(230, 220, 50, 200));
         draw_arc_zone(150, 200, IM_COL32(230, 70, 70, 200));
 
-        // --- Рисочки и цифры с эффектом объёма ---
+        // --- Ticks and numbers with a 3D effect ---
         for (int i = 0; i <= 10; i++) {
             float val = i * 20.0f;
             float angle = DegToRad(start_angle + (val / max_val) * angle_range);
             ImVec2 dir(cosf(angle), sinf(angle));
 
-            // Основная риска (толстая)
+            // Main (thick) tick
             draw->AddLine(ImVec2(center.x + dir.x * radius * 0.84f, center.y + dir.y * radius * 0.84f),
                 ImVec2(center.x + dir.x * radius * 0.74f, center.y + dir.y * radius * 0.74f),
                 col_text_dim, 2.0f);
-            // Тень под риской
+            // Tick shadow
             draw->AddLine(ImVec2(center.x + dir.x * radius * 0.85f + 1, center.y + dir.y * radius * 0.85f + 1),
                 ImVec2(center.x + dir.x * radius * 0.75f + 1, center.y + dir.y * radius * 0.75f + 1),
                 IM_COL32(0, 0, 0, 60), 2.0f);
 
-            // Цифры
+            // Numbers
             char buf[16];
             snprintf(buf, 16, "%d", (int)val);
             ImVec2 text_size = ImGui::CalcTextSize(buf);
             ImVec2 text_pos = ImVec2(center.x + dir.x * radius * 0.62f - text_size.x * 0.5f,
                 center.y + dir.y * radius * 0.62f - text_size.y * 0.5f);
-            // Тень текста
+            // Text shadow
             draw->AddText(ImVec2(text_pos.x + 1, text_pos.y + 1), IM_COL32(0, 0, 0, 100), buf);
             draw->AddText(text_pos, col_text, buf);
         }
 
-        // --- Подпись единицы измерения ---
+        // --- Unit label ---
         ImVec2 unit_size = ImGui::CalcTextSize(unit);
         draw->AddText(ImVec2(center.x - unit_size.x * 0.5f + 1, center.y - radius * 0.4f + 1), IM_COL32(0, 0, 0, 80), unit);
         draw->AddText(ImVec2(center.x - unit_size.x * 0.5f, center.y - radius * 0.4f), col_text_dim, unit);
 
-        // --- Цифровое табло с тенью (исправлено) ---
+        // --- Digital display with a shadow ---
         char val_buf[16];
         snprintf(val_buf, 16, "%.0f", value);
         ImVec2 val_size = ImGui::CalcTextSize(val_buf);
         ImVec2 rect_size(radius * 0.45f, radius * 0.22f);
         ImVec2 rect_pos(center.x - rect_size.x * 0.5f, center.y + radius * 0.35f);
 
-        // Тень табло
+        // Display shadow
         draw->AddRectFilled(ImVec2(rect_pos.x + 3, rect_pos.y + 3),
             ImVec2(rect_pos.x + rect_size.x + 3, rect_pos.y + rect_size.y + 3),
             IM_COL32(0, 0, 0, 80), style.FrameRounding);
-        // Фон табло (однотонный)
+        // Display background (solid)
         draw->AddRectFilled(rect_pos,
             ImVec2(rect_pos.x + rect_size.x, rect_pos.y + rect_size.y),
             col_display_bg, style.FrameRounding);
-        // Обводка
+        // Outline
         draw->AddRect(rect_pos, ImVec2(rect_pos.x + rect_size.x, rect_pos.y + rect_size.y),
             col_border, style.FrameRounding);
-        // Текст с тенью
+        // Text with a shadow
         draw->AddText(ImVec2(center.x - val_size.x * 0.5f + 1, rect_pos.y + (rect_size.y - val_size.y) * 0.5f + 1),
             IM_COL32(0, 0, 0, 100), val_buf);
         draw->AddText(ImVec2(center.x - val_size.x * 0.5f, rect_pos.y + (rect_size.y - val_size.y) * 0.5f),
             col_text, val_buf);
 
-        // --- Стрелка с тенью и градиентом ---
+        // --- Needle with a shadow and a gradient ---
         float clamped_val = ImClamp(value, min_val, max_val);
         float arrow_angle = DegToRad(start_angle + (clamped_val / max_val) * angle_range);
         ImVec2 arrow_dir(cosf(arrow_angle), sinf(arrow_angle));
 
-        // Тень стрелки
+        // Needle shadow
         draw->AddLine(ImVec2(center.x + 2, center.y + 2),
             ImVec2(center.x + arrow_dir.x * radius * 0.85f + 2,
                 center.y + arrow_dir.y * radius * 0.85f + 2),
             IM_COL32(0, 0, 0, 80), 4.0f);
-        // Сама стрелка (градиент по длине)
+        // The needle itself (gradient along its length)
         for (int s = 0; s < 3; s++) {
             float alpha = 0.2f + s * 0.3f;
             float off = s * 1.0f;
             draw->AddLine(ImVec2(center.x - arrow_dir.x * off, center.y - arrow_dir.y * off),
                 ImVec2(center.x + arrow_dir.x * radius * 0.85f - arrow_dir.x * off,
                     center.y + arrow_dir.y * radius * 0.85f - arrow_dir.y * off),
-                ImGui::GetColorU32(ImVec4(
-                    ((col_accent >> 16) & 0xFF) / 255.0f,
-                    ((col_accent >> 8) & 0xFF) / 255.0f,
-                    (col_accent & 0xFF) / 255.0f,
-                    alpha
-                )), 4.0f - s);
+                ImGui::GetColorU32(WithAlpha(col_accent, alpha)), 4.0f - s);
         }
 
-        // Центр стрелки с "заклёпкой"
+        // Needle hub with a "rivet"
         draw->AddCircleFilled(center, 7.0f, col_accent, 16);
         draw->AddCircleFilled(center, 5.0f, ImGui::GetColorU32(ImGuiCol_WindowBg), 16);
         draw->AddCircle(center, 7.0f, col_border, 16, 1.5f);

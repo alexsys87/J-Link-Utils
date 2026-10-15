@@ -5,7 +5,7 @@
 namespace WidgetTemplateFactory {
 
     // ==================================================================
-    // Функции создания корневых виджетов
+    // Root widget templates
     // ==================================================================
     tinyxml2::XMLElement* CreateNewWindow(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("Window");
@@ -98,7 +98,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // PlotLines с одной линией по умолчанию
+    // PlotLines with one line by default
     tinyxml2::XMLElement* CreatePlotLines(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("PlotLines");
         auto text = doc->NewElement("Text"); text->SetText("Plot"); elem->InsertEndChild(text);
@@ -168,7 +168,7 @@ namespace WidgetTemplateFactory {
         auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
         auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
         auto items = doc->NewElement("Items");
-        // Добавим два примера
+        // Two sample items
         auto radio1 = doc->NewElement("Radio");
         auto lbl1 = doc->NewElement("Label"); lbl1->SetText("Option 1"); radio1->InsertEndChild(lbl1);
         auto val1 = doc->NewElement("Value"); val1->SetText("0"); radio1->InsertEndChild(val1);
@@ -212,7 +212,7 @@ namespace WidgetTemplateFactory {
     }
 
     tinyxml2::XMLElement* CreateInputInt(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ImputInt"); // опечатка сохранена для совместимости
+        auto elem = doc->NewElement("ImputInt"); // the typo is kept for compatibility
         auto text = doc->NewElement("Text"); text->SetText("Input"); elem->InsertEndChild(text);
         auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
         auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
@@ -257,7 +257,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // Histogram с поддержкой ScaleX, Smooth, DoneAddr, AutoSize, BarWidth и Items
+    // Histogram with ScaleX, Smooth, DoneAddr, AutoSize, BarWidth and Items
     tinyxml2::XMLElement* CreateHistogram(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("Histogram");
         auto text = doc->NewElement("Text"); text->SetText("Histogram"); elem->InsertEndChild(text);
@@ -286,7 +286,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // DataLog с поддержкой ScaleX, Smooth, DoneAddr, AutoSize и Items
+    // DataLog with ScaleX, Smooth, DoneAddr, AutoSize and Items
     tinyxml2::XMLElement* CreateDataLog(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("DataLog");
         auto text = doc->NewElement("Text"); text->SetText("DataLog"); elem->InsertEndChild(text);
@@ -452,7 +452,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // GlossyDisplay с DataType и DecimalPlaces
+    // GlossyDisplay with DataType and DecimalPlaces
     tinyxml2::XMLElement* CreateGlossyDisplay(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("GlossyDisplay");
         auto text = doc->NewElement("Text"); text->SetText("Display"); elem->InsertEndChild(text);
@@ -467,7 +467,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // LCD_HD44780 с UseFixed
+    // LCD_HD44780 with UseFixed
     tinyxml2::XMLElement* CreateLCD_HD44780(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("LCD_HD44780");
         auto text = doc->NewElement("Text"); text->SetText("LCD"); elem->InsertEndChild(text);
@@ -481,7 +481,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // VerticalGauge с DataType
+    // VerticalGauge with DataType
     tinyxml2::XMLElement* CreateVerticalGauge(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("VerticalGauge");
         auto text = doc->NewElement("Text"); text->SetText("V Gauge"); elem->InsertEndChild(text);
@@ -495,7 +495,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // NeumorphicKnob с DataType
+    // NeumorphicKnob with DataType
     tinyxml2::XMLElement* CreateNeumorphicKnob(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("NeumorphicKnob");
         auto text = doc->NewElement("Text"); text->SetText("Knob"); elem->InsertEndChild(text);
@@ -508,7 +508,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // StyledKnob с DataType
+    // StyledKnob with DataType
     tinyxml2::XMLElement* CreateStyledKnob(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("StyledKnob");
         auto text = doc->NewElement("Text"); text->SetText("Knob"); elem->InsertEndChild(text);
@@ -521,7 +521,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // CustomVerticalSlider с DataType
+    // CustomVerticalSlider with DataType
     tinyxml2::XMLElement* CreateCustomVerticalSlider(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("CustomVerticalSlider");
         auto text = doc->NewElement("Text"); text->SetText("VSlider"); elem->InsertEndChild(text);
@@ -534,7 +534,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // BitControl8Bit с Scale
+    // BitControl8Bit with Scale
     tinyxml2::XMLElement* CreateBitControl8Bit(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("BitControl8Bit");
         auto text = doc->NewElement("Text"); text->SetText("Bits"); elem->InsertEndChild(text);
@@ -576,7 +576,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // Image с Width и Height
+    // Image with Width and Height
     tinyxml2::XMLElement* CreateImage(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("Image");
         auto text = doc->NewElement("Text"); text->SetText("Image"); elem->InsertEndChild(text);
@@ -600,7 +600,7 @@ namespace WidgetTemplateFactory {
         auto unit = doc->NewElement("Unit"); unit->SetText("rpm"); elem->InsertEndChild(unit);
         auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
         auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        // Добавляем зоны по умолчанию
+        // Default zones
         auto zones = doc->NewElement("Zones");
         auto zone1 = doc->NewElement("Zone"); zone1->SetAttribute("start", "0"); zone1->SetAttribute("end", "4000"); zone1->SetAttribute("color", "#64C850"); zones->InsertEndChild(zone1);
         auto zone2 = doc->NewElement("Zone"); zone2->SetAttribute("start", "4000"); zone2->SetAttribute("end", "6000"); zone2->SetAttribute("color", "#F0F050"); zones->InsertEndChild(zone2);
@@ -633,7 +633,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // Tank с DataType
+    // Tank with DataType
     tinyxml2::XMLElement* CreateTank(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("Tank");
         auto text = doc->NewElement("Text"); text->SetText("Tank"); elem->InsertEndChild(text);
@@ -650,7 +650,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // VUMeter с Unit и ShowPeak
+    // VUMeter with Unit and ShowPeak
     tinyxml2::XMLElement* CreateVUMeter(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("VUMeter");
         auto text = doc->NewElement("Text"); text->SetText("VU"); elem->InsertEndChild(text);
@@ -688,7 +688,7 @@ namespace WidgetTemplateFactory {
         return elem;
     }
 
-    // MemoryView без WordSize
+    // MemoryView without WordSize
     tinyxml2::XMLElement* CreateMemoryView(tinyxml2::XMLDocument* doc) {
         auto elem = doc->NewElement("MemoryView");
         auto text = doc->NewElement("Text"); text->SetText("Memory"); elem->InsertEndChild(text);
@@ -742,7 +742,7 @@ namespace WidgetTemplateFactory {
         }
 
     // ==================================================================
-    // Функции создания простых дочерних элементов (параметры)
+    // Simple child elements (parameters)
     // ==================================================================
 
     tinyxml2::XMLElement* CreateTextElement(tinyxml2::XMLDocument* doc) {
@@ -1165,7 +1165,7 @@ namespace WidgetTemplateFactory {
     }
 
     // ==================================================================
-    // Функции создания вложенных элементов (для контейнеров)
+    // Nested elements (for containers)
     // ==================================================================
 
     tinyxml2::XMLElement* CreateComboItem(tinyxml2::XMLDocument* doc) {
@@ -1231,7 +1231,7 @@ namespace WidgetTemplateFactory {
     }
 
     // ==================================================================
-    // Карты создателей
+    // Creator maps
     // ==================================================================
 
     const std::map<std::string, Creator>& GetRootCreators() {
@@ -1308,7 +1308,7 @@ namespace WidgetTemplateFactory {
 
     const std::map<std::string, ChildCreatorMap>& GetChildCreators() {
         static std::map<std::string, ChildCreatorMap> childMap = {
-            // Специализированные контейнеры
+            // Specialized containers
             {"ComboBox", {
                 {"Combo", CreateComboItem}
             }},
@@ -1322,7 +1322,7 @@ namespace WidgetTemplateFactory {
                 {"Zone", CreateZoneItem}
             }},
 
-            // Виджеты, имеющие дочерние элементы-параметры
+            // Widgets whose children are parameters
             {"TextColored", {
                 {"Text", CreateTextElement},
                 {"Color", CreateColorElement}
@@ -1596,7 +1596,7 @@ namespace WidgetTemplateFactory {
             { "Equalizer", {
                 {"Text", CreateTextElement},
                 {"Address", CreateAddressElement},
-                {"Bands", CreateBandsElement},        // исправлено: вместо CreateDigitsElement
+                {"Bands", CreateBandsElement},        // was CreateDigitsElement by mistake
                 {"Min", CreateMinElement},
                 {"Max", CreateMaxElement},
                 {"BandWidth", CreateBandWidthElement},

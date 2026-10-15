@@ -27,7 +27,7 @@
 
 #include "Main.h"       
 
-// Константы
+// Constants
 constexpr auto MAX_BUFF = 64;
 constexpr auto BUFF_SIZE = 4096;
 constexpr auto MAX_ITEMS = 64;
@@ -47,7 +47,7 @@ constexpr auto MAX_ITEM_LEN = 64;
 
 using namespace tinyxml2;
 
-// Вспомогательная функция для преобразования 16-битного порядка байт
+// Swaps the bytes of a 16-bit value
 inline uint16_t Swap16(uint16_t v) {
     return (v >> 8) | (v << 8);
 }
@@ -63,7 +63,7 @@ inline uint32_t SwapBeToLe32(uint32_t u32Value) {
     return SwapLeToBe32(u32Value);
 }
 
-// Вспомогательные функции для 64-бит
+// 64-bit helpers
 inline uint64_t SwapLeToBe64(uint64_t v) {
     return ((v >> 56) & 0x00000000000000FFULL) |
         ((v >> 40) & 0x000000000000FF00ULL) |
@@ -94,7 +94,7 @@ extern "C" {
 }
 #endif
 
-// Остальные внешние функции (линковка C++ по умолчанию)
+// Other external functions (C++ linkage)
 extern const char* file_open_dialog(const char* filters);
 extern const char* file_save_dialog(const char* filters);
 extern XMLElement* TryFindElement(XMLElement* e, const char* name);
@@ -109,11 +109,18 @@ extern uint32_t DataCompletedCycles(void);
 // Seconds on the clock used for DataSample::time.
 extern double DataTimeNow(void);
 
-// Вспомогательные функции (inline)
+// Inline helpers
 
 struct ColorRGBA {
     float R, G, B, A;
 };
+
+// IM_COL32 color with another alpha (IM_COL32 keeps red in the low byte).
+inline ImVec4 WithAlpha(ImU32 color, float alpha) {
+    ImVec4 c = ImGui::ColorConvertU32ToFloat4(color);
+    c.w = alpha;
+    return c;
+}
 
 inline ColorRGBA ColorConverter(int hexValue) {
     ColorRGBA C;
@@ -127,7 +134,7 @@ inline ColorRGBA ColorConverter(int hexValue) {
 inline void EnsureXmlExtension(char* path, size_t maxLen) {
     size_t len = strlen(path);
     if (len < 4 || (SDL_strcasecmp(path + len - 4, ".xml") != 0)) {
-        // Нет .xml в конце (или меньше 4 символов) – добавляем
+        // No .xml at the end (or shorter than 4 characters): append it
         if (len + 5 <= maxLen) { // 5 = strlen(".xml") + 1
             SDL_strlcat(path, ".xml", maxLen);
         }
@@ -159,11 +166,11 @@ inline char* GetFilePath(const char* Config) {
     return data_path;
 }
 
-// Глобальный буфер для графиков (определён в main cpp)
+// Global plot buffer (defined in xml_window.cpp)
 extern float VirtualBuffer[MAX_BUFF][BUFF_SIZE];
 
-// Базовые классы виджетов
-struct MainContext; // уже определён в Main.h
+// Widget base classes
+struct MainContext; // defined in Main.h
 
 class UIWidget {
 public:
@@ -171,14 +178,14 @@ public:
     virtual void Draw(MainContext* ctx, uint32_t* dynamicAddr = nullptr) = 0;
 };
 
-// Структура для хранения данных окна (определена здесь для доступа из других файлов)
+// Window data (defined here so that other files can use it)
 struct WindowData {
     std::string name;
     std::unique_ptr<UIWidget> root;
     bool show = false;
 };
 
-// Глобальный вектор окон (определён в xml_window.cpp)
+// Global window list (defined in xml_window.cpp)
 extern std::vector<WindowData> g_Windows;
 
 class LeafWidget : public UIWidget {

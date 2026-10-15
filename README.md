@@ -1,50 +1,58 @@
 # J-Link-Utils
 
-Windows-приложение на C++17 для наблюдения и изменения памяти микроконтроллера через SEGGER J-Link/SWD. Интерфейс задаётся XML: числовые поля, графики, индикаторы, редактор памяти и другие виджеты. Встроенный XML-редактор позволяет изменять конфигурацию.
+A C++17 Windows application for watching and changing microcontroller memory through a SEGGER J-Link over SWD. The user interface is described in XML: numeric fields, plots, indicators, a memory editor and other widgets. A built-in XML editor changes the configuration.
 
-## Подключение
+## Connecting
 
-1. Установите ПО и драйвер J-Link от SEGGER; подключите отладчик и целевой микроконтроллер.
-2. В настройках выберите **J-Link device** и задайте **MCU Memory address** (по умолчанию `0x20000000`).
-3. Нажмите **Connect**, затем откройте XML-конфигурацию через **File → Open**. Путь к XML можно передать первым аргументом командной строки.
+1. Install the SEGGER J-Link software and driver; connect the probe and the target microcontroller.
+2. In **Settings**, choose the **J-Link device** and set the **MCU Memory address** (default `0x20000000`).
+3. Click **Connect**, then open an XML configuration with **File → Open**. The XML path can also be passed as the first command-line argument.
 
-Адреса виджетов — **физические адреса**, а не смещения. Поддерживаются `#20000010`, `0x20000010` и десятичная запись. Префикс `0` без `x` трактуется как восьмеричный, поэтому для шестнадцатеричных адресов используйте `#` или `0x`. Отображаемый диапазон ограничен 1 МиБ от выбранной базы и границей 32-битного адресного пространства.
+Widget addresses are **physical addresses**, not offsets. `#20000010`, `0x20000010` and decimal values are accepted. A leading `0` without `x` means octal, so use `#` or `0x` for hexadecimal addresses. The visible range is limited to 1 MiB from the selected base and to the end of the 32-bit address space.
 
-Смена базы или целевого устройства отключает обмен; после изменения нажмите **Connect** снова. Ошибка/неполное чтение или запись также отключают обмен. При отключении очищаются кэш и незавершённые запросы: записи старого подключения не выполняются после переподключения.
+Changing the base address or the target device stops the exchange; click **Connect** again afterwards. A failed or short read or write also stops it. Stopping clears the cache and the pending requests: writes from an old connection are never replayed after reconnecting.
 
-Как идёт обмен: каждый видимый виджет подписывается на свои адреса, а отдельный поток непрерывно (не чаще раза в 1 мс) перечитывает все подписанные адреса. Соседние адреса в областях памяти (code/SRAM `0x00000000–0x3FFFFFFF` и внешняя RAM `0x60000000–0x9FFFFFFF`) объединяются в блоки — промежутки до 64 байт читаются вместе с ними, блок до 4 КиБ читается одним обращением к J-Link. В области периферии и системных регистров читаются только запрошенные байты, чтобы не трогать регистры с побочным эффектом чтения. Адреса, которые ни один виджет не запрашивал 0,5 с (закрытое окно, свёрнутое приложение), перестают опрашиваться. Записанное значение сразу показывается в виджете; несколько подряд идущих записей в один адрес, пока J-Link занят, отправляются как одна — с последним значением.
+How the exchange works: every visible widget subscribes to its addresses, and a separate thread re-reads all subscribed addresses continuously (at most once per millisecond). Neighbouring addresses in memory regions (code/SRAM `0x00000000–0x3FFFFFFF` and external RAM `0x60000000–0x9FFFFFFF`) are merged into blocks: gaps of up to 64 bytes are read along with them, and a block of up to 4 KiB takes one J-Link call. In peripheral and system space only the requested bytes are read, so registers with read side effects are not touched. Addresses no widget asked for during 0.5 s (closed window, minimized application) are no longer polled. A written value shows up in the widget immediately; several writes to the same address while the J-Link is busy are sent as one, with the last value.
 
-### Графики
+### Plots
 
-**PlotLines** получает значения от потока обмена с отметкой времени — по одному на каждый цикл опроса, а не по одному на кадр — и прореживает их до частоты `Freq` (до 1000 Гц). Ось X — реальное время, история хранит всё окно `Time Window`. Достижимая частота зависит от J-Link: у J-Link BASE V8 (USB full speed) одно обращение занимает порядка 1–2 мс, поэтому реально около 300–700 точек в секунду, если все переменные графиков и виджетов на экране укладываются в один-два блока; разбросанные по памяти адреса делят эту скорость между собой.
+**PlotLines** gets timestamped values from the communication thread, one per polling cycle rather than one per frame, and thins them out to `Freq` (up to 1000 Hz). The X axis is real time, and the history holds the whole `Time Window`. The reachable rate depends on the probe: a J-Link BASE V8 (USB full speed) needs about 1–2 ms per call, so expect roughly 300–700 points per second when all plotted and displayed variables fit into one or two blocks; addresses scattered over memory share that rate.
 
-Для более быстрых сигналов используйте **DataLog**/**Histogram** с `DoneAddr`: микроконтроллер сам заполняет массив с нужной частотой и выставляет флаг, программа читает массив целиком и только после завершения чтения сбрасывает флаг — массив не перезаписывается во время чтения. Частота дискретизации в этом режиме ограничена только микроконтроллером.
+For faster signals use **DataLog**/**Histogram** with `DoneAddr`: the microcontroller fills an array at the rate it needs and sets the flag; the program reads the whole array and clears the flag only after the read has completed, so the array is never overwritten while it is being read. In this mode the sample rate is limited only by the microcontroller.
 
-**Осторожно:** запись в память меняет состояние реального устройства. Проверяйте адреса и конфигурацию; не используйте непроверенные XML-файлы с подключённым оборудованием.
+**Caution:** writing memory changes the state of real hardware. Check addresses and configurations; do not use untested XML files with hardware connected.
 
-## Сборка Windows
+## Demo
 
-Откройте `J-Link Utils.sln` в Visual Studio с компонентами C++ и Windows SDK. Проект использует C++17 и toolset `v145`; нужен соответствующий установленный набор инструментов либо явный retarget проекта.
+`examples/demo.xml` uses every widget the loader supports (65 types) in eight windows: Overview, Gauges, Controls, Plots, Layout, Memory, Media and Watch. Its variables are one struct at `0x20001000`; the offset map is at the top of the XML.
 
-**Репозиторий пока не самодостаточен для полной сборки.** В нём отсутствуют:
+`examples/demo_firmware.c` is a matching firmware module for any Cortex-M project: call `demo_init()` once, `demo_tick_1khz()` from a 1 kHz timer interrupt and `demo_poll()` from the main loop. It animates the values (sine waves, gauges, a running light, the LCD) and feeds the DataLog and Histogram through the `DoneAddr` handshake. Reserve `0x2D0` bytes at `0x20001000` in the linker script, or move the struct and change the addresses in the XML.
 
-- исходники Dear ImGui в `include/imgui` (включая SDL2 backend и FreeType renderer);
-- библиотеки SDL2, FreeType и их зависимостей, перечисленные в `.vcxproj`, в `lib`;
-- импортная библиотека J-Link: `JLinkARM_x64.lib` для x64 либо `JLinkARM.lib` для Win32, и соответствующая DLL для запуска.
+For the **Media** window, copy `demo_logo.png` and `demo_spinner.gif` next to `J-Link Utils.exe`: Image and Gif load files from the program folder.
 
-Сторонние заголовки лежат в `include`: `SDL2`, `tinyxml2`, `ifqueue` (lfqueue), `JLinkSDK`, `implot` и одиночные заголовки (`stb_image.h`, `gif_load.h`, `noc_file_dialog.h` и др.). В `include/freetype2` находятся только заголовки FreeType (`ft2build.h` и `freetype/`).
+## Building on Windows
 
-Библиотеки должны соответствовать архитектуре, конфигурации Debug/Release и статическому CRT (`/MTd` либо `/MT`). Поставляйте SDK J-Link согласно лицензии SEGGER. Исправленные пути к уже включённым SDL2, tinyxml2 и lfqueue не заменяют отсутствующие зависимости. Полная Windows-сборка и работа на физическом J-Link **не подтверждены**.
+Open `J-Link Utils.sln` in Visual Studio with the C++ and Windows SDK components. The project uses C++17 and the `v145` toolset; that toolset must be installed, or the project must be retargeted.
 
-## Проверки без оборудования
+**The repository is not yet self-contained for a full build.** Missing:
 
-На Linux с Python 3, GCC/G++ и стандартными утилитами:
+- the Dear ImGui sources in `include/imgui` (including the SDL2 backend and the FreeType renderer);
+- the SDL2 and FreeType libraries and their dependencies listed in the `.vcxproj`, in `lib`;
+- the J-Link import library: `JLinkARM_x64.lib` for x64 or `JLinkARM.lib` for Win32, and the matching DLL to run.
+
+Third-party headers are in `include`: `SDL2`, `tinyxml2`, `ifqueue` (lfqueue), `JLinkSDK`, `implot` and single-file headers (`stb_image.h`, `gif_load.h`, `noc_file_dialog.h` and others). `include/freetype2` contains only the FreeType headers (`ft2build.h` and `freetype/`).
+
+The libraries must match the architecture, the Debug/Release configuration and the static CRT (`/MTd` or `/MT`). Distribute the J-Link SDK according to the SEGGER license. A full Windows build and operation with a physical J-Link are **not verified**.
+
+## Checks without hardware
+
+On Linux with Python 3, GCC/G++ and the standard tools:
 
 ```sh
 sh tests/run_transport_tests.sh
 python3 tests/ui_regression/run.py
 ```
 
-Тесты компилируют код обмена с имитацией SDL/J-Link, используют реальные tinyxml2/lfqueue и проверяют отдельные виджеты в окружении без графического окна. Проверяются ошибки подключения, границы памяти, очистка очередей, короткое чтение/запись, XML-безопасность и форматирование. Включены AddressSanitizer, UndefinedBehaviorSanitizer и проверка утечек. Это регрессионные проверки, **не** сборка полного приложения и **не** испытание оборудования.
+The tests compile the exchange code against simulated SDL and J-Link, use the real tinyxml2/lfqueue, and check individual widgets without a graphics window. They cover connection errors, memory bounds, block merging and polling, write-through, short reads and writes, plot sampling, the `DoneAddr` handshake, XML safety and formatting, with AddressSanitizer, UndefinedBehaviorSanitizer and leak checking enabled. These are regression checks, **not** a build of the full application and **not** a hardware test.
 
-GitHub Actions автоматически запускает оба набора тестов при push и pull request; доступен ручной запуск **Regression tests**.
+GitHub Actions runs both test suites on every push and pull request; **Regression tests** can also be started manually.

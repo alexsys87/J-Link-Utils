@@ -73,12 +73,12 @@ private:
 
         bool disabled = (ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) != 0;
 
-        // Дисплей
+        // Display
         ImRect displayRect(pos, ImVec2(pos.x + totalWidth, pos.y + displayHeight));
         ImGui::ItemSize(displayRect);
         ImGui::ItemAdd(displayRect, 0);
 
-        // Отрисовка дисплея
+        // Draw the display
         draw->AddRectFilled(displayRect.Min, displayRect.Max, IM_COL32(20, 20, 20, 255), 4.0f);
         draw->AddRect(displayRect.Min, displayRect.Max, IM_COL32(0, 0, 0, 255), 4.0f, 0, 2.0f);
         float split_y = displayRect.Min.y + displayHeight * 0.6f;

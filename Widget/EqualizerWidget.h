@@ -5,8 +5,8 @@
 #include <string>
 
 enum EqDataType {
-    EQ_FLOAT,   // 32-bit float (требует DataReadWriteFT32/DataReadWriteU32)
-    EQ_INT16    // 16-bit integer (использует DataReadWriteU16)
+    EQ_FLOAT,   // 32-bit float (DataReadWriteFT32/DataReadWriteU32)
+    EQ_INT16    // 16-bit integer (DataReadWriteU16)
 };
 
 class EqualizerWidget : public UIWidget {
@@ -15,13 +15,13 @@ class EqualizerWidget : public UIWidget {
     int numBands;
     float minVal;
     float maxVal;
-    float bandWidth;          // ширина одного ползунка (общая ширина = numBands * bandWidth)
+    float bandWidth;          // width of one slider (total width = numBands * bandWidth)
     float height;
     EqDataType dataType;
     bool littleEndian;
-    int addressStep;          // шаг адреса между соседними полосами (обычно 2 для float, 1 для int16)
+    int addressStep;          // bytes between neighbouring bands (4 for float, 2 for int16 by default)
 
-    std::vector<float> values; // кэшированные значения
+    std::vector<float> values; // cached values
 
 public:
     EqualizerWidget(const char* lbl, uint32_t addr, int bands, float minV, float maxV,
@@ -34,7 +34,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addrBase = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : baseAddress;
 
-        // Чтение значений из памяти
+        // Read the values from memory
         for (int i = 0; i < numBands; ++i) {
             uint32_t addr = addrBase + i * addressStep;
             if (dataType == EQ_FLOAT) {
@@ -50,7 +50,7 @@ public:
                 uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
                 values[i] = static_cast<float>(raw);
             }
-            // Ограничение
+            // Clamp
             if (values[i] < minVal) values[i] = minVal;
             if (values[i] > maxVal) values[i] = maxVal;
         }
@@ -59,7 +59,7 @@ public:
         bool changed = DrawEqualizer(label.c_str(), values, numBands, minVal, maxVal, bandWidth, height);
         ImGui::PopID();
 
-        // Запись изменённых значений обратно в память
+        // Write changed values back to memory
         if (changed) {
             for (int i = 0; i < numBands; ++i) {
                 uint32_t addr = addrBase + i * addressStep;
@@ -93,7 +93,7 @@ private:
         float totalWidth = numBands * bandWidth + (numBands - 1) * style.ItemSpacing.x;
         float totalHeight = height + ImGui::GetTextLineHeight() + style.ItemSpacing.y * 2;
 
-        // Фоновая панель (небольшая тень)
+        // Background panel (light shadow)
         ImRect panel(pos, ImVec2(pos.x + totalWidth + 10, pos.y + totalHeight + 10));
         draw->AddRectFilled(panel.Min, panel.Max, IM_COL32(0, 0, 0, 30), 5.0f);
 
@@ -104,7 +104,7 @@ private:
             ImVec2 sliderPos(pos.x + i * (bandWidth + style.ItemSpacing.x), pos.y);
             ImGui::SetCursorScreenPos(sliderPos);
 
-            // Вертикальный слайдер
+            // Vertical slider
             float v = values[i];
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_SliderGrab, style.Colors[ImGuiCol_SliderGrab]);
@@ -117,9 +117,9 @@ private:
 
             ImGui::PopStyleColor(3);
 
-            // Метка снизу (частота)
+            // Label below (frequency)
             char bandLabel[8];
-            snprintf(bandLabel, sizeof(bandLabel), "%d", i * 100); // пример метки, можно настраивать
+            snprintf(bandLabel, sizeof(bandLabel), "%d", i * 100); // sample label, can be customized
             ImVec2 labelSize = ImGui::CalcTextSize(bandLabel);
             ImVec2 labelPos(sliderPos.x + (bandWidth - labelSize.x) * 0.5f, sliderPos.y + height + 2);
             draw->AddText(labelPos, ImGui::GetColorU32(ImGuiCol_TextDisabled), bandLabel);
@@ -127,7 +127,7 @@ private:
             ImGui::PopID();
         }
 
-        // Общая подпись (label) под всеми ползунками
+        // Common label under all sliders
         if (label && label[0] != '\0') {
             ImVec2 labelSize = ImGui::CalcTextSize(label);
             ImVec2 labelPos(pos.x + (totalWidth - labelSize.x) * 0.5f, pos.y + height + ImGui::GetTextLineHeight() + 5);

@@ -3,7 +3,7 @@
 #include "widget_common.h"
 #include <cstdint>
 
-// Добавляем новые типы данных
+// Additional data types
 #define S64_DEC  9
 #define U64_DEC 10
 
@@ -18,10 +18,10 @@ private:
         char name[MAX_STR_LEN];
         char desc[MAX_STR_LEN];
         int address;
-        uint64_t value; // 64-битное значение (для всех типов)
+        uint64_t value; // 64-bit value (for all types)
         bool bitMode;
         bool littleEndian;
-        bool hexMode; // отображение в hex для целых
+        bool hexMode; // show integers in hex
     };
 
     static std::vector<WatchRow> s_rows;

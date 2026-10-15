@@ -1,11 +1,11 @@
 #pragma once
 #include "widget_common.h"
-#include "imgui_internal.h"  // для доступа к ImGuiItemFlags_Disabled (через GetItemFlags)
+#include "imgui_internal.h"  // ImGuiItemFlags_Disabled (through GetItemFlags)
 #include <cmath>
 #include <vector>
-#include <algorithm>   // для std::max, std::min, std::clamp
+#include <algorithm>   // std::max, std::min, std::clamp
 
-#define M_PI_F 3.14159265358979323846f   // суффикс f для float
+#define M_PI_F 3.14159265358979323846f   // float suffix
 
 struct RPMZone {
     float start;
@@ -63,7 +63,7 @@ private:
         ImGui::ItemSize(bb);
         if (!ImGui::ItemAdd(bb, ImGui::GetID(label))) return;
 
-        // Проверка, отключён ли виджет (например, через BeginDisabled)
+        // Is the widget disabled (e.g. with BeginDisabled)?
         bool disabled = (ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) != 0;
 
         ImU32 col_bg = ImGui::GetColorU32(ImGuiCol_FrameBg);
@@ -77,7 +77,7 @@ private:
         float end_angle = 390.0f;
         float angle_range = end_angle - start_angle;
 
-        // Фон
+        // Background
         for (int i = 0; i < 5; i++) {
             float t = i / 4.0f;
             float r = radius * (0.7f + t * 0.3f);
@@ -93,7 +93,7 @@ private:
         draw->AddCircle(center, radius, col_border, 64, 2.0f);
         draw->AddCircle(center, radius * 0.96f, col_border, 64, 1.0f);
 
-        // Зоны
+        // Zones
         for (const auto& zone : zones) {
             if (zone.end <= min_val || zone.start >= max_val) continue;
             float start_t = (std::max(zone.start, min_val) - min_val) / (max_val - min_val);
@@ -102,18 +102,15 @@ private:
             float a_end = DegToRad(start_angle + end_t * angle_range);
             draw->PathArcTo(center, radius * 0.88f, a_start, a_end, 32);
             draw->PathStroke(zone.color, 0, radius * 0.08f);
-            // Подсветка
-            ImU32 glow = ImGui::ColorConvertFloat4ToU32(ImVec4(
-                ((zone.color >> 16) & 0xFF) / 255.0f * 1.5f,
-                ((zone.color >> 8) & 0xFF) / 255.0f * 1.5f,
-                (zone.color & 0xFF) / 255.0f * 1.5f,
-                0.3f
-            ));
+            // Glow
+            // IM_COL32 keeps red in the low byte; the float conversion also clamps the brightened color.
+            const ImVec4 base = ImGui::ColorConvertU32ToFloat4(zone.color);
+            ImU32 glow = ImGui::ColorConvertFloat4ToU32(ImVec4(base.x * 1.5f, base.y * 1.5f, base.z * 1.5f, 0.3f));
             draw->PathArcTo(center, radius * 0.89f, a_start, a_end, 32);
             draw->PathStroke(glow, 0, radius * 0.02f);
         }
 
-        // Рисочки и цифры
+        // Ticks and numbers
         int steps = 10;
         for (int i = 0; i <= steps; i++) {
             float val = min_val + i * (max_val - min_val) / steps;
@@ -136,12 +133,12 @@ private:
             draw->AddText(text_pos, col_text, buf);
         }
 
-        // Единица измерения
+        // Unit
         ImVec2 unit_size = ImGui::CalcTextSize(unit);
         draw->AddText(ImVec2(center.x - unit_size.x * 0.5f + 1, center.y - radius * 0.4f + 1), IM_COL32(0, 0, 0, 80), unit);
         draw->AddText(ImVec2(center.x - unit_size.x * 0.5f, center.y - radius * 0.4f), col_text_dim, unit);
 
-        // Цифровое табло
+        // Digital display
         char val_buf[16];
         snprintf(val_buf, sizeof(val_buf), "%.0f", value);
         ImVec2 val_size = ImGui::CalcTextSize(val_buf);
@@ -155,7 +152,7 @@ private:
         draw->AddText(ImVec2(center.x - val_size.x * 0.5f + 1, rect_pos.y + (rect_h - val_size.y) * 0.5f + 1), IM_COL32(0, 0, 0, 100), val_buf);
         draw->AddText(ImVec2(center.x - val_size.x * 0.5f, rect_pos.y + (rect_h - val_size.y) * 0.5f), col_text, val_buf);
 
-        // Стрелка
+        // Needle
         float clamped_val = std::clamp(value, min_val, max_val);
         float arrow_t = (clamped_val - min_val) / (max_val - min_val);
         float arrow_angle = DegToRad(start_angle + arrow_t * angle_range);
@@ -170,10 +167,7 @@ private:
                 draw->AddLine(ImVec2(center.x - arrow_dir.x * off, center.y - arrow_dir.y * off),
                     ImVec2(center.x + arrow_dir.x * radius * 0.85f - arrow_dir.x * off,
                         center.y + arrow_dir.y * radius * 0.85f - arrow_dir.y * off),
-                    ImGui::GetColorU32(ImVec4(((col_accent >> 16) & 0xFF) / 255.0f,
-                        ((col_accent >> 8) & 0xFF) / 255.0f,
-                        (col_accent & 0xFF) / 255.0f,
-                        alpha)), 4.0f - s);
+                    ImGui::GetColorU32(WithAlpha(col_accent, alpha)), 4.0f - s);
             }
         }
         draw->AddCircleFilled(center, 7.0f, col_accent, 16);

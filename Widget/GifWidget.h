@@ -4,12 +4,12 @@
 #include <vector>
 #include <cstdint>
 
-// Функции для загрузки GIF (объявляем, реализация в отдельном .cpp)
+// GIF loading (implemented in a separate .cpp)
 #ifdef __cplusplus
 extern "C" {
 #endif
-    // Загружает все кадры GIF, возвращает массив текстур и массив задержек (в мс).
-    // Возвращает количество кадров, или 0 при ошибке.
+    // Loads all GIF frames; returns the textures and the frame delays (ms).
+    // Returns the number of frames, or 0 on error.
     int LoadGifFrames(SDL_Renderer* renderer, const char* filename,
         std::vector<SDL_Texture*>& outTextures,
         std::vector<int>& outDelays);
@@ -19,15 +19,15 @@ extern "C" {
 
 class GifWidget : public LeafWidget {
     std::string filePath;
-    float fixedWidth, fixedHeight; // если >0, фиксированный размер, иначе масштаб 1:1
-    float scale;                   // масштаб, если фиксированный размер не задан
-    bool loop;                     // зацикливать ли анимацию
-    float speedFactor;             // множитель скорости (1.0 = оригинальная)
+    float fixedWidth, fixedHeight; // fixed size if > 0, otherwise 1:1
+    float scale;                   // scale when no fixed size is set
+    bool loop;                     // loop the animation
+    float speedFactor;             // speed factor (1.0 = original)
 
     std::vector<SDL_Texture*> frames;
-    std::vector<int> delays;       // задержки в миллисекундах
+    std::vector<int> delays;       // delays in milliseconds
     int currentFrame;
-    double nextFrameTime;          // время ImGui, когда нужно переключить кадр
+    double nextFrameTime;          // ImGui time of the next frame switch
     bool loaded;
 
 public:
@@ -60,21 +60,21 @@ public:
 
         double now = ImGui::GetTime();
         if (now >= nextFrameTime) {
-            // Переключаем на следующий кадр
+            // Next frame
             int next = currentFrame + 1;
             if (next >= (int)frames.size()) {
                 if (loop) next = 0;
-                else next = currentFrame; // остаёмся на последнем
+                else next = currentFrame; // stay on the last frame
             }
             if (next != currentFrame) {
                 currentFrame = next;
-                // Устанавливаем время следующего переключения
+                // Time of the next switch
                 int delay = delays[currentFrame];
-                if (delay < 20) delay = 100; // минимальная задержка 100 мс (некоторые GIF могут иметь 0)
+                if (delay < 20) delay = 100; // use 100 ms for very short delays (some GIFs have 0)
                 nextFrameTime = now + (delay * speedFactor) / 1000.0;
             }
             else {
-                // Если не переключились, всё равно обновим время, чтобы не спамить
+                // No switch: still update the time to avoid spinning
                 nextFrameTime = now + 0.1;
             }
         }
@@ -97,7 +97,7 @@ public:
             ImGui::Text("%s", text.c_str());
         }
 
-        // ImGui::Image требует ImTextureID, который в SDL2 можно получить как (void*)tex
+        // ImGui::Image takes an ImTextureID; with SDL2 it is the texture pointer
         ImGui::Image((ImTextureID)tex, ImVec2(dispW, dispH));
 
         if (ImGui::IsItemHovered()) {

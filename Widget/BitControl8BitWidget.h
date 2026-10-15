@@ -6,15 +6,15 @@
 
 class BitControl8BitWidget : public LeafWidget {
     uint32_t address;
-    bool littleEndian; // задел на будущее (для 16/32 бит)
-    float scaleFactor = 1.0f;   // коэффициент масштабирования
+    bool littleEndian; // reserved for 16/32-bit values
+    float scaleFactor = 1.0f;   // scale factor
 
 public:
     BitControl8BitWidget(const char* lbl, uint32_t addr, bool le, float scale = 1.0f)
         : LeafWidget(lbl), address(addr), littleEndian(le), scaleFactor(scale) {
     }
 
-    // Изменение масштаба виджета
+    // Changes the widget scale
     void SetScale(float scale) {
         scaleFactor = scale;
     }
@@ -22,7 +22,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        // Чтение 8-битного значения
+        // Read the 8-bit value
         uint16_t raw = DataReadWriteU08(ctx, nullptr, nullptr, &addr);
         uint8_t value = static_cast<uint8_t>(raw);
         uint8_t oldValue = value;
@@ -44,18 +44,18 @@ private:
         ImGui::BeginGroup();
 
         const ImGuiStyle& style = ImGui::GetStyle();
-        // Базовые размеры (при scale = 1.0)
+        // Base sizes (at scale = 1.0)
         const float base_cell_size = 35.0f;
         const float base_text_offset_y = 4.0f;
         const float base_panel_height = 40.0f;
-        const float shadow_offset = 3.0f; // тень (не масштабируем)
-        const float rounding = 8.0f;       // скругление для тени
-        const float cell_rounding = 4.0f;  // скругление ячеек
+        const float shadow_offset = 3.0f; // shadow (not scaled)
+        const float rounding = 8.0f;       // shadow rounding
+        const float cell_rounding = 4.0f;  // cell rounding
 
-        // Масштабированные размеры
+        // Scaled sizes
         float cell_size = base_cell_size * scaleFactor;
         float spacing = style.ItemSpacing.x * scaleFactor;
-        float extra_spacing = spacing * 2.0f; // удвоенный отступ между 4 и 3 битами
+        float extra_spacing = spacing * 2.0f; // double gap between bits 4 and 3
         float text_offset_y = base_text_offset_y * scaleFactor;
         float panel_height = base_panel_height * scaleFactor;
 
@@ -65,7 +65,7 @@ private:
 
         ImVec2 area_start = ImGui::GetCursorScreenPos();
 
-        // Рисуем тень под всей областью битов
+        // Shadow under the whole bit area
         ImDrawList* draw = ImGui::GetWindowDrawList();
         draw->AddRectFilled(
             ImVec2(area_start.x + shadow_offset, area_start.y + shadow_offset),
@@ -94,7 +94,7 @@ private:
             *value ^= (1 << clicked_bit);
         }
 
-        // Отрисовка ячеек битов
+        // Bit cells
         float draw_x = area_start.x;
         for (int i = 7; i >= 0; --i) {
             bool is_set = (*value >> i) & 1;
@@ -126,7 +126,7 @@ private:
             if (i > 0) draw_x += (i == 4) ? extra_spacing : spacing;
         }
 
-        // Подписи индексов
+        // Bit index labels
         ImGui::SetCursorScreenPos(ImVec2(area_start.x, area_start.y + cell_size + text_offset_y));
         draw_x = area_start.x;
         for (int i = 7; i >= 0; --i) {
@@ -140,7 +140,7 @@ private:
             if (i > 0) draw_x += (i == 4) ? extra_spacing : spacing;
         }
 
-        // HEX-панели
+        // HEX panels
         ImGui::SetCursorScreenPos(ImVec2(area_start.x, area_start.y + cell_size + text_offset_y + ImGui::GetTextLineHeight() + 8 * scaleFactor));
         ImVec2 panel_size = ImVec2((total_width - spacing) * 0.5f, panel_height);
 

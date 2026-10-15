@@ -2,12 +2,12 @@
 #pragma once
 #include "widget_common.h"
 
-// Режимы работы кнопки
+// Button modes
 enum GlossyButtonMode {
-    GLOSSY_BUTTON_SETBIT = 0,   // записать заданное значение
-    GLOSSY_BUTTON_TOGGLE = 1,   // инвертировать младший бит
-    GLOSSY_BUTTON_WRITE = 2,    // записать фиксированное значение
-    GLOSSY_BUTTON_MOMENTARY = 3, // при удержании пишется writeValue, при отпускании 0
+    GLOSSY_BUTTON_SETBIT = 0,   // write the given value
+    GLOSSY_BUTTON_TOGGLE = 1,   // invert the lowest bit
+    GLOSSY_BUTTON_WRITE = 2,    // write a fixed value
+    GLOSSY_BUTTON_MOMENTARY = 3, // writeValue while held, 0 on release
 };
 
 class GlossyButtonWidget : public UIWidget {
@@ -21,8 +21,8 @@ public:
 
 private:
     std::string m_label;
-    uint16_t    m_addr;          // статический адрес (может быть 0)
-    bool        m_le;            // порядок байт (не используется для boolean, но оставлен)
+    uint32_t    m_addr;          // static address (may be 0)
+    bool        m_le;            // byte order (unused for boolean, kept for compatibility)
     GlossyButtonMode m_mode;
     uint16_t    m_writeValue;
     float       m_radius;

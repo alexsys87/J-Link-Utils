@@ -23,7 +23,7 @@ public:
 
         float value = 0.0f;
 
-        // Чтение данных в зависимости от типа
+        // Read the data according to the type
         if (dataType == FLOAT) {
             if (littleEndian) {
                 uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
@@ -72,7 +72,7 @@ public:
         else if (dataType == FLOAT_INV) {
             uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
             if (littleEndian) {
-                raw = SwapLeToBe32(raw); // преобразуем little->big, т.к. ожидается big
+                raw = SwapLeToBe32(raw); // little to big, big-endian is expected
             }
             value = *(float*)&raw;
         }
@@ -85,7 +85,7 @@ public:
 
         if (value != oldValue) {
             uint32_t writeAddr = addr;
-            // Запись обратно с учётом типа
+            // Write back according to the type
             if (dataType == FLOAT) {
                 if (littleEndian) {
                     uint32_t raw;
@@ -197,17 +197,17 @@ private:
         float t = (*p_value - v_min) / (v_max - v_min);
         float angle = ANGLE_MIN + (ANGLE_MAX - ANGLE_MIN) * t;
 
-        // Цвета из темы
+        // Theme colors
         ImU32 col_bg = ImGui::GetColorU32(ImGuiCol_FrameBg);
         ImU32 col_border = ImGui::GetColorU32(ImGuiCol_Border);
         ImU32 col_mark = ImGui::GetColorU32(ImGuiCol_TextDisabled);
         ImU32 col_indicator = ImGui::GetColorU32(ImGuiCol_SliderGrab);
 
-        // Корпус
+        // Body
         draw_list->AddCircleFilled(center, radius_outer, col_bg, 32);
         draw_list->AddCircle(center, radius_outer, col_border, 32, 2.0f);
 
-        // Метки по краю
+        // Marks around the edge
         for (int i = 0; i <= 20; i++) {
             float s_t = (float)i / 20.0f;
             float s_angle = ANGLE_MIN + (ANGLE_MAX - ANGLE_MIN) * s_t;
@@ -219,7 +219,7 @@ private:
             );
         }
 
-        // Индикатор (точка)
+        // Indicator (dot)
         ImVec2 indicator = ImVec2(center.x + cosf(angle) * radius_outer * 0.6f,
             center.y + sinf(angle) * radius_outer * 0.6f);
         draw_list->AddCircleFilled(indicator, 5.0f, col_indicator, 12);

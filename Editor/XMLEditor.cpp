@@ -18,7 +18,7 @@
 #include "XMLSafety.h"
 
 // ------------------------------------------------------------------
-// Вспомогательные функции для преобразования цвета
+// Color conversion helpers
 // ------------------------------------------------------------------
 static bool ParseColor(const char* str, ImVec4& outColor) {
     if (!str || str[0] != '#') return false;
@@ -66,7 +66,7 @@ static std::string FormatColor(const ImVec4& col, bool withAlpha = true) {
 }
 
 // ------------------------------------------------------------------
-// Вспомогательная функция для определения, является ли строка булевой
+// Checks whether a string is a boolean
 // ------------------------------------------------------------------
 static bool IsBooleanString(const char* str, bool& outValue) {
     if (!str) return false;
@@ -84,7 +84,7 @@ static bool IsBooleanString(const char* str, bool& outValue) {
 }
 
 // ------------------------------------------------------------------
-// Вспомогательная функция для определения, является ли строка числом (int/float)
+// Checks whether a string is a number (int/float)
 // ------------------------------------------------------------------
 static bool IsNumberString(const char* str, bool& isFloat) {
     if (!str || *str == '\0') return false;
@@ -92,13 +92,13 @@ static bool IsNumberString(const char* str, bool& isFloat) {
     errno = 0;
     float f = strtof(str, &endptr);
     if (errno == ERANGE || !std::isfinite(f)) return false;
-    if (endptr == str) return false; // не удалось преобразовать
-    // проверяем, остались ли после числа только пробелы
+    if (endptr == str) return false; // not a number
+    // only whitespace may follow the number
     while (*endptr) {
         if (!std::isspace(static_cast<unsigned char>(*endptr))) return false;
         endptr++;
     }
-    // определяем тип: если есть точка или экспонента, то float
+    // a dot or an exponent means float
     isFloat = (strchr(str, '.') != nullptr || strchr(str, 'e') != nullptr || strchr(str, 'E') != nullptr);
     if (!isFloat) {
         errno = 0;
@@ -111,10 +111,10 @@ static bool IsNumberString(const char* str, bool& isFloat) {
 }
 
 // ------------------------------------------------------------------
-// Функция для определения, может ли элемент иметь дочерние элементы
+// Whether an element may have child elements
 // ------------------------------------------------------------------
 static bool CanHaveChildren(const char* elementName) {
-    // Список универсальных контейнеров, которые могут содержать любые виджеты
+    // Generic containers that may hold any widget
     static const std::set<std::string> containers = {
         "Group", "TreeNode", "TabBar", "Tab", "ChildWindow", "Header", "Popup", "HintBox",
         "FixedWidth", "Column", "Grid", "Window"
@@ -122,7 +122,7 @@ static bool CanHaveChildren(const char* elementName) {
     if (containers.find(elementName) != containers.end()) {
         return true;
     }
-    // Проверяем, есть ли запись в childMap для этого элемента
+    // Does childMap have an entry for this element?
     const auto& childMap = WidgetTemplateFactory::GetChildCreators();
     if (childMap.find(elementName) != childMap.end()) {
         return true;
@@ -131,7 +131,7 @@ static bool CanHaveChildren(const char* elementName) {
 }
 
 // ------------------------------------------------------------------
-// Вспомогательные функции и глобальные переменные редактора
+// Editor helpers and globals
 // ------------------------------------------------------------------
 static tinyxml2::XMLNode* g_selectedNode = nullptr;
 static char g_newAttrName[128] = "";
@@ -144,12 +144,12 @@ void ResetXMLEditorState() {
 }
 
 // ------------------------------------------------------------------
-// Функция для поиска контейнера, в который следует вставлять дочерние виджеты
+// Finds the container that receives new child widgets
 // ------------------------------------------------------------------
 static tinyxml2::XMLElement* GetContainerForChildren(tinyxml2::XMLElement* parent, tinyxml2::XMLDocument* doc, const char* childName = nullptr) {
     const char* name = parent->Name();
 
-    // DataLog, Histogram, PlotLines: параметры (не Line) идут в сам элемент, Line идёт в <Items>
+    // DataLog, Histogram, PlotLines: parameters (not Line) go into the element, Line goes into <Items>
     if (strcmp(name, "DataLog") == 0 || strcmp(name, "Histogram") == 0 || strcmp(name, "PlotLines") == 0) {
         if (childName && strcmp(childName, "Line") == 0) {
             tinyxml2::XMLElement* items = parent->FirstChildElement("Items");
@@ -159,10 +159,10 @@ static tinyxml2::XMLElement* GetContainerForChildren(tinyxml2::XMLElement* paren
             }
             return items;
         }
-        return parent; // параметры (Text, Format и др.) идут в сам элемент
+        return parent; // parameters (Text, Format, ...) go into the element
     }
 
-    // Специализированные контейнеры
+    // Specialized containers
     if (strcmp(name, "ComboBox") == 0 || strcmp(name, "RadioButton") == 0 ||
         strcmp(name, "SegmentButton") == 0) {
         tinyxml2::XMLElement* items = parent->FirstChildElement("Items");
@@ -181,27 +181,27 @@ static tinyxml2::XMLElement* GetContainerForChildren(tinyxml2::XMLElement* paren
         return zones;
     }
 
-    // Для универсальных контейнеров (Group, Tab, ChildWindow, Header, Popup, HintBox и т.п.) ищем <Items>
+    // Generic containers (Group, Tab, ChildWindow, Header, Popup, HintBox, ...) use <Items>
     tinyxml2::XMLElement* items = parent->FirstChildElement("Items");
     if (items) return items;
 
-    // Если ничего не найдено, возвращаем самого родителя (вставка прямо в него)
+    // Nothing found: insert directly into the parent
     return parent;
 }
 
 // ------------------------------------------------------------------
-// Функция для поиска родительского элемента для вставки нового виджета
-// (используется кнопкой "Add Widget" в главном окне)
+// Finds the parent for a new widget
+// (used by the "Add Widget" button)
 // ------------------------------------------------------------------
 static tinyxml2::XMLElement* FindInsertionParent(tinyxml2::XMLDocument* doc, const char* widgetType = nullptr) {
-    // Если выбран какой-то элемент, используем его как родителя
+    // If an element is selected, use it as the parent
     if (g_selectedNode && g_selectedNode->ToElement()) {
         return GetContainerForChildren(g_selectedNode->ToElement(), doc, widgetType);
     }
-    // Иначе ищем первый элемент Window
+    // Otherwise use the first Window element
     tinyxml2::XMLElement* root = doc->FirstChildElement("Window");
     if (root) {
-        // Убедимся, что у окна есть <Items>
+        // Make sure the window has <Items>
         tinyxml2::XMLElement* items = root->FirstChildElement("Items");
         if (!items) {
             items = doc->NewElement("Items");
@@ -213,7 +213,7 @@ static tinyxml2::XMLElement* FindInsertionParent(tinyxml2::XMLDocument* doc, con
 }
 
 // ------------------------------------------------------------------
-// Рекурсивное отображение дерева XML
+// Recursive XML tree view
 // ------------------------------------------------------------------
 static void ShowXMLNode(tinyxml2::XMLNode* node, int depth) {
     if (!node) return;
@@ -269,7 +269,7 @@ static void ShowXMLNode(tinyxml2::XMLNode* node, int depth) {
 }
 
 // ------------------------------------------------------------------
-// Панель свойств для выбранного узла
+// Properties panel for the selected node
 // ------------------------------------------------------------------
 static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* doc, MainContext* ctx) {
     if (!node) {
@@ -282,13 +282,13 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
     tinyxml2::XMLComment* commentNode = node->ToComment();
     tinyxml2::XMLDeclaration* declNode = node->ToDeclaration();
 
-    // Список имён, которые могут повторяться
+    // Element names that may repeat
     static const std::set<std::string> multipleElements = {
         "Line", "Zone", "Combo", "Radio", "Segment", "SameLine", "Spacing", "Separator"
     };
 
     if (element) {
-        // Редактирование имени элемента
+        // Element name
         static char elemName[256];
         strncpy(elemName, element->Name(), sizeof(elemName) - 1);
         elemName[sizeof(elemName) - 1] = '\0';
@@ -297,7 +297,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             ctx->xml_modified = true;
         }
 
-        // Таблица атрибутов
+        // Attribute table
         if (ImGui::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
             std::vector<std::pair<std::string, std::string>> attrs;
             for (const tinyxml2::XMLAttribute* attr = element->FirstAttribute(); attr; attr = attr->Next()) {
@@ -330,7 +330,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                 ImGui::PopID();
             }
 
-            // Добавление нового атрибута
+            // New attribute
             ImGui::InputTextWithHint("##newAttrName", "name", g_newAttrName, sizeof(g_newAttrName));
             ImGui::SameLine();
             ImGui::InputTextWithHint("##newAttrValue", "value", g_newAttrValue, sizeof(g_newAttrValue));
@@ -344,7 +344,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             }
         }
 
-        // Текстовое содержимое элемента (первый текстовый узел)
+        // Text content of the element (first text node)
         tinyxml2::XMLText* textChild = nullptr;
         for (tinyxml2::XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
             if (child->ToText()) {
@@ -371,7 +371,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             }
         }
 
-        // Секция дочерних элементов (только элементы, не текстовые узлы)
+        // Child elements (elements only, no text nodes)
         if (ImGui::CollapsingHeader("Child Elements", ImGuiTreeNodeFlags_DefaultOpen)) {
             std::vector<tinyxml2::XMLElement*> children;
             for (tinyxml2::XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
@@ -387,15 +387,15 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                 for (size_t i = 0; i < children.size(); ++i) {
                     tinyxml2::XMLElement* childElem = children[i];
                     const char* childName = childElem->Name();
-                    const char* childText = childElem->GetText(); // может быть nullptr
+                    const char* childText = childElem->GetText(); // may be nullptr
 
                     ImGui::PushID(childElem);
 
-                    // Отображаем имя тега слева
+                    // Tag name on the left
                     ImGui::Text("%s:", childName);
                     ImGui::SameLine();
 
-                    // Определяем тип и создаем соответствующий контрол
+                    // Pick a control that fits the value
                     ImVec4 color;
                     bool boolVal;
                     bool isFloat;
@@ -406,7 +406,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                         strcmp(childName, "DoneAddr") == 0);
 
                     if (childText && isAddress) {
-                        // Редактируем адрес в hex
+                        // Address, edited as hex
                         unsigned int addr = 0;
                         const char* text = childText;
                         if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
@@ -431,7 +431,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                         }
                     }
                     else if (childText && ParseColor(childText, color)) {
-                        // Цвет
+                        // Color
                         ImGuiColorEditFlags flags = ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_NoInputs;
                         if (ImGui::ColorEdit4("##value", (float*)&color, flags)) {
                             bool hasAlpha = (color.w < 0.999f);
@@ -468,7 +468,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                         }
                     }
                     else {
-                        // Обычный текст
+                        // Plain text
                         static char textBuf[1024];
                         strncpy(textBuf, childText ? childText : "", sizeof(textBuf) - 1);
                         textBuf[sizeof(textBuf) - 1] = '\0';
@@ -478,7 +478,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
                         }
                     }
 
-                    // Кнопки перемещения вверх/вниз
+                    // Move up/down buttons
                     ImGui::SameLine();
                     if (i > 0) {
                         if (ImGui::ArrowButton("##up", ImGuiDir_Up)) {
@@ -522,7 +522,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             }
         }
 
-        // Кнопки управления узлом
+        // Node buttons
         bool canHaveChildren = CanHaveChildren(element->Name());
         if (canHaveChildren) {
             if (ImGui::Button("Add child widget")) {
@@ -548,7 +548,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             return;
         }
 
-        // Попап для выбора типа дочернего виджета
+        // Popup to choose the child widget type
         if (canHaveChildren && ImGui::BeginPopup("AddChildWidgetPopup")) {
             ImGui::Text("Select child widget type:");
             ImGui::Separator();
@@ -557,7 +557,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             const auto& childMap = WidgetTemplateFactory::GetChildCreators();
             auto it = childMap.find(parentType);
 
-            // Собираем имена уже существующих дочерних элементов
+            // Names of the existing child elements
             std::set<std::string> existingNames;
             for (tinyxml2::XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
                 if (child->ToElement()) {
@@ -606,7 +606,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
         }
     }
     else if (textNode) {
-        // Редактирование текстового узла
+        // Text node
         static char textBuf[1024];
         strncpy(textBuf, textNode->Value(), sizeof(textBuf) - 1);
         textBuf[sizeof(textBuf) - 1] = '\0';
@@ -624,7 +624,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
         }
     }
     else if (commentNode) {
-        // Редактирование комментария
+        // Comment
         ImGui::Text("Comment");
         static char commentBuf[1024];
         strncpy(commentBuf, commentNode->Value(), sizeof(commentBuf) - 1);
@@ -648,7 +648,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
 }
 
 // ------------------------------------------------------------------
-// Главная функция редактора
+// Editor window
 // ------------------------------------------------------------------
 void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
     if (!ctx->CurrentXMLDoc) {
@@ -662,7 +662,7 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
     }
 
     if (g_selectedNode && !ui_safety::ContainsXMLNode(ctx->CurrentXMLDoc, g_selectedNode)) {
-        g_selectedNode = nullptr;   // узел из старого документа, сбрасываем выбор
+        g_selectedNode = nullptr;   // node from an old document, drop the selection
     }
 
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
@@ -671,7 +671,7 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         return;
     }
 
-    // Левая панель: дерево XML
+    // Left panel: XML tree
     if (ImGui::BeginChild("Tree", ImVec2(300, -ImGui::GetFrameHeightWithSpacing() - 30), true)) {
         tinyxml2::XMLNode* root = ctx->CurrentXMLDoc->FirstChild();
         while (root) {
@@ -683,13 +683,13 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
 
     ImGui::SameLine();
 
-    // Правая панель: свойства
+    // Right panel: properties
     if (ImGui::BeginChild("Properties", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 30), true)) {
         ShowNodeProperties(g_selectedNode, ctx->CurrentXMLDoc, ctx);
     }
     ImGui::EndChild();
 
-    // Панель инструментов снизу
+    // Bottom toolbar
     if (ImGui::Button("Add Window", ImVec2(120, 0))) {
         tinyxml2::XMLElement* newWindow = WidgetTemplateFactory::CreateNewWindow(ctx->CurrentXMLDoc);
         if (newWindow) {
@@ -716,7 +716,7 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         }
     }
 
-    // Попап для добавления нового корневого виджета (в выбранный узел или в Items окна)
+    // Popup to add a root widget (into the selected node or the window's Items)
     if (ImGui::BeginPopup("AddWidgetPopup")) {
         ImGui::Text("Select widget type:");
         ImGui::Separator();
@@ -726,10 +726,10 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         };
 
         for (const auto& pair : WidgetTemplateFactory::GetRootCreators()) {
-            // Находим родителя, куда будет вставлен виджет
+            // Parent that receives the widget
             tinyxml2::XMLElement* parent = FindInsertionParent(ctx->CurrentXMLDoc, pair.first.c_str());
             if (parent) {
-                // Собираем имена уже существующих дочерних элементов
+                // Names of the existing child elements
                 std::set<std::string> existingNames;
                 for (tinyxml2::XMLNode* child = parent->FirstChild(); child; child = child->NextSibling()) {
                     if (child->ToElement()) {
@@ -742,7 +742,7 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
                     if (ImGui::Selectable(pair.first.c_str())) {
                         tinyxml2::XMLElement* newElem = pair.second(ctx->CurrentXMLDoc);
                         if (newElem) {
-                            // Определяем правильный контейнер внутри родителя
+                            // The right container inside the parent
                             tinyxml2::XMLElement* container = GetContainerForChildren(parent, ctx->CurrentXMLDoc, pair.first.c_str());
                             container->InsertEndChild(newElem);
                             ctx->xml_modified = true;
@@ -755,11 +755,11 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         ImGui::EndPopup();
     }
 
-    // Всплывающие уведомления
+    // Notification popups
     if (ImGui::BeginPopupModal("Saved", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("File saved successfully.");
         if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
-        ctx->file_loaded = false; // сбрасываем флаг, чтобы при следующем открытии файла загрузить его заново
+        ctx->file_loaded = false; // reload the file the next time it is opened
         ImGui::EndPopup();
     }
     if (ImGui::BeginPopupModal("Save Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {

@@ -19,7 +19,7 @@
 
 #include <JLinkARMDLL.h>
 
-#define IOMAP_SIZE (1024 * 1024) // 1 МБ
+#define IOMAP_SIZE (1024 * 1024) // 1 MiB
 
 #define MAX_PATH 260
 
@@ -92,8 +92,8 @@ typedef struct {
 } FT32;
 
 typedef struct {
-    uint32_t  addr;   // смещение в IOMAP_Data
-    uint16_t  size;   // размер данных в байтах
+    uint32_t  addr;   // offset in IOMAP_Data
+    uint16_t  size;   // data size in bytes
 } q_t;
 
 typedef struct {
@@ -101,7 +101,7 @@ typedef struct {
         q_t        q;
         uint64_t all;
     };
-    uint8_t* value;  // указатель на данные (для записи) или NULL для чтения
+    uint8_t* value;  // data to write, or NULL for a read
 } iodata_t;
 
 // One value captured by the communication thread for the plots.
@@ -131,17 +131,17 @@ typedef struct MainContext {
     bool Sync;
     std::atomic<bool> StartComunication{false};
 
-    tinyxml2::XMLDocument* CurrentXMLDoc; // текущий загруженный XML
-	bool show_style_editor;               // флаг отображения редактора стилей
-    bool show_xml_editor;                 // флаг отображения редактора
-    bool xml_modified;                    // флаг, был ли изменён XML
+    tinyxml2::XMLDocument* CurrentXMLDoc; // currently loaded XML
+	bool show_style_editor;               // show the style editor
+    bool show_xml_editor;                 // show the XML editor
+    bool xml_modified;                    // XML has unsaved changes
     bool openfile, closefile;
 
     //J-link
-    bool jlink_opened;                    // флаг успешного открытия J‑Link
-    bool auto_connect;                    // автоматически подключаться при старте
-    char jlink_device[64];                // строка с именем устройства
-    uint32_t   mcu_memory_base;           // базовый адрес памяти MCU для Cortex M (обычно 0x20000000)
+    bool jlink_opened;                    // J-Link opened successfully
+    bool auto_connect;                    // connect automatically on start
+    char jlink_device[64];                // J-Link device name
+    uint32_t   mcu_memory_base;           // MCU memory base address for Cortex-M (usually 0x20000000)
 } MainContext;
 
 

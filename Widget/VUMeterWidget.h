@@ -18,7 +18,7 @@ class VUMeterWidget : public UIWidget {
     std::string unit;
     bool littleEndian;
     bool showPeak;
-    float peakHoldTime; // не используетс€, дл€ будущего расширени€
+    float peakHoldTime; // unused, reserved for later
 
 public:
     VUMeterWidget(const char* lbl, uint32_t addr, float minV, float maxV,
@@ -70,22 +70,22 @@ private:
         ImU32 col_text = ImGui::GetColorU32(ImGuiCol_Text);
         ImU32 col_text_dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
 
-        // “ень под индикатором
+        // Shadow under the meter
         draw->AddRectFilled(ImVec2(pos.x + 2, pos.y + 2), ImVec2(pos.x + width + 2, pos.y + height + 2), IM_COL32(0, 0, 0, 60), style.FrameRounding);
 
-        // ‘он (черный или темно-серый)
+        // Background (black or dark grey)
         draw->AddRectFilled(bb.Min, bb.Max, IM_COL32(30, 30, 30, 255), style.FrameRounding);
         draw->AddRect(bb.Min, bb.Max, col_border, style.FrameRounding, 0, 1.0f);
 
         float t = (value - min_val) / (max_val - min_val);
         t = ImClamp(t, 0.0f, 1.0f);
 
-        // √радиентные цвета
-        ImU32 col_start = IM_COL32(100, 255, 100, 255); // зеленый
-        ImU32 col_mid = IM_COL32(255, 255, 100, 255);  // желтый
-        ImU32 col_end = IM_COL32(255, 100, 100, 255);  // красный
+        // Gradient colors
+        ImU32 col_start = IM_COL32(100, 255, 100, 255); // green
+        ImU32 col_mid = IM_COL32(255, 255, 100, 255);  // yellow
+        ImU32 col_end = IM_COL32(255, 100, 100, 255);  // red
 
-        // –исуем заполненную часть с градиентом в зависимости от t
+        // Filled part, colored according to t
         if (t > 0.0f) {
             ImVec2 fillMin, fillMax;
             if (orientation == VU_HORIZONTAL) {
@@ -97,11 +97,11 @@ private:
                 fillMax = bb.Max;
             }
 
-            // √оризонтальный градиент от зеленого к красному через желтый
-            // ƒл€ простоты используем сплошную заливку цветом в зависимости от t,
-            // но можно сделать градиент по всей длине, но тогда сложнее.
-            // —делаем плавный переход: если t <= 0.5, интерполируем между зеленым и желтым,
-            // иначе между желтым и красным.
+            // Horizontal transition from green to red through yellow
+            // For simplicity the fill is one color that depends on t;
+            // a gradient along the whole length would be more complex.
+            // Smooth transition: for t <= 0.5 interpolate between green and yellow,
+            // otherwise between yellow and red.
             ImU32 fillColor;
             if (t <= 0.5f) {
                 float local_t = t / 0.5f; // 0..1
@@ -123,7 +123,7 @@ private:
             draw->AddRectFilled(fillMin, fillMax, fillColor, style.FrameRounding * 0.5f);
         }
 
-        // –исуем делени€ (optional)
+        // Ticks (optional)
         int numTicks = 5;
         for (int i = 0; i <= numTicks; ++i) {
             float tick_t = (float)i / numTicks;
@@ -132,14 +132,14 @@ private:
                 draw->AddLine(ImVec2(x, bb.Min.y), ImVec2(x, bb.Max.y), IM_COL32(80, 80, 80, 100), 1.0f);
             }
             else {
-                float y = bb.Min.y + (1.0f - tick_t) * height; // перевернуто, чтобы ноль был снизу
+                float y = bb.Min.y + (1.0f - tick_t) * height; // flipped so that zero is at the bottom
                 draw->AddLine(ImVec2(bb.Min.x, y), ImVec2(bb.Max.x, y), IM_COL32(80, 80, 80, 100), 1.0f);
             }
         }
 
-        // ѕикова€ метка (проста€ лини€ на текущем пике, но дл€ демо просто показываем текущее значение)
+        // Peak mark (for now a line at the current value)
         if (showPeak) {
-            // «десь можно хранить пик, но дл€ простоты отобразим линию на текущем значении
+            // The peak could be stored here; for simplicity the line follows the current value
             if (orientation == VU_HORIZONTAL) {
                 float x = bb.Min.x + t * width;
                 draw->AddLine(ImVec2(x, bb.Min.y - 2), ImVec2(x, bb.Max.y + 2), IM_COL32(255, 255, 255, 200), 2.0f);
@@ -150,7 +150,7 @@ private:
             }
         }
 
-        // “екст (значение и единицы) под индикатором или справа
+        // Text (value and unit) under or next to the meter
         char valBuf[32];
         snprintf(valBuf, sizeof(valBuf), "%.1f %s", value, unit);
         ImVec2 valSize = ImGui::CalcTextSize(valBuf);
@@ -163,7 +163,7 @@ private:
         }
         draw->AddText(valPos, col_text, valBuf);
 
-        // «анимаемое место
+        // Reserved space
         float extra = (orientation == VU_HORIZONTAL) ? valSize.y + 10 : valSize.x + 10;
         if (orientation == VU_HORIZONTAL)
             ImGui::Dummy(ImVec2(width, height + extra));

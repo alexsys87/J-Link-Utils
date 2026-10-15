@@ -3,7 +3,7 @@
 #include "Editor/XMLSafety.h"
 #include <cctype>
 
-// Включаем все виджеты
+// All widgets
 #include "TextWidget.h"
 #include "TextColoredWidget.h"
 #include "ButtonWidget.h"
@@ -74,7 +74,7 @@
 
 using namespace tinyxml2;
 
-// Глобальный буфер для графиков
+// Global buffer for the plots
 float VirtualBuffer[MAX_BUFF][BUFF_SIZE] = { 0 };
 
 std::vector<WindowData> g_Windows;
@@ -96,7 +96,7 @@ static bool ParseTextColor(const char* str, unsigned int* rgba) {
     return true;
 }
 
-// Рекурсивная загрузка виджетов из XML
+// Recursive widget loading from XML
 static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     if (!elem) return nullptr;
     std::string name = elem->Name();
@@ -227,7 +227,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
 
         std::vector<PlotLineConfig> lines;
 
-        // Читаем дочерние линии из Items
+        // Read the lines from Items
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
             for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line")) {
@@ -250,7 +250,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
                     lineElem->FirstChildElement("BufferId")->QueryIntText(&bufId);
                 line.bufferId = bufId;
 
-                // Цвет
+                // Color
                 ImU32 col = IM_COL32_WHITE;
                 if (lineElem->FirstChildElement("LineColor")) {
                     const char* colStr = lineElem->FirstChildElement("LineColor")->GetText();
@@ -274,9 +274,9 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             }
         }
 
-        // Если линий нет, создаём одну из корневых параметров (старый формат)
+        // No lines: build one from the element's own parameters (old format)
         if (lines.empty()) {
-            // Читаем старые параметры: Address, DataType, Float, LittleEndian, Scale, BufferId, LineColor, LineWeight
+            // Old parameters: Address, DataType, Float, LittleEndian, Scale, BufferId, LineColor, LineWeight
             PlotLineConfig line;
             line.name = txt;
             if (elem->FirstChildElement("Address"))
@@ -305,7 +305,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             if (elem->FirstChildElement("BufferId")) elem->FirstChildElement("BufferId")->QueryIntText(&bufId);
             line.bufferId = bufId;
 
-            // Цвет
+            // Color
             ImU32 col = IM_COL32_WHITE;
             if (elem->FirstChildElement("LineColor")) {
                 const char* colStr = elem->FirstChildElement("LineColor")->GetText();
@@ -327,7 +327,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             lines.push_back(line);
         }
 
-        // Создаём виджет с несколькими линиями
+        // Create the widget with all lines
         return std::make_unique<PlotLinesWidget>(
             txt, minV, maxV, w, h, f, sz, sm, autosize, maxSize, lines
         );
@@ -496,7 +496,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         uint32_t done = 0;
         bool le = false;
         bool autoSz = false;
-        float barWidth = 0.8f; // по умолчанию
+        float barWidth = 0.8f; // default
 
         if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
         if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
@@ -510,7 +510,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("AutoSize")) elem->FirstChildElement("AutoSize")->QueryBoolText(&autoSz);
         if (elem->FirstChildElement("BarWidth")) elem->FirstChildElement("BarWidth")->QueryFloatText(&barWidth);
 
-        // Проверяем наличие вложенных линий
+        // Are there nested lines?
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
             std::vector<HistogramWidget::LineConfig> lineList;
@@ -548,7 +548,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             }
         }
 
-        // Старый формат: одна линия
+        // Old format: a single line
         uint32_t addr = 0;
         float ys = 1.0f;
         ImU32 color = IM_COL32_WHITE;
@@ -595,7 +595,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         if (elem->FirstChildElement("AutoSize")) elem->FirstChildElement("AutoSize")->QueryBoolText(&autoSz);
 
-        // Проверяем, есть ли вложенные линии
+        // Are there nested lines?
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
             std::vector<DataLogWidget::LineConfig> lineList;
@@ -608,7 +608,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
                 if (lineElem->FirstChildElement("ScaleY"))
                     lineElem->FirstChildElement("ScaleY")->QueryFloatText(&line.yScale);
                 line.color = IM_COL32_WHITE;
-                line.dataType = FLOAT; // по умолчанию
+                line.dataType = FLOAT; // default
                 if (lineElem->FirstChildElement("DataType"))
                     lineElem->FirstChildElement("DataType")->QueryIntText(&line.dataType);
 
@@ -632,7 +632,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             }
         }
 
-        // Старый формат: одна линия
+        // Old format: a single line
         uint32_t addr = 0;
         float ys = 1.0f;
         ImU32 color = IM_COL32_WHITE;
@@ -1265,8 +1265,9 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         bool le = false;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        int step = 2;
-        if (dtype == EQ_INT16) step = 1;
+        // Byte distance between neighbouring bands: one float or one int16 by default.
+        int step = 4;
+        if (dtype == EQ_INT16) step = 2;
         if (elem->FirstChildElement("AddressStep"))
             elem->FirstChildElement("AddressStep")->QueryIntText(&step);
         return std::make_unique<EqualizerWidget>(lbl, addr, bands, minV, maxV, bandWidth, height, dtype, le, step);
@@ -1452,7 +1453,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         bool useExternal = false;
         if (elem->FirstChildElement("UseExternal"))
             elem->FirstChildElement("UseExternal")->QueryBoolText(&useExternal);
-        bool useCache = true; // по умолчанию true
+        bool useCache = true; // true by default
         if (elem->FirstChildElement("UseCache"))
             elem->FirstChildElement("UseCache")->QueryBoolText(&useCache);
 
@@ -1464,7 +1465,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     return nullptr;
 }
 
-// Загрузка всех окон из XML
+// Loads all windows from the XML file
 void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
     XMLDocument doc;
     if (doc.LoadFile(filename) != XML_SUCCESS) {
@@ -1485,41 +1486,41 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
         //ctx->w[winCount].name = name;
         //ctx->w[winCount].show = true;
 
-        // Обработка IOMap (если есть)
+        // IOMap block, if present
         XMLElement* iomap = win->FirstChildElement("IOMap");
         if (iomap && ctx->StartComunication && ctx->Sync == SDL_FALSE) {
             XMLElement* items = iomap->FirstChildElement("Items");
             if (items) {
                 SDL_LockMutex(ctx->Datalock);
-                ctx->Sync = SDL_TRUE; // помечаем, что синхронизация для этого окна выполнена
+                ctx->Sync = SDL_TRUE; // mark the initial read as done
                 for (XMLElement* elem = items->FirstChildElement(); elem; elem = elem->NextSiblingElement()) {
                     uint32_t addr = 0;
                     int size = 0;
 
-                    // Читаем адрес
+                    // Address
                     XMLElement* addrElem = TryFindElement(elem, "Address");
                     if (addrElem) {
                         addr = AddressFromHex(addrElem);
                     }
 
-                    // Читаем размер
+                    // Size
                     XMLElement* sizeElem = TryFindElement(elem, "Size");
                     if (sizeElem) {
                         sizeElem->QueryIntText(&size);
                     }
 
-                    // Если адрес и размер корректны, ставим задачу на чтение
+                    // Request a read if the address and size are valid
                     if (addr != 0 && size > 0) {
-                        // Вызов DataReadWriteArray с data = nullptr означает чтение
+                        // DataReadWriteArray with data = nullptr means read
                         DataReadWriteArray(ctx, nullptr, nullptr, &addr, (uint16_t)size);
                     }
                 }
-                SDL_CondSignal(ctx->Datacond); // будим поток обработки очередей
+                SDL_CondSignal(ctx->Datacond); // wake the communication thread
                 SDL_UnlockMutex(ctx->Datalock);
             }
         }
 
-        // Загрузка визуальных элементов
+        // Visual elements
         XMLElement* items = win->FirstChildElement("Items");
         if (items) {
             auto rootGroup = std::make_unique<GroupWidget>();
@@ -1544,7 +1545,7 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
     ctx->file_loaded = true;
 }
 
-// Функция отрисовки всех окон
+// Draws all windows
 int Draw_Window(MainContext* ctx) {
 
     if (!ctx) return -1;
@@ -1569,7 +1570,7 @@ int Draw_Window(MainContext* ctx) {
     return 0;
 }
 
-// Очистка всех окон
+// Removes all windows
 extern "C" void ClearAllWindows(void) {
     g_Windows.clear();
 }
