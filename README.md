@@ -149,6 +149,7 @@ cd F:\J-Link-Utils
 ```powershell
 Remove-Item -Recurse -Force `
     .dependencies\tool-build, `
+    .dependencies\tool-build-*, `
     .dependencies\probe-x64, `
     .dependencies\probe-x86 `
     -ErrorAction SilentlyContinue
@@ -175,6 +176,17 @@ EXE: `out/app/x64/Release/J-Link Utils.exe` или
 `out/package/J-Link-Utils-x64-Release/` и
 `out/package/J-Link-Utils-x86-Release/`. Для запуска нужна соответствующая DLL
 SEGGER рядом с EXE: `JLink_x64.dll` для x64 или `JLinkARM.dll` для x86.
+
+### Обнаружение VS 2026 в vcpkg
+
+- **`Unable to find a valid Visual Studio instance` при найденном VS 2026** —
+  vcpkg-tool 2025-01-11 не распознаёт MSVC 14.5x / набор инструментов v145.
+  В проекте инструмент обновлён до закреплённого выпуска **2025-12-05**,
+  который поддерживает VS 2026. Обновите исходники проекта и повторите команду
+  сборки. Переустанавливать VS или удалять всю `.dependencies` не требуется:
+  устаревший кэш сборки инструмента сбрасывается автоматически.
+  Если ошибка остаётся, проверьте наличие компонента C++ и файла
+  `VC\Auxiliary\Build\vcvarsall.bat` внутри установленной Visual Studio.
 
 Типичные ошибки:
 
@@ -204,9 +216,10 @@ SEGGER рядом с EXE: `JLink_x64.dll` для x64 или `JLinkARM.dll` дл�
 
 **Ограничение проверки:** автоматические Windows-сборки проверены на VS 2022,
 не на VS 2026. Передача генератора устраняет выбор VS 2022, но не гарантирует
-совместимость всей цепочки сборки с VS 2026. В проекте закреплена старая версия
-vcpkg; если далее именно vcpkg не обнаружит MSVC/VS 2026, потребуется отдельное
-согласованное обновление закреплённой версии и проверка зависимостей.
+совместимость всей цепочки сборки с VS 2026. Инструмент vcpkg-tool обновлён
+отдельно от каталога портов: baseline **2025.01.13** и версии SDL2, FreeType
+и остальных библиотек сохранены. Архив исходников инструмента проверяется
+по закреплённому SHA512 из официальных метаданных vcpkg 2025.12.12.
 
 ## Checks without hardware
 

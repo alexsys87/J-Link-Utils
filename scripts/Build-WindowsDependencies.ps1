@@ -42,13 +42,27 @@ Invoke-Native git @('-C', $vcpkg, 'diff', '--exit-code', 'HEAD', '--', 'scripts'
 # The upstream Windows bootstrap downloads an unhashed executable. Instead build
 # the tool from its upstream SHA512-pinned source archive. Its fmt/cmrc downloads
 # are also hash-pinned by that source. No winget, global integration, or mutable exe.
-$archive = Join-Path $state "vcpkg-tool-$($lock.toolVersion).tar.gz"
+# Upstream VCPKG_TOOL_SOURCE_SHA describes the tag ZIP, not the tar.gz.
+$archive = Join-Path $state "vcpkg-tool-$($lock.toolVersion).zip"
 if (-not (Test-Path $archive)) { Invoke-WebRequest -Uri $lock.toolSourceUrl -OutFile $archive }
 Assert-Hash $archive $lock.toolSourceSha512
 $toolSource = Join-Path $state "tool-source-$($lock.toolVersion)"
+# An older bootstrap cache can still point at the January tool sources.
+# Discard only that build directory when the source version changes; retain
+# downloads, installed libraries and the vcpkg binary cache.
+$previousToolBuild = Join-Path $state 'tool-build'
+$previousToolCache = Join-Path $previousToolBuild 'CMakeCache.txt'
+if (Test-Path -LiteralPath $previousToolCache) {
+    $sourceEntry = @(Get-Content -LiteralPath $previousToolCache | Where-Object { $_ -match '^CMAKE_HOME_DIRECTORY:INTERNAL=' })
+    if ($sourceEntry.Count -ne 1 -or
+        [IO.Path]::GetFullPath(($sourceEntry[0] -split '=', 2)[1]) -ine [IO.Path]::GetFullPath($toolSource)) {
+        Write-Host 'Removing outdated vcpkg-tool build cache (tool source version changed).'
+        Remove-Item -LiteralPath $previousToolBuild -Recurse -Force
+    }
+}
 if (-not (Test-Path $toolSource)) {
     New-Item -ItemType Directory $toolSource | Out-Null
-    try { Invoke-Native tar @('-xzf', $archive, '--strip-components=1', '-C', $toolSource) }
+    try { Invoke-Native tar @('-xf', $archive, '--strip-components=1', '-C', $toolSource) }
     catch { Remove-Item -Recurse -Force $toolSource; throw }
 }
 $toolBuild = Join-Path $state 'tool-build'
