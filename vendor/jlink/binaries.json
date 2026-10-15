@@ -1,0 +1,23 @@
+[
+  {
+    "file": "JLink.lib",
+    "bytes": 676238,
+    "sha256": "946d1008a4efc5c6a2184dc45b3a6966b353fc92b3b5e95f2e144fba423ecc34",
+    "architecture": "x86",
+    "kind": "static DLL-loader wrapper, Release /MT"
+  },
+  {
+    "file": "JLink_x64.lib",
+    "bytes": 822948,
+    "sha256": "18a41ae3414a7db4a2f7f7bbdcd44e867330f69b193591359eac625826eb359b",
+    "architecture": "x64",
+    "kind": "static DLL-loader wrapper, Release /MT"
+  },
+  {
+    "file": "JLinkARM.lib",
+    "bytes": 168278,
+    "sha256": "43adbcfbb1b4f56e2fdb6bb9f203e609ff88f600db1f36a856bec58fb247b264",
+    "architecture": "x86",
+    "kind": "traditional JLinkARM.dll import library, retained but not linked"
+  }
+]
