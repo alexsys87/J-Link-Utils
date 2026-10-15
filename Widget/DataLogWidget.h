@@ -1,6 +1,7 @@
 // DataLogWidget.h
 #pragma once
 #include "widget_common.h"
+#include "CaptureHandshake.h"
 #include <vector>
 #include <cstring>
 #include <algorithm> // для std::min/max
@@ -30,6 +31,7 @@ private:
     std::vector<LineConfig> lines;            // конфигурации линий
     std::vector<std::vector<float>> data;     // данные для каждой линии (float после масштабирования)
     std::vector<std::vector<float>> smoothed; // сглаженные данные
+    CaptureHandshake m_capture;           // DoneAddr handshake state
 
     // Размер элемента в байтах для данного типа данных
     static int GetElementSize(int dataType) {
@@ -139,48 +141,29 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         if (!ctx || !ctx->IOMAP_Data || bufferSize > BUFF_SIZE) return;
 
-        // Проверка флага готовности
-        bool ready = true;
-        if (doneAddr != 0) {
-            uint32_t doneVal = DataReadWriteU32(ctx, nullptr, nullptr, &doneAddr);
-            ready = (doneVal != 0);
-        }
-
-        // Если флаг готовности установлен, инициируем чтение всех массивов за одну операцию
-        if (ctx->StartComunication && ready) {
+        // The arrays are taken from the cache only as a complete capture (see CaptureHandshake.h).
+        const bool fresh = m_capture.Update(ctx, doneAddr, [&] {
+            for (const auto& line : lines) {
+                uint32_t addr = line.baseAddr;
+                DataReadWriteArray(ctx, nullptr, nullptr, &addr, (uint16_t)(bufferSize * GetElementSize(line.dataType)));
+            }
+        });
+        if (fresh) {
             for (size_t l = 0; l < lines.size(); ++l) {
                 const auto& line = lines[l];
-                int elementSize = GetElementSize(line.dataType);
-                // Читаем весь массив целиком
-                DataReadWriteArray(ctx, nullptr, nullptr, (uint32_t*)&line.baseAddr, bufferSize * elementSize);
-            }
-
-            // Сброс флага готовности
-            if (doneAddr != 0) {
-                uint32_t zero = 0;
-                DataReadWriteU32(ctx, nullptr, &zero, &doneAddr);
-            }
-        }
-
-        // Обновляем внутренние буферы data[l] из IOMAP_Data
-        for (size_t l = 0; l < lines.size(); ++l) {
-            const auto& line = lines[l];
-            int elementSize = GetElementSize(line.dataType);
-            SDL_LockMutex(ctx->Datalock);
-            const size_t bytesToRead = static_cast<size_t>(bufferSize) * elementSize;
-            if (!ui_safety::IsMappedRange(line.baseAddr, ctx->mcu_memory_base, bytesToRead, IOMAP_SIZE)) {
-                std::fill(data[l].begin(), data[l].end(), 0.0f);
+                const int elementSize = GetElementSize(line.dataType);
+                const size_t bytesToRead = static_cast<size_t>(bufferSize) * elementSize;
+                SDL_LockMutex(ctx->Datalock);
+                if (!ui_safety::IsMappedRange(line.baseAddr, ctx->mcu_memory_base, bytesToRead, IOMAP_SIZE)) {
+                    std::fill(data[l].begin(), data[l].end(), 0.0f);
+                }
+                else {
+                    const uint32_t offset = line.baseAddr - ctx->mcu_memory_base;
+                    for (int i = 0; i < bufferSize; ++i)
+                        data[l][i] = RawToFloat(&ctx->IOMAP_Data[offset + i * elementSize], line.dataType, littleEndian) * line.yScale;
+                }
                 SDL_UnlockMutex(ctx->Datalock);
-                continue;
             }
-            uint32_t offset = line.baseAddr - ctx->mcu_memory_base; // смещение в IOMAP_Data
-            for (int i = 0; i < bufferSize; ++i) {
-                uint32_t byteOffset = offset + i * elementSize;
-                const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&ctx->IOMAP_Data[byteOffset]);
-                float val = RawToFloat(bytes, line.dataType, littleEndian);
-                data[l][i] = val * line.yScale;
-            }
-            SDL_UnlockMutex(ctx->Datalock);
         }
 
         // Применяем сглаживание, если нужно
@@ -238,12 +221,7 @@ public:
 
                 // Преобразуем цвет в ImVec4
                 ImPlotSpec spec;
-                spec.LineColor = ImVec4(
-                    ((line.color >> 16) & 0xFF) / 255.0f,
-                    ((line.color >> 8) & 0xFF) / 255.0f,
-                    (line.color & 0xFF) / 255.0f,
-                    ((line.color >> 24) & 0xFF) / 255.0f
-                );
+                spec.LineColor = ImGui::ColorConvertU32ToFloat4(line.color);
                 ImPlot::PlotLine(label, x.data(), plotData, bufferSize, spec);
             }
             ImPlot::EndPlot();

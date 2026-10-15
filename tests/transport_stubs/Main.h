@@ -31,6 +31,7 @@ inline void SDL_WaitThread(SDL_Thread* p, int*) { p->thread.join(); delete p; }
 struct FT32 { union { uint32_t hex; float real; }; };
 struct q_t { uint32_t addr; uint16_t size; };
 struct iodata_t { union { q_t q; uint64_t all; }; uint8_t* value; };
+struct DataSample { double time; uint8_t bytes[8]; };
 struct MainContext {
     SDL_mutex* Datalock{};
     uint8_t* IOMAP_Data{};

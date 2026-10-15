@@ -14,6 +14,7 @@
 #include <mutex>
 #include <algorithm>
 #include <chrono>
+#include <deque>
 
 using namespace tinyxml2;
 
@@ -184,12 +185,66 @@ static void UpdateReadBlocks(uint32_t base, bool expired, std::vector<ReadBlock>
     }
 }
 
+// ------------------------------------------------------------------
+// Sample streams for the plots
+// The communication thread records every read of a streamed range with a
+// timestamp, so plots get one point per polling cycle instead of one per frame.
+// ------------------------------------------------------------------
+struct SampleStream {
+    const void* owner;
+    uint32_t offset;
+    uint16_t size;
+    bool requested;                  // asked for since the last expiry
+    std::deque<DataSample> samples;  // not yet taken by the owner
+};
+
+// About a minute at 1 kHz; older samples are dropped if the owner stops reading.
+static constexpr size_t kMaxSamplesPerStream = 65536;
+static const auto g_clockStart = std::chrono::steady_clock::now();
+static std::mutex g_sampleMutex;
+static std::vector<SampleStream> g_streams;
+// Polling cycles in which every block was read and published to the cache.
+static std::atomic<uint32_t> g_completedCycles{0};
+
+static double SecondsSinceStart(std::chrono::steady_clock::time_point t)
+{
+    return std::chrono::duration<double>(t - g_clockStart).count();
+}
+
+static void RecordSamples(uint32_t blockOffset, uint32_t blockSize, const uint8_t* data, double time)
+{
+    std::lock_guard<std::mutex> guard(g_sampleMutex);
+    for (SampleStream& stream : g_streams) {
+        if (stream.offset < blockOffset || stream.offset + stream.size > blockOffset + blockSize)
+            continue;
+        DataSample sample = {};
+        sample.time = time;
+        memcpy(sample.bytes, data + (stream.offset - blockOffset), stream.size);
+        if (stream.samples.size() >= kMaxSamplesPerStream)
+            stream.samples.pop_front();
+        stream.samples.push_back(sample);
+    }
+}
+
+// Drops the streams nobody read during the last period, like the subscriptions.
+static void ExpireSampleStreams()
+{
+    std::lock_guard<std::mutex> guard(g_sampleMutex);
+    g_streams.erase(std::remove_if(g_streams.begin(), g_streams.end(),
+        [](const SampleStream& s) { return !s.requested; }), g_streams.end());
+    for (SampleStream& stream : g_streams) stream.requested = false;
+}
+
 static void ClearSubscriptions()
 {
-    std::lock_guard<std::mutex> guard(g_subscriptionMutex);
-    std::fill(g_requested.begin(), g_requested.end(), 0);
-    std::fill(g_polled.begin(), g_polled.end(), 0);
-    g_polledChanged = true;
+    {
+        std::lock_guard<std::mutex> guard(g_subscriptionMutex);
+        std::fill(g_requested.begin(), g_requested.end(), 0);
+        std::fill(g_polled.begin(), g_polled.end(), 0);
+        g_polledChanged = true;
+    }
+    std::lock_guard<std::mutex> guard(g_sampleMutex);
+    g_streams.clear();
 }
 
 #ifdef __cplusplus
@@ -614,10 +669,14 @@ extern "C" {
             }
             const auto cycleStart = std::chrono::steady_clock::now();
             const bool expired = cycleStart >= expiry;
-            if (expired) expiry = cycleStart + kSubscriptionLifetime;
+            if (expired) {
+                expiry = cycleStart + kSubscriptionLifetime;
+                ExpireSampleStreams();
+            }
             UpdateReadBlocks(ctx->mcu_memory_base, expired, blocks);
 
             bool ok = true;
+            bool published = true;
             if (blocks.empty())
                 ok = FlushWrites(ctx, writes);
             for (const ReadBlock& block : blocks) {
@@ -626,22 +685,31 @@ extern "C" {
                 const uint32_t sequence = g_writeSequence;
                 ok = FlushWrites(ctx, writes);
                 if (!ok) break;
+                const auto readStart = std::chrono::steady_clock::now();
                 const int read = JLINKARM_ReadMemEx(ctx->mcu_memory_base + block.offset, block.size, buffer.data(), 0);
                 if (read != (int)block.size) {
                     ok = false;
                     break;
                 }
+                // The middle of the J-Link call is the best estimate of when the target memory was read.
+                const auto readEnd = std::chrono::steady_clock::now();
+                RecordSamples(block.offset, block.size, buffer.data(),
+                    SecondsSinceStart(readStart + (readEnd - readStart) / 2));
                 SDL_LockMutex(ctx->Datalock);
                 // A newer write already put its value into the cache; this block
                 // may predate it, so it is published on the next cycle instead.
                 if (g_writeSequence == sequence)
                     memcpy(ctx->IOMAP_Data + block.offset, buffer.data(), block.size);
+                else
+                    published = false;
                 SDL_UnlockMutex(ctx->Datalock);
             }
             if (!ok) {
                 ctx->StartComunication = false;
                 continue;
             }
+            if (published && !blocks.empty())
+                ++g_completedCycles;
             if (std::chrono::steady_clock::now() - cycleStart < kMinCyclePeriod)
                 SDL_Delay(1);
         }
@@ -724,6 +792,40 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+// ------------------------------------------------------------------
+// Plot sampling API (see widget_common.h)
+// ------------------------------------------------------------------
+size_t DataReadSamples(MainContext* ctx, const void* owner, uint32_t phys_addr, uint16_t size, std::vector<DataSample>& out)
+{
+    out.clear();
+    if (!ctx || !owner || size == 0 || size > sizeof(DataSample::bytes)) return 0;
+    CHECK_PHYSICAL_ADDR(phys_addr, size);
+    // Keep the range polled; this also fails while the exchange is stopped.
+    if (!Subscribe(ctx, phys_addr - ctx->mcu_memory_base, size)) return 0;
+    const uint32_t offset = phys_addr - ctx->mcu_memory_base;
+    std::lock_guard<std::mutex> guard(g_sampleMutex);
+    for (SampleStream& stream : g_streams) {
+        if (stream.owner == owner && stream.offset == offset && stream.size == size) {
+            stream.requested = true;
+            out.assign(stream.samples.begin(), stream.samples.end());
+            stream.samples.clear();
+            return out.size();
+        }
+    }
+    g_streams.push_back({ owner, offset, size, true, {} });
+    return 0;
+}
+
+uint32_t DataCompletedCycles(void)
+{
+    return g_completedCycles;
+}
+
+double DataTimeNow(void)
+{
+    return SecondsSinceStart(std::chrono::steady_clock::now());
+}
 
 // ------------------------------------------------------------------
 // Среднее арифметическое

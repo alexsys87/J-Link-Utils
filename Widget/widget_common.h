@@ -101,6 +101,13 @@ extern XMLElement* TryFindElement(XMLElement* e, const char* name);
 extern uint32_t AddressFromHex(XMLElement* e);
 extern float average(const std::vector<float>& v);
 extern std::vector<float> smooth(const std::vector<float>& input, int window);
+// Plot sampling (DataHelper.cpp): values of [phys_addr, phys_addr + size) captured by the
+// communication thread since this owner's previous call, oldest first; keeps the range polled.
+extern size_t DataReadSamples(MainContext* ctx, const void* owner, uint32_t phys_addr, uint16_t size, std::vector<DataSample>& out);
+// Polling cycles in which every subscribed block was read and published to the cache.
+extern uint32_t DataCompletedCycles(void);
+// Seconds on the clock used for DataSample::time.
+extern double DataTimeNow(void);
 
 // Вспомогательные функции (inline)
 

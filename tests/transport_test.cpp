@@ -16,6 +16,9 @@ uint64_t DataWriteU64(MainContext*, uint64_t*, uint32_t);
 float DataReadFT32(MainContext*, uint32_t);
 float DataWriteFT32(MainContext*, float*, uint32_t);
 }
+size_t DataReadSamples(MainContext*, const void*, uint32_t, uint16_t, std::vector<DataSample>&);
+uint32_t DataCompletedCycles();
+double DataTimeNow();
 static std::atomic<int> opens{0}, closes{0}, reads{0}, writes{0};
 static std::atomic<int> openFail{0}, commandFail{0}, tifFail{0}, connectFail{0};
 static std::atomic<int> readResult{-2}, writeResult{-2};
@@ -181,6 +184,29 @@ static void pollingTests(MainContext& ctx) {
     SDL_Delay(10);
     assert(writes == before + 2 && written[0] == 9);
     StopCommunication(&ctx);
+    // Plot sample streams: every polling cycle adds a timestamped sample.
+    {
+        std::lock_guard<std::mutex> lock(targetMutex);
+        target[base + 0x800] = 0x34; target[base + 0x801] = 0x12;
+    }
+    StartCommunication(&ctx);
+    std::vector<DataSample> samples;
+    int owner = 0;
+    assert(DataReadSamples(&ctx, &owner, base + 0x800, 2, samples) == 0);
+    SDL_Delay(30);
+    DataReadSamples(&ctx, &owner, base + 0x800, 2, samples);
+    assert(samples.size() >= 5);
+    for (size_t i = 0; i < samples.size(); ++i) {
+        assert(samples[i].bytes[0] == 0x34 && samples[i].bytes[1] == 0x12);
+        if (i) assert(samples[i].time > samples[i - 1].time);
+    }
+    assert(samples.back().time <= DataTimeNow());
+    const uint32_t cycles = DataCompletedCycles();
+    SDL_Delay(10);
+    assert(DataCompletedCycles() > cycles);
+    assert(DataReadSamples(&ctx, &owner, base + 0x800, 9, samples) == 0);  // too wide for a sample
+    StopCommunication(&ctx);
+    assert(DataReadSamples(&ctx, &owner, base + 0x800, 2, samples) == 0 && samples.empty());
 }
 int main() {
     addressTests();

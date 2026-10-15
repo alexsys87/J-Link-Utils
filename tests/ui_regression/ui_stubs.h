@@ -54,9 +54,10 @@ enum {ImGuiCol_FrameBg,ImGuiCol_Border,ImGuiCol_Text,ImGuiCol_TextDisabled,ImGui
 struct ImGuiStyle {float FrameRounding=0,FrameBorderSize=0;ImVec2 ItemSpacing{4,4};};
 constexpr int ImGuiWindowFlags_HorizontalScrollbar=0, ImGuiInputTextFlags_CharsHexadecimal=0;
 inline float ImSaturate(float v){return std::clamp(v,0.0f,1.0f);}
-struct ImPlotSpec { int Offset=0, Stride=0; ImVec4 LineColor; };
+struct ImPlotSpec { int Offset=0, Stride=0; ImVec4 LineColor; float LineWeight=1.0f; };
 struct ImGuiIO {float DeltaTime=0.1f;bool MouseDown[5]={};};
 namespace ImGui {
+inline ImVec4 ColorConvertU32ToFloat4(ImU32 c){return ImVec4((c&0xFF)/255.0f,((c>>8)&0xFF)/255.0f,((c>>16)&0xFF)/255.0f,((c>>24)&0xFF)/255.0f);}
 inline bool hovered=true;
 inline int plotCount=0;
 inline std::vector<float> plotted;
@@ -106,7 +107,18 @@ namespace ImPlot {
 inline bool BeginPlot(const char*,ImVec2,int){return true;}
 inline void SetupAxes(const char*,const char*){}
 inline void SetupAxisLimits(int,double,double,int){}
-template<class... T> void PlotLine(T...){}
+// Records the last line as (x, y) points in drawing order.
+inline std::vector<ImVec2> lines;
+inline ImVec4 lineColor;
+inline void PlotLine(const char*,const float* xs,const float* ys,int count,const ImPlotSpec& spec){
+    lines.clear(); lineColor=spec.LineColor;
+    const int stride=spec.Stride?spec.Stride:static_cast<int>(sizeof(float));
+    for(int i=0;i<count;++i){
+        const int k=(spec.Offset+i)%count;
+        lines.push_back(ImVec2(*reinterpret_cast<const float*>(reinterpret_cast<const char*>(xs)+k*stride),
+                               *reinterpret_cast<const float*>(reinterpret_cast<const char*>(ys)+k*stride)));
+    }
+}
 template<class... T> void PlotBars(T...){}
 inline void EndPlot(){}
 }
@@ -123,7 +135,22 @@ inline uint64_t rawValue=0;
 inline uint32_t lastAddress=0;
 inline uint8_t DataReadWriteU08(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return static_cast<uint8_t>(rawValue);}
 inline uint16_t DataReadWriteU16(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return static_cast<uint16_t>(rawValue);}
-inline uint32_t DataReadWriteU32(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return static_cast<uint32_t>(rawValue);}
+inline uint32_t lastWrite32=0;
+inline int writes32=0;
+inline uint32_t DataReadWriteU32(MainContext*,void*,void* v,uint32_t* a){
+    lastAddress=*a;
+    if(v){lastWrite32=*static_cast<uint32_t*>(v);++writes32;}
+    return static_cast<uint32_t>(rawValue);
+}
+struct DataSample { double time; uint8_t bytes[8]; };
+inline std::vector<DataSample> pendingSamples;  // returned by the next DataReadSamples
+inline size_t DataReadSamples(MainContext*,const void*,uint32_t a,uint16_t,std::vector<DataSample>& out){
+    lastAddress=a; out=pendingSamples; pendingSamples.clear(); return out.size();
+}
+inline uint32_t completedCycles=0;
+inline uint32_t DataCompletedCycles(){return completedCycles;}
+inline double timeNow=0;
+inline double DataTimeNow(){return timeNow;}
 inline uint64_t DataReadWriteU64(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return rawValue;}
 inline uint16_t DataReadWriteArray(MainContext*,void*,void*,uint32_t*,uint16_t size){return size;}
 inline bool DataReadWriteBoolean(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return rawValue!=0;}
