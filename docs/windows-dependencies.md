@@ -55,6 +55,15 @@ tool source itself hash-pins its fmt 11.0.2 and cmrc 2.0.1 bootstrap downloads.
 No mutable latest executable is trusted. The checked-out vcpkg HEAD is
 validated and tracked port/toolchain modifications are rejected on reuse.
 
+Before the target libraries, a separate manifest in
+`build/dependencies/host-tools/vcpkg.json` builds native x64 static **pkgconf
+2.3.0** from the same baseline into `.dependencies/host-installed/`. Its Meson
+bootstrap explicitly requires no pkg-config. The target builds receive that
+executable through `PKG_CONFIG` and `VCPKG_KEEP_ENV_VARS`, avoiding the pinned
+MSYS bootstrap's obsolete rolling-mirror runtime packages. No MSYS installation
+or global pkg-config is required. This host-only tool is not an application
+library and is not included in the dependency artifact.
+
 The checkout, source build, packages and tool downloads live entirely under
 `.dependencies/`. A subsequent invocation reuses build outputs and vcpkg ABI
 caches but regenerates the integration settings. Set
@@ -62,7 +71,7 @@ caches but regenerates the integration settings. Set
 between clean checkouts. Source pins do not freeze your compiler, SDK or OS;
 CI records CMake's cache and tool versions for provenance.
 
-To upgrade: choose a reviewed vcpkg release commit, update both baseline and
+To upgrade: choose a reviewed vcpkg release commit, update both manifest baselines and
 lock commit, read that tree's tool metadata and update the tool source version,
 commit and SHA512 together. Remove `.dependencies/` (or use a clean checkout),
 then run both architectures in CI. Never replace a failed hash with the hash

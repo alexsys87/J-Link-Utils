@@ -68,6 +68,24 @@ $instanceEntry = Get-Content "$toolBuild/CMakeCache.txt" | Where-Object { $_ -ma
 if (@($instanceEntry).Count -ne 1) { throw 'Cannot locate the CMake-selected Visual Studio instance.' }
 $env:VCPKG_VISUAL_STUDIO_PATH = ($instanceEntry -split '=', 2)[1]
 if (-not $env:VCPKG_VISUAL_STUDIO_PATH) { throw 'CMake did not record a Visual Studio instance.' }
+# The pinned MSYS bootstrap references packages removed from rolling mirrors.
+# Build native pkgconf first instead: its Meson port uses NO_PKG_CONFIG, so this
+# bootstrap does not itself need pkg-config or an MSYS runtime. Keep it separate
+# from the target install to avoid mixing x64 host tools with x86 libraries.
+$hostManifestRoot = Join-Path $repo 'build/dependencies/host-tools'
+$hostManifest = Get-Content "$hostManifestRoot/vcpkg.json" -Raw | ConvertFrom-Json
+if ($hostManifest.'builtin-baseline' -ne $lock.commit) { throw 'Host-tool baseline and bootstrap commit must match.' }
+$hostInstalled = Join-Path $state 'host-installed'
+Invoke-Native "$vcpkg/vcpkg.exe" @('install', '--triplet=x64-windows-static', '--host-triplet=x64-windows',
+    "--x-manifest-root=$hostManifestRoot", "--x-install-root=$hostInstalled", '--clean-after-build')
+$env:PKG_CONFIG = Join-Path $hostInstalled 'x64-windows-static/tools/pkgconf/pkgconf.exe'
+if (-not (Test-Path $env:PKG_CONFIG)) { throw 'Native pkgconf bootstrap did not produce pkgconf.exe.' }
+Invoke-Native $env:PKG_CONFIG @('--version')
+# vcpkg sanitizes port environments. This pinned host utility only validates
+# pkg-config metadata; preserve the explicit path rather than acquiring MSYS.
+# KEEP_ENV_VARS is intentionally not ABI-tracked: the absolute checkout path
+# must not invalidate caches; the utility source is pinned by the same baseline.
+$env:VCPKG_KEEP_ENV_VARS = (@($env:VCPKG_KEEP_ENV_VARS -split ';' | Where-Object { $_ }) + 'PKG_CONFIG' | Select-Object -Unique) -join ';'
 # Both Debug and Release are installed by the standard static triplet (/MTd,/MT).
 Invoke-Native "$vcpkg/vcpkg.exe" @('install', "--triplet=$triplet", '--host-triplet=x64-windows',
     "--x-manifest-root=$repo", "--x-install-root=$installed", '--clean-after-build')

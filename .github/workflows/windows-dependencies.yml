@@ -41,7 +41,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .dependencies/binary-cache
-          key: windows-2022-v143-${{ matrix.arch }}-${{ hashFiles('vcpkg.json', 'build/dependencies/vcpkg-lock.json', 'scripts/*Dependency*.ps1', 'scripts/Build-WindowsDependencies.ps1') }}
+          key: windows-2022-v143-${{ matrix.arch }}-${{ hashFiles('vcpkg.json', 'build/dependencies/host-tools/vcpkg.json', 'build/dependencies/vcpkg-lock.json', 'scripts/*Dependency*.ps1', 'scripts/Build-WindowsDependencies.ps1') }}
       - name: Bootstrap, build and link-test open-source dependencies
         shell: pwsh
         run: ./scripts/Build-WindowsDependencies.ps1 -Architecture ${{ matrix.arch }}
