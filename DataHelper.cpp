@@ -3,6 +3,7 @@
 // All reads and writes go through DataWriteArray/DataReadArray
 
 #include <Main.h>
+#include "Editor/XMLSafety.h"
 #include <cstring>
 #include <cstdint>
 #include <vector>
@@ -38,21 +39,12 @@ XMLElement* TryFindElement(XMLElement* e, const char* name)
     return nullptr;
 }
 
-// Converts a string like "#01A4" (hex) or "0x..."/decimal into an integer
+// Converts a string like "#01A4" (hex) or "0x..."/decimal into an integer; 0 if invalid
 uint32_t AddressFromHex(XMLElement* e)
 {
-    if (!e || !e->GetText()) return 0;
-    const char* text = e->GetText();
-    while (std::isspace(static_cast<unsigned char>(*text))) ++text;
-    int base = 0;
-    if (*text == '#') { ++text; base = 16; }
-    if (*text == '-') return 0;
-    errno = 0;
-    char* end = nullptr;
-    const unsigned long long value = std::strtoull(text, &end, base);
-    if (end == text || errno == ERANGE || value > UINT32_MAX) return 0;
-    while (std::isspace(static_cast<unsigned char>(*end))) ++end;
-    return *end == '\0' ? static_cast<uint32_t>(value) : 0;
+    uint32_t value = 0;
+    if (!e || !ui_safety::ParseAddressText(e->GetText(), &value)) return 0;
+    return value;
 }
 
 // Protect the bundled queue's node reclamation from concurrent access.

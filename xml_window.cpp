@@ -2,6 +2,8 @@
 #include "widget_common.h"
 #include "Editor/XMLSafety.h"
 #include <cctype>
+#include <cfloat>
+#include <initializer_list>
 
 // All widgets
 #include "TextWidget.h"
@@ -96,8 +98,113 @@ static bool ParseTextColor(const char* str, unsigned int* rgba) {
     return true;
 }
 
+// ------------------------------------------------------------------
+// Property readers. Values from the XML are untrusted: every number is checked and
+// limited to what the widgets can handle, and a missing, malformed or non-finite
+// value (tinyxml2 accepts "nan" and "inf") falls back to the default.
+// ------------------------------------------------------------------
+constexpr float kMaxExtent = 10000.0f;      // widths, heights, offsets in pixels
+constexpr float kMaxRadius = 2000.0f;
+
+static float ReadFloat(XMLElement* e, const char* tag, float def,
+    float lo = -FLT_MAX / 2, float hi = FLT_MAX / 2) {
+    XMLElement* c = e->FirstChildElement(tag);
+    float v = def;
+    if (!c || c->QueryFloatText(&v) != XML_SUCCESS || !std::isfinite(v)) return def;
+    return std::clamp(v, lo, hi);
+}
+
+// Sizes: negative values keep their ImGui meaning (fill / align to the right edge).
+static float ReadSize(XMLElement* e, const char* tag, float def) {
+    return ReadFloat(e, tag, def, -kMaxExtent, kMaxExtent);
+}
+
+// Radii and scale factors: zero or negative is replaced by the default.
+static float ReadPositive(XMLElement* e, const char* tag, float def, float hi) {
+    const float v = ReadFloat(e, tag, def, -FLT_MAX / 2, hi);
+    return v > 0.0f ? v : def;
+}
+
+static int ReadInt(XMLElement* e, const char* tag, int def,
+    int lo = std::numeric_limits<int>::min(), int hi = std::numeric_limits<int>::max()) {
+    XMLElement* c = e->FirstChildElement(tag);
+    int v = def;
+    if (!c || c->QueryIntText(&v) != XML_SUCCESS) return def;
+    return std::clamp(v, lo, hi);
+}
+
+// One of the listed values, otherwise the default (enums, data types).
+static int ReadChoice(XMLElement* e, const char* tag, int def, std::initializer_list<int> allowed) {
+    const int v = ReadInt(e, tag, def);
+    for (int a : allowed) {
+        if (a == v) return v;
+    }
+    return def;
+}
+
+static int ReadDataType(XMLElement* e, const char* tag, int def) {
+    return ReadChoice(e, tag, def, { BOOLEAN, S08_DEC, U08_DEC, S16_DEC, U16_DEC, S32_DEC, U32_DEC,
+        FLOAT, FLOAT_INV, S64_DEC, U64_DEC });
+}
+
+static bool ReadBool(XMLElement* e, const char* tag, bool def) {
+    XMLElement* c = e->FirstChildElement(tag);
+    bool v = def;
+    if (!c || c->QueryBoolText(&v) != XML_SUCCESS) return def;
+    return v;
+}
+
+static uint32_t ReadAddress(XMLElement* e, const char* tag) {
+    return AddressFromHex(e->FirstChildElement(tag));
+}
+
+static const char* ReadText(XMLElement* e, const char* tag, const char* def = "") {
+    return XmlChildText(e, tag, def);
+}
+
+// "#RRGGBB" or "#AARRGGBB" as an IM_COL32 color
+static ImU32 ReadColor(XMLElement* e, const char* tag, ImU32 def) {
+    unsigned int rgba = 0;
+    if (!ParseTextColor(XmlChildText(e, tag, nullptr), &rgba)) return def;
+    return IM_COL32((rgba >> 24) & 0xFF, (rgba >> 16) & 0xFF, (rgba >> 8) & 0xFF, rgba & 0xFF);
+}
+
+static ImVec2 ReadPoint(XMLElement* e, const char* tag, ImVec2 def) {
+    const char* text = XmlChildText(e, tag, nullptr);
+    ImVec2 p = def;
+    if (!text || sscanf(text, "%f,%f", &p.x, &p.y) != 2 || !std::isfinite(p.x) || !std::isfinite(p.y)) return def;
+    return p;
+}
+
+// Scales need min < max: a reversed range is swapped, an empty one widened.
+static void OrderRange(float& lo, float& hi) {
+    if (hi < lo) std::swap(lo, hi);
+    if (hi == lo) hi = lo + 1.0f;
+}
+
+static void OrderRange(int& lo, int& hi) {
+    if (hi < lo) std::swap(lo, hi);
+}
+
+static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem);
+
+// Loads the widgets in <Items> into a container.
+template <class Container>
+static std::unique_ptr<Container> WithChildren(std::unique_ptr<Container> container, XMLElement* elem,
+    const char* onlyTag = nullptr) {
+    XMLElement* items = elem->FirstChildElement("Items");
+    if (items) {
+        for (XMLElement* child = items->FirstChildElement(onlyTag); child; child = child->NextSiblingElement(onlyTag)) {
+            auto w = LoadWidgetFromXML(child);
+            if (w) container->AddChild(std::move(w));
+        }
+    }
+    return container;
+}
+
 // Recursive widget loading from XML.
 // <LittleEndian> defaults to true for every widget: Cortex-M targets are little-endian.
+// tinyxml2 limits the nesting to TINYXML2_MAX_ELEMENT_DEPTH, which bounds the recursion.
 static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     if (!elem) return nullptr;
     std::string name = elem->Name();
@@ -107,73 +214,30 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<TextWidget>(txt ? txt : "");
     }
     else if (name == "TextColored") {
-        const char* txt = XmlChildText(elem, "Text");
         unsigned int rgba = 0xFFFFFFFF; // opaque white when <Color> is missing or invalid
         ParseTextColor(XmlChildText(elem, "Color", nullptr), &rgba);
-        return std::make_unique<TextColoredWidget>(txt, static_cast<int>(rgba));
+        return std::make_unique<TextColoredWidget>(ReadText(elem, "Text"), static_cast<int>(rgba));
     }
     else if (name == "Button") {
-        const char* txt = XmlChildText(elem, "Text");
-        float w = 80.0f, h = 40.0f;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        if (elem->FirstChildElement("Height"))
-            elem->FirstChildElement("Height")->QueryFloatText(&h);
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        int mode = 0;
-        if (elem->FirstChildElement("Mode"))
-            elem->FirstChildElement("Mode")->QueryIntText(&mode);
-        int val = 1;
-        if (elem->FirstChildElement("Value"))
-            elem->FirstChildElement("Value")->QueryIntText(&val);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-
-        return std::make_unique<ButtonWidget>(txt, w, h, addr, (ButtonMode)mode, (uint16_t)val, le);
+        const int mode = ReadChoice(elem, "Mode", BUTTON_MODE_SETBIT,
+            { BUTTON_MODE_SETBIT, BUTTON_MODE_TOGGLE, BUTTON_MODE_WRITE, BUTTON_MODE_MOMENTARY });
+        return std::make_unique<ButtonWidget>(ReadText(elem, "Text"), ReadSize(elem, "Width", 80.0f),
+            ReadSize(elem, "Height", 40.0f), ReadAddress(elem, "Address"), (ButtonMode)mode,
+            (uint16_t)ReadInt(elem, "Value", 1), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "Checkbox") {
-        const char* txt = XmlChildText(elem, "Text");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool useBool = false;
-        if (elem->FirstChildElement("AddrBool"))
-            elem->FirstChildElement("AddrBool")->QueryBoolText(&useBool);
-        return std::make_unique<CheckboxWidget>(txt, addr, useBool);
+        return std::make_unique<CheckboxWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadBool(elem, "AddrBool", false));
     }
     else if (name == "Group") {
-        auto group = std::make_unique<GroupWidget>();
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) group->AddChild(std::move(w));
-            }
-        }
-        return group;
+        return WithChildren(std::make_unique<GroupWidget>(), elem);
     }
     else if (name == "TreeNode") {
-        const char* txt = XmlChildText(elem, "Text");
-        auto node = std::make_unique<TreeNodeWidget>(txt);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) node->AddChild(std::move(w));
-            }
-        }
-        return node;
+        return WithChildren(std::make_unique<TreeNodeWidget>(ReadText(elem, "Text")), elem);
     }
     else if (name == "SameLine") {
-        float off = 0, sp = -1;
-        if (elem->FirstChildElement("OffsetX"))
-            elem->FirstChildElement("OffsetX")->QueryFloatText(&off);
-        if (elem->FirstChildElement("Spacing"))
-            elem->FirstChildElement("Spacing")->QueryFloatText(&sp);
-        return std::make_unique<SameLineWidget>(off, sp);
+        return std::make_unique<SameLineWidget>(ReadFloat(elem, "OffsetX", 0.0f, 0.0f, kMaxExtent),
+            ReadFloat(elem, "Spacing", -1.0f, -1.0f, kMaxExtent));
     }
     else if (name == "Spacing") {
         return std::make_unique<SpacingWidget>();
@@ -182,184 +246,63 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<SeparatorWidget>();
     }
     else if (name == "Dummy") {
-        float w = 0, h = 0;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        if (elem->FirstChildElement("Height"))
-            elem->FirstChildElement("Height")->QueryFloatText(&h);
-        return std::make_unique<DummyWidget>(w, h);
+        return std::make_unique<DummyWidget>(ReadFloat(elem, "Width", 0.0f, 0.0f, kMaxExtent),
+            ReadFloat(elem, "Height", 0.0f, 0.0f, kMaxExtent));
     }
     else if (name == "Grid") {
-        int rows = 0, cols = 0, inc = 1;
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Row"))
-            elem->FirstChildElement("Row")->QueryIntText(&rows);
-        if (elem->FirstChildElement("Column"))
-            elem->FirstChildElement("Column")->QueryIntText(&cols);
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        if (elem->FirstChildElement("AddressInc"))
-            elem->FirstChildElement("AddressInc")->QueryIntText(&inc);
-        auto grid = std::make_unique<GridWidget>(rows, cols, addr, inc);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) grid->AddChild(std::move(w));
-            }
-        }
-        return grid;
+        auto grid = std::make_unique<GridWidget>(ReadInt(elem, "Row", 0, 0, 256), ReadInt(elem, "Column", 0, 0, 256),
+            ReadAddress(elem, "Address"), ReadInt(elem, "AddressInc", 1));
+        return WithChildren(std::move(grid), elem);
     }
     else if (name == "PlotLines") {
-        const char* txt = XmlChildText(elem, "Text", "");
-        float minV = 0, maxV = 0, w = -1, h = -1, f = 1;
-        int sz = 100, sm = 0, maxSize = 2000;
-        bool autosize = false;
+        const char* txt = ReadText(elem, "Text");
+        const float minV = ReadFloat(elem, "Min", 0.0f);
+        const float maxV = ReadFloat(elem, "Max", 0.0f);   // Min >= Max: the Y axis fits the data
+        const float w = ReadSize(elem, "Width", -1.0f);
+        const float h = ReadSize(elem, "Height", -1.0f);
+        const float f = ReadFloat(elem, "Freq", 1.0f, 0.1f, 1000.0f);
+        const int sz = ReadInt(elem, "Size", 100, 1, BUFF_SIZE);
+        const int sm = ReadInt(elem, "Smooth", 0, 0, BUFF_SIZE);
+        const int maxSize = ReadInt(elem, "MaxSize", 2000, 1, 200000);
+        const bool autosize = ReadBool(elem, "AutoSize", false);
 
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&h);
-        if (elem->FirstChildElement("Freq")) elem->FirstChildElement("Freq")->QueryFloatText(&f);
-        if (elem->FirstChildElement("Size")) elem->FirstChildElement("Size")->QueryIntText(&sz);
-        if (elem->FirstChildElement("Smooth")) elem->FirstChildElement("Smooth")->QueryIntText(&sm);
-        if (elem->FirstChildElement("MaxSize")) elem->FirstChildElement("MaxSize")->QueryIntText(&maxSize);
-        if (elem->FirstChildElement("AutoSize")) elem->FirstChildElement("AutoSize")->QueryBoolText(&autosize);
+        // One line from a <Line> element, or from the widget itself in the old format
+        auto readLine = [](XMLElement* e, const char* defaultName, int defaultType) {
+            PlotLineConfig line;
+            line.name = ReadText(e, "Name", defaultName);
+            line.address = ReadAddress(e, "Address");
+            line.dataType = ReadDataType(e, "DataType", defaultType);
+            line.littleEndian = ReadBool(e, "LittleEndian", true);
+            line.scale = ReadFloat(e, "Scale", 1.0f);
+            line.bufferId = ReadInt(e, "BufferId", 0, 0, MAX_BUFF - 1);
+            line.color = ReadColor(e, "LineColor", IM_COL32_WHITE);
+            line.weight = ReadFloat(e, "LineWeight", 1.0f, 0.0f, (float)IM_DRAWLIST_TEX_LINES_WIDTH_MAX);
+            return line;
+        };
 
         std::vector<PlotLineConfig> lines;
-
-        // Read the lines from Items
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line")) {
-                PlotLineConfig line;
-                line.name = XmlChildText(lineElem, "Name", "");
-                if (lineElem->FirstChildElement("Address"))
-                    line.address = AddressFromHex(lineElem->FirstChildElement("Address"));
-                if (lineElem->FirstChildElement("DataType"))
-                    lineElem->FirstChildElement("DataType")->QueryIntText(&line.dataType);
-                bool le = true;
-                if (lineElem->FirstChildElement("LittleEndian"))
-                    lineElem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-                line.littleEndian = le;
-                float sc = 1.0f;
-                if (lineElem->FirstChildElement("Scale"))
-                    lineElem->FirstChildElement("Scale")->QueryFloatText(&sc);
-                line.scale = sc;
-                int bufId = 0;
-                if (lineElem->FirstChildElement("BufferId"))
-                    lineElem->FirstChildElement("BufferId")->QueryIntText(&bufId);
-                line.bufferId = bufId;
-
-                // Color
-                ImU32 col = IM_COL32_WHITE;
-                if (lineElem->FirstChildElement("LineColor")) {
-                    const char* colStr = lineElem->FirstChildElement("LineColor")->GetText();
-                    if (colStr && colStr[0] == '#') {
-                        unsigned int hex = 0;
-                        sscanf(colStr + 1, "%x", &hex);
-                        if (strlen(colStr) == 7)
-                            col = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                        else if (strlen(colStr) == 9)
-                            col = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                    }
-                }
-                line.color = col;
-
-                float weight = 1.0f;
-                if (lineElem->FirstChildElement("LineWeight"))
-                    lineElem->FirstChildElement("LineWeight")->QueryFloatText(&weight);
-                line.weight = weight;
-
-                lines.push_back(line);
-            }
+            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line"))
+                lines.push_back(readLine(lineElem, "", FLOAT));
         }
-
-        // No lines: build one from the element's own parameters (old format)
+        // No lines: one line from the element's own parameters (old format)
         if (lines.empty()) {
-            // Old parameters: Address, DataType, Float, LittleEndian, Scale, BufferId, LineColor, LineWeight
-            PlotLineConfig line;
-            line.name = txt;
-            if (elem->FirstChildElement("Address"))
-                line.address = AddressFromHex(elem->FirstChildElement("Address"));
-
-            int dtype = U32_DEC;
-            if (elem->FirstChildElement("DataType")) {
-                elem->FirstChildElement("DataType")->QueryIntText(&dtype);
-            }
-            else {
-                bool flt = true;
-                if (elem->FirstChildElement("Float")) elem->FirstChildElement("Float")->QueryBoolText(&flt);
-                dtype = flt ? FLOAT : U32_DEC;
-            }
-            line.dataType = dtype;
-
-            bool le = true;
-            if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-            line.littleEndian = le;
-
-            float sc = 1.0f;
-            if (elem->FirstChildElement("Scale")) elem->FirstChildElement("Scale")->QueryFloatText(&sc);
-            line.scale = sc;
-
-            int bufId = 0;
-            if (elem->FirstChildElement("BufferId")) elem->FirstChildElement("BufferId")->QueryIntText(&bufId);
-            line.bufferId = bufId;
-
-            // Color
-            ImU32 col = IM_COL32_WHITE;
-            if (elem->FirstChildElement("LineColor")) {
-                const char* colStr = elem->FirstChildElement("LineColor")->GetText();
-                if (colStr && colStr[0] == '#') {
-                    unsigned int hex = 0;
-                    sscanf(colStr + 1, "%x", &hex);
-                    if (strlen(colStr) == 7)
-                        col = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                    else if (strlen(colStr) == 9)
-                        col = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                }
-            }
-            line.color = col;
-
-            float weight = 1.0f;
-            if (elem->FirstChildElement("LineWeight")) elem->FirstChildElement("LineWeight")->QueryFloatText(&weight);
-            line.weight = weight;
-
-            lines.push_back(line);
+            const int defaultType = ReadBool(elem, "Float", true) ? FLOAT : U32_DEC;
+            lines.push_back(readLine(elem, txt, defaultType));
         }
-
-        // Create the widget with all lines
-        return std::make_unique<PlotLinesWidget>(
-            txt, minV, maxV, w, h, f, sz, sm, autosize, maxSize, lines
-        );
+        return std::make_unique<PlotLinesWidget>(txt, minV, maxV, w, h, f, sz, sm, autosize, maxSize, lines);
     }
     else if (name == "TextFormatted") {
-        const char* fmt = XmlChildText(elem, "Format", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
         unsigned int hexColor = 0;
-        bool useColor = false;
-        if (elem->FirstChildElement("Color")) {
-            const char* colorStr = elem->FirstChildElement("Color")->GetText();
-            useColor = ParseTextColor(colorStr, &hexColor);
-        }
-        return std::make_unique<TextFormattedWidget>(fmt, addr, hexColor, useColor);
+        const bool useColor = ParseTextColor(XmlChildText(elem, "Color", nullptr), &hexColor);
+        return std::make_unique<TextFormattedWidget>(ReadText(elem, "Format"), ReadAddress(elem, "Address"), hexColor, useColor);
     }
     else if (name == "TextFormattedF") {
-        const char* fmt = XmlChildText(elem, "Format", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         unsigned int hexColor = 0;
-        bool useColor = false;
-        if (elem->FirstChildElement("Color")) {
-            const char* colorStr = elem->FirstChildElement("Color")->GetText();
-            useColor = ParseTextColor(colorStr, &hexColor);
-        }
-        return std::make_unique<TextFormattedFWidget>(fmt, addr, le, hexColor, useColor);
+        const bool useColor = ParseTextColor(XmlChildText(elem, "Color", nullptr), &hexColor);
+        return std::make_unique<TextFormattedFWidget>(ReadText(elem, "Format"), ReadAddress(elem, "Address"),
+            ReadBool(elem, "LittleEndian", true), hexColor, useColor);
     }
     else if (name == "AlignTextToFramePadding") {
         return std::make_unique<AlignTextWidget>();
@@ -368,851 +311,267 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         return std::make_unique<NewLineWidget>();
     }
     else if (name == "LabelText") {
-        const char* lbl = XmlChildText(elem, "Label", "");
-        const char* fmt = XmlChildText(elem, "Format", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<LabelTextWidget>(lbl, fmt, addr, le);
+        return std::make_unique<LabelTextWidget>(ReadText(elem, "Label"), ReadText(elem, "Format", "%.3f"),
+            ReadAddress(elem, "Address"), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "RadioButton") {
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool sameLine = false;
-        if (elem->FirstChildElement("InSameLine")) elem->FirstChildElement("InSameLine")->QueryBoolText(&sameLine);
-        auto group = std::make_unique<RadioButtonGroup>(addr, sameLine);
+        auto group = std::make_unique<RadioButtonGroup>(ReadAddress(elem, "Address"), ReadBool(elem, "InSameLine", false));
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            for (XMLElement* radio = items->FirstChildElement("Radio"); radio; radio = radio->NextSiblingElement("Radio")) {
-                const char* lbl = XmlChildText(radio, "Label", "");
-                int val = 0;
-                if (radio->FirstChildElement("Value")) radio->FirstChildElement("Value")->QueryIntText(&val);
-                group->AddItem(lbl, val);
-            }
+            for (XMLElement* radio = items->FirstChildElement("Radio"); radio; radio = radio->NextSiblingElement("Radio"))
+                group->AddItem(ReadText(radio, "Label"), ReadInt(radio, "Value", 0));
         }
         return group;
     }
     else if (name == "Tooltip") {
-        const char* txt = XmlChildText(elem, "Text", "");
-        return std::make_unique<TooltipWidget>(txt);
+        return std::make_unique<TooltipWidget>(ReadText(elem, "Text"));
     }
     else if (name == "PlotTooltip") {
-        const char* txt = XmlChildText(elem, "Text", "");
-        const char* fmt = XmlChildText(elem, "Format", "");
-        float minV = 0, maxV = 0;
-        int sz = 100, id = 0;
-        bool le = true;
-        uint32_t addr = 0;
-        int dtype = FLOAT;
-        bool autoSz = false;
-
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Size")) elem->FirstChildElement("Size")->QueryIntText(&sz);
-        if (elem->FirstChildElement("BufferId")) elem->FirstChildElement("BufferId")->QueryIntText(&id);
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        if (elem->FirstChildElement("Address")) addr = AddressFromHex(elem->FirstChildElement("Address"));
-        if (elem->FirstChildElement("DataType")) elem->FirstChildElement("DataType")->QueryIntText(&dtype);
-        if (elem->FirstChildElement("AutoSize")) elem->FirstChildElement("AutoSize")->QueryBoolText(&autoSz);
-
-        return std::make_unique<PlotTooltipWidget>(txt, fmt, minV, maxV, sz, id, addr, le, dtype, autoSz);
+        return std::make_unique<PlotTooltipWidget>(ReadText(elem, "Text"), ReadText(elem, "Format"),
+            ReadFloat(elem, "Min", 0.0f), ReadFloat(elem, "Max", 0.0f), ReadInt(elem, "Size", 100, 1, BUFF_SIZE),
+            ReadInt(elem, "BufferId", 0, 0, MAX_BUFF - 1), ReadAddress(elem, "Address"), ReadBool(elem, "LittleEndian", true),
+            ReadDataType(elem, "DataType", FLOAT), ReadBool(elem, "AutoSize", false));
     }
     else if (name == "ComboBox") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        auto combo = std::make_unique<ComboBoxWidget>(lbl, addr);
+        auto combo = std::make_unique<ComboBoxWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"));
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            for (XMLElement* item = items->FirstChildElement("Combo"); item; item = item->NextSiblingElement("Combo")) {
-                const char* label = XmlChildText(item, "Label", "");
-                int val = 0;
-                if (item->FirstChildElement("Value")) item->FirstChildElement("Value")->QueryIntText(&val);
-                combo->AddItem(label, val);
-            }
+            for (XMLElement* item = items->FirstChildElement("Combo"); item; item = item->NextSiblingElement("Combo"))
+                combo->AddItem(ReadText(item, "Label"), ReadInt(item, "Value", 0));
         }
         return combo;
     }
     else if (name == "ImputInt") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        int minV = 0, maxV = 0, step = 1, fast = 100;
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryIntText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryIntText(&maxV);
-        if (elem->FirstChildElement("Step")) elem->FirstChildElement("Step")->QueryIntText(&step);
-        if (elem->FirstChildElement("Fast")) elem->FirstChildElement("Fast")->QueryIntText(&fast);
-        return std::make_unique<InputIntWidget>(lbl, addr, minV, maxV, step, fast);
+        // Min and Max limit the value only when Max > Min (the defaults leave it free).
+        return std::make_unique<InputIntWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadInt(elem, "Min", 0), ReadInt(elem, "Max", 0), ReadInt(elem, "Step", 1, 0, 65535),
+            ReadInt(elem, "Fast", 100, 0, 65535));
     }
     else if (name == "ImputFloat") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0, maxV = 0, step = 1, fast = 100;
-        const char* fmt = "%.3f";
-        bool le = true;
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Step")) elem->FirstChildElement("Step")->QueryFloatText(&step);
-        if (elem->FirstChildElement("Fast")) elem->FirstChildElement("Fast")->QueryFloatText(&fast);
-        if (elem->FirstChildElement("Format")) fmt = XmlChildText(elem, "Format", fmt);
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<InputFloatWidget>(lbl, addr, minV, maxV, step, fast, fmt, le);
+        return std::make_unique<InputFloatWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadFloat(elem, "Min", 0.0f), ReadFloat(elem, "Max", 0.0f), ReadFloat(elem, "Step", 1.0f),
+            ReadFloat(elem, "Fast", 100.0f), ReadText(elem, "Format", "%.3f"), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "FixedWidth") {
-        float w = 0;
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        auto fw = std::make_unique<FixedWidthWidget>(w);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto widget = LoadWidgetFromXML(child);
-                if (widget) fw->AddChild(std::move(widget));
-            }
-        }
-        return fw;
+        return WithChildren(std::make_unique<FixedWidthWidget>(ReadSize(elem, "Width", 0.0f)), elem);
     }
     else if (name == "SetCursorPos") {
-        float x = 0, y = 0;
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&x);
-        if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&y);
-        return std::make_unique<SetCursorPosWidget>(x, y);
+        return std::make_unique<SetCursorPosWidget>(ReadFloat(elem, "Width", 0.0f, 0.0f, kMaxExtent),
+            ReadFloat(elem, "Height", 0.0f, 0.0f, kMaxExtent));
     }
     else if (name == "Indent") {
-        float w = 0;
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        return std::make_unique<IndentWidget>(w);
+        return std::make_unique<IndentWidget>(ReadSize(elem, "Width", 0.0f));
     }
-    else if (name == "Histogram") {
-        const char* txt = XmlChildText(elem, "Text", "");
-        const char* fmt = XmlChildText(elem, "Format", "");
-        float minV = 0, maxV = 0, w = 0, h = 0, xs = 1.0f;
-        int sz = 100, sm = 0;
-        uint32_t done = 0;
-        bool le = true;
-        bool autoSz = false;
-        float barWidth = 0.8f; // default
+    else if (name == "Histogram" || name == "DataLog") {
+        const bool histogram = (name == "Histogram");
+        const char* txt = ReadText(elem, "Text");
+        const char* fmt = ReadText(elem, "Format");
+        const float minV = ReadFloat(elem, "Min", 0.0f);
+        const float maxV = ReadFloat(elem, "Max", 0.0f);
+        const float w = ReadSize(elem, "Width", 0.0f);
+        const float h = ReadSize(elem, "Height", 0.0f);
+        const float xs = ReadFloat(elem, "ScaleX", 1.0f);
+        const int sz = ReadInt(elem, "Size", 100, 1, BUFF_SIZE);
+        const int sm = ReadInt(elem, "Smooth", 0, 0, BUFF_SIZE);
+        const uint32_t done = ReadAddress(elem, "DoneAddr");
+        const bool le = ReadBool(elem, "LittleEndian", true);
+        const bool autoSz = ReadBool(elem, "AutoSize", false);
+        const float barWidth = ReadFloat(elem, "BarWidth", 0.8f, 0.0f, 1000.0f);
 
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&h);
-        if (elem->FirstChildElement("ScaleX")) elem->FirstChildElement("ScaleX")->QueryFloatText(&xs);
-        if (elem->FirstChildElement("Size")) elem->FirstChildElement("Size")->QueryIntText(&sz);
-        if (elem->FirstChildElement("Smooth")) elem->FirstChildElement("Smooth")->QueryIntText(&sm);
-        if (elem->FirstChildElement("DoneAddr")) done = AddressFromHex(elem->FirstChildElement("DoneAddr"));
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        if (elem->FirstChildElement("AutoSize")) elem->FirstChildElement("AutoSize")->QueryBoolText(&autoSz);
-        if (elem->FirstChildElement("BarWidth")) elem->FirstChildElement("BarWidth")->QueryFloatText(&barWidth);
-
-        // Are there nested lines?
+        // Nested lines
         XMLElement* items = elem->FirstChildElement("Items");
         if (items) {
-            std::vector<HistogramWidget::LineConfig> lineList;
+            std::vector<HistogramWidget::LineConfig> histLines;
+            std::vector<DataLogWidget::LineConfig> logLines;
             for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line")) {
-                HistogramWidget::LineConfig line;
-                line.name = XmlChildText(lineElem, "Name", "");
-                if (lineElem->FirstChildElement("Address"))
-                    line.baseAddr = AddressFromHex(lineElem->FirstChildElement("Address"));
-                line.yScale = 1.0f;
-                if (lineElem->FirstChildElement("ScaleY"))
-                    lineElem->FirstChildElement("ScaleY")->QueryFloatText(&line.yScale);
-                line.color = IM_COL32_WHITE;
-                line.dataType = FLOAT;
-                if (lineElem->FirstChildElement("DataType"))
-                    lineElem->FirstChildElement("DataType")->QueryIntText(&line.dataType);
-
-                if (lineElem->FirstChildElement("Color")) {
-                    const char* colStr = lineElem->FirstChildElement("Color")->GetText();
-                    if (colStr && colStr[0] == '#') {
-                        unsigned int hex = 0;
-                        sscanf(colStr + 1, "%x", &hex);
-                        if (strlen(colStr) == 7) {
-                            line.color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                        }
-                        else if (strlen(colStr) == 9) {
-                            line.color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                        }
-                    }
+                const char* lineName = ReadText(lineElem, "Name");
+                const uint32_t lineAddr = ReadAddress(lineElem, "Address");
+                const float yScale = ReadFloat(lineElem, "ScaleY", 1.0f);
+                const ImU32 color = ReadColor(lineElem, "Color", IM_COL32_WHITE);
+                const int dtype = ReadDataType(lineElem, "DataType", FLOAT);
+                if (histogram) {
+                    HistogramWidget::LineConfig line;
+                    line.name = lineName; line.baseAddr = lineAddr; line.yScale = yScale; line.color = color; line.dataType = dtype;
+                    histLines.push_back(line);
                 }
-                lineList.push_back(line);
+                else {
+                    DataLogWidget::LineConfig line;
+                    line.name = lineName; line.baseAddr = lineAddr; line.yScale = yScale; line.color = color; line.dataType = dtype;
+                    logLines.push_back(line);
+                }
             }
-            if (!lineList.empty()) {
-                return std::make_unique<HistogramWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm,
-                    done, le, autoSz, barWidth, lineList);
-            }
+            if (histogram && !histLines.empty())
+                return std::make_unique<HistogramWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm, done, le, autoSz, barWidth, histLines);
+            if (!histogram && !logLines.empty())
+                return std::make_unique<DataLogWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm, done, le, logLines, autoSz);
         }
 
         // Old format: a single line
-        uint32_t addr = 0;
-        float ys = 1.0f;
-        ImU32 color = IM_COL32_WHITE;
-        int dtype = FLOAT;
-
-        if (elem->FirstChildElement("Address")) addr = AddressFromHex(elem->FirstChildElement("Address"));
-        if (elem->FirstChildElement("ScaleY")) elem->FirstChildElement("ScaleY")->QueryFloatText(&ys);
-        if (elem->FirstChildElement("DataType")) elem->FirstChildElement("DataType")->QueryIntText(&dtype);
-        if (elem->FirstChildElement("Color")) {
-            const char* colStr = elem->FirstChildElement("Color")->GetText();
-            if (colStr && colStr[0] == '#') {
-                unsigned int hex = 0;
-                sscanf(colStr + 1, "%x", &hex);
-                if (strlen(colStr) == 7) {
-                    color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                }
-                else if (strlen(colStr) == 9) {
-                    color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                }
-            }
+        const uint32_t addr = ReadAddress(elem, "Address");
+        const float ys = ReadFloat(elem, "ScaleY", 1.0f);
+        const int dtype = ReadDataType(elem, "DataType", FLOAT);
+        if (histogram) {
+            return std::make_unique<HistogramWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm, done, le, autoSz, barWidth,
+                addr, ys, ReadColor(elem, "Color", IM_COL32_WHITE), dtype);
         }
-
-        return std::make_unique<HistogramWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm,
-            done, le, autoSz, barWidth,
-            addr, ys, color, dtype);
-    }
-    else if (name == "DataLog") {
-        const char* txt = XmlChildText(elem, "Text", "");
-        const char* fmt = XmlChildText(elem, "Format", "");
-        float minV = 0, maxV = 0, w = 0, h = 0, xs = 1;
-        int sz = 100, sm = 0;
-        uint32_t done = 0;
-        bool le = true;
-        bool autoSz = false;
-
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&h);
-        if (elem->FirstChildElement("ScaleX")) elem->FirstChildElement("ScaleX")->QueryFloatText(&xs);
-        if (elem->FirstChildElement("Size")) elem->FirstChildElement("Size")->QueryIntText(&sz);
-        if (elem->FirstChildElement("Smooth")) elem->FirstChildElement("Smooth")->QueryIntText(&sm);
-        if (elem->FirstChildElement("DoneAddr")) done = AddressFromHex(elem->FirstChildElement("DoneAddr"));
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        if (elem->FirstChildElement("AutoSize")) elem->FirstChildElement("AutoSize")->QueryBoolText(&autoSz);
-
-        // Are there nested lines?
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            std::vector<DataLogWidget::LineConfig> lineList;
-            for (XMLElement* lineElem = items->FirstChildElement("Line"); lineElem; lineElem = lineElem->NextSiblingElement("Line")) {
-                DataLogWidget::LineConfig line;
-                line.name = XmlChildText(lineElem, "Name", "");
-                if (lineElem->FirstChildElement("Address"))
-                    line.baseAddr = AddressFromHex(lineElem->FirstChildElement("Address"));
-                line.yScale = 1.0f;
-                if (lineElem->FirstChildElement("ScaleY"))
-                    lineElem->FirstChildElement("ScaleY")->QueryFloatText(&line.yScale);
-                line.color = IM_COL32_WHITE;
-                line.dataType = FLOAT; // default
-                if (lineElem->FirstChildElement("DataType"))
-                    lineElem->FirstChildElement("DataType")->QueryIntText(&line.dataType);
-
-                if (lineElem->FirstChildElement("Color")) {
-                    const char* colStr = lineElem->FirstChildElement("Color")->GetText();
-                    if (colStr && colStr[0] == '#') {
-                        unsigned int hex = 0;
-                        sscanf(colStr + 1, "%x", &hex);
-                        if (strlen(colStr) == 7) {
-                            line.color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                        }
-                        else if (strlen(colStr) == 9) {
-                            line.color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                        }
-                    }
-                }
-                lineList.push_back(line);
-            }
-            if (!lineList.empty()) {
-                return std::make_unique<DataLogWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm, done, le, lineList, autoSz);
-            }
-        }
-
-        // Old format: a single line
-        uint32_t addr = 0;
-        float ys = 1.0f;
-        ImU32 color = IM_COL32_WHITE;
-        int dtype = FLOAT;
-
-        if (elem->FirstChildElement("Address")) addr = AddressFromHex(elem->FirstChildElement("Address"));
-        if (elem->FirstChildElement("ScaleY")) elem->FirstChildElement("ScaleY")->QueryFloatText(&ys);
-        if (elem->FirstChildElement("DataType")) elem->FirstChildElement("DataType")->QueryIntText(&dtype);
-        if (elem->FirstChildElement("LineColor")) {
-            const char* colStr = elem->FirstChildElement("LineColor")->GetText();
-            if (colStr && colStr[0] == '#') {
-                unsigned int hex = 0;
-                sscanf(colStr + 1, "%x", &hex);
-                if (strlen(colStr) == 7) {
-                    color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                }
-                else if (strlen(colStr) == 9) {
-                    color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                }
-            }
-        }
-
-        return std::make_unique<DataLogWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm, addr, done, le, ys, color, dtype, autoSz);
+        return std::make_unique<DataLogWidget>(txt, fmt, minV, maxV, w, h, xs, sz, sm, addr, done, le, ys,
+            ReadColor(elem, "LineColor", IM_COL32_WHITE), dtype, autoSz);
     }
     else if (name == "ProgressBar") {
-        float w = 0, h = 0;
-        uint32_t addr = 0;
-        bool le = true;
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&h);
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<ProgressBarWidget>(w, h, addr, le);
+        return std::make_unique<ProgressBarWidget>(ReadSize(elem, "Width", 0.0f), ReadSize(elem, "Height", 0.0f),
+            ReadAddress(elem, "Address"), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "SliderFloat") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        float minV = 0, maxV = 0, step = 0;
-        const char* fmt = "%.3f";
-        bool le = true;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Step")) elem->FirstChildElement("Step")->QueryFloatText(&step);
-        if (elem->FirstChildElement("Format")) fmt = XmlChildText(elem, "Format", fmt);
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<SliderFloatWidget>(lbl, addr, minV, maxV, fmt, step, le);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 1.0f);
+        OrderRange(minV, maxV);
+        return std::make_unique<SliderFloatWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadText(elem, "Format", "%.3f"), ReadFloat(elem, "Step", 0.0f, 0.0f), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "SliderInt") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        int minV = 0, maxV = 0;
-        const char* fmt = "%d";
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryIntText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryIntText(&maxV);
-        if (elem->FirstChildElement("Format")) fmt = XmlChildText(elem, "Format", fmt);
-        return std::make_unique<SliderIntWidget>(lbl, addr, minV, maxV, fmt);
+        // The value is 16-bit unsigned.
+        int minV = ReadInt(elem, "Min", 0, 0, 65535), maxV = ReadInt(elem, "Max", 100, 0, 65535);
+        OrderRange(minV, maxV);
+        return std::make_unique<SliderIntWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadText(elem, "Format", "%d"));
     }
     else if (name == "TabBar") {
-        const char* name = XmlChildText(elem, "Text", "");
-        auto tabBar = std::make_unique<TabBarWidget>(name);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement("Tab"); child; child = child->NextSiblingElement("Tab")) {
-                auto tabItem = LoadWidgetFromXML(child);
-                if (tabItem) tabBar->AddChild(std::move(tabItem));
-            }
-        }
-        return tabBar;
+        return WithChildren(std::make_unique<TabBarWidget>(ReadText(elem, "Text")), elem, "Tab");
     }
     else if (name == "Tab") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        auto tab = std::make_unique<TabItemWidget>(lbl);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) tab->AddChild(std::move(w));
-            }
-        }
-        return tab;
+        return WithChildren(std::make_unique<TabItemWidget>(ReadText(elem, "Text")), elem);
     }
     else if (name == "Column") {
-        int cnt = 0;
-        if (elem->FirstChildElement("Count")) elem->FirstChildElement("Count")->QueryIntText(&cnt);
-        auto col = std::make_unique<ColumnWidget>(cnt);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) col->AddChild(std::move(w));
-            }
-        }
-        return col;
+        return WithChildren(std::make_unique<ColumnWidget>(ReadInt(elem, "Count", 1, 1, 64)), elem);
     }
     else if (name == "SelectableText") {
-        const char* fmt = XmlChildText(elem, "Format", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool useBool = false;
-        if (elem->FirstChildElement("AddrBool")) elem->FirstChildElement("AddrBool")->QueryBoolText(&useBool);
-        return std::make_unique<SelectableTextWidget>(fmt, addr, useBool);
+        return std::make_unique<SelectableTextWidget>(ReadText(elem, "Format"), ReadAddress(elem, "Address"),
+            ReadBool(elem, "AddrBool", false));
     }
     else if (name == "ChildWindow") {
-        const char* name = XmlChildText(elem, "Text", "");
-        float w = 0, h = 0;
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&h);
-        auto child = std::make_unique<ChildWindowWidget>(name, w, h);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* childElem = items->FirstChildElement(); childElem; childElem = childElem->NextSiblingElement()) {
-                auto wgt = LoadWidgetFromXML(childElem);
-                if (wgt) child->AddChild(std::move(wgt));
-            }
-        }
-        return child;
+        auto child = std::make_unique<ChildWindowWidget>(ReadText(elem, "Text"), ReadSize(elem, "Width", 0.0f),
+            ReadSize(elem, "Height", 0.0f));
+        return WithChildren(std::move(child), elem);
     }
     else if (name == "Header") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        auto header = std::make_unique<HeaderWidget>(lbl);
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) header->AddChild(std::move(w));
-            }
-        }
-        return header;
+        return WithChildren(std::make_unique<HeaderWidget>(ReadText(elem, "Text")), elem);
     }
     else if (name == "Popup") {
-        auto popup = std::make_unique<PopupWidget>();
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) popup->AddChild(std::move(w));
-            }
-        }
-        return popup;
+        return WithChildren(std::make_unique<PopupWidget>(), elem);
     }
     else if (name == "HintBox") {
-        auto hint = std::make_unique<HintBoxWidget>();
-        XMLElement* items = elem->FirstChildElement("Items");
-        if (items) {
-            for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto w = LoadWidgetFromXML(child);
-                if (w) hint->AddChild(std::move(w));
-            }
-        }
-        return hint;
+        return WithChildren(std::make_unique<HintBoxWidget>(), elem);
     }
     else if (name == "HelpMarker") {
-        const char* txt = XmlChildText(elem, "Text", "");
-        return std::make_unique<HelpMarkerWidget>(txt);
+        return std::make_unique<HelpMarkerWidget>(ReadText(elem, "Text"));
     }
     else if (name == "Watch") {
         return std::make_unique<WatchWidget>();
     }
     else if (name == "SevenSegment") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float w = 0, h = 0;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        XMLElement* heightElem = elem->FirstChildElement("Height");
-        if (!heightElem) heightElem = elem->FirstChildElement("Height");
-        if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<SevenSegmentWidget>(lbl, addr, w, h, le);
+        return std::make_unique<SevenSegmentWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadFloat(elem, "Width", 0.0f, 0.0f, kMaxExtent), ReadFloat(elem, "Height", 0.0f, 0.0f, kMaxExtent),
+            ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "MechanicalSwitch2") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float w = 0, h = 0;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        XMLElement* heightElem = elem->FirstChildElement("Height");
-        if (!heightElem) heightElem = elem->FirstChildElement("Height");
-        if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<MechanicalSwitch2Widget>(lbl, addr, w, h, le);
+        return std::make_unique<MechanicalSwitch2Widget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadFloat(elem, "Width", 0.0f, 0.0f, kMaxExtent), ReadFloat(elem, "Height", 0.0f, 0.0f, kMaxExtent),
+            ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "Gauge") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 200.0f, rad = 100.0f;
-        const char* unit = "";
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Radius"))
-            elem->FirstChildElement("Radius")->QueryFloatText(&rad);
-        if (elem->FirstChildElement("Unit"))
-            unit = XmlChildText(elem, "Unit");
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<GaugeWidget>(lbl, addr, minV, maxV, rad, unit, le);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 200.0f);
+        OrderRange(minV, maxV);
+        return std::make_unique<GaugeWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadPositive(elem, "Radius", 100.0f, kMaxRadius), ReadText(elem, "Unit"), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "GlossyDisplay") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float w = 0, h = 0;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        XMLElement* heightElem = elem->FirstChildElement("Height");
-        if (!heightElem) heightElem = elem->FirstChildElement("Height");
-        if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-
-        int dataType = U16_DEC;
-        if (elem->FirstChildElement("DataType"))
-            elem->FirstChildElement("DataType")->QueryIntText(&dataType);
-
-        bool hexMode = false;
-        if (elem->FirstChildElement("HexMode"))
-            elem->FirstChildElement("HexMode")->QueryBoolText(&hexMode);
-        else if (elem->FirstChildElement("Hex"))
-            elem->FirstChildElement("Hex")->QueryBoolText(&hexMode);
-
-        int digits = 0;
-        if (elem->FirstChildElement("Digits"))
-            elem->FirstChildElement("Digits")->QueryIntText(&digits);
-
-        int decimalPlaces = 2;
-        if (elem->FirstChildElement("DecimalPlaces"))
-            elem->FirstChildElement("DecimalPlaces")->QueryIntText(&decimalPlaces);
-
-        return std::make_unique<GlossyDisplayWidget>(
-            lbl, addr, w, h, le,
-            dataType, hexMode, digits, decimalPlaces
-        );
+        // <HexMode>, or the older <Hex>
+        const bool hexMode = elem->FirstChildElement("HexMode") ? ReadBool(elem, "HexMode", false) : ReadBool(elem, "Hex", false);
+        return std::make_unique<GlossyDisplayWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadFloat(elem, "Width", 0.0f, 0.0f, kMaxExtent), ReadFloat(elem, "Height", 0.0f, 0.0f, kMaxExtent),
+            ReadBool(elem, "LittleEndian", true), ReadDataType(elem, "DataType", U16_DEC), hexMode,
+            ReadInt(elem, "Digits", 0, 0, 63), ReadInt(elem, "DecimalPlaces", 2, 0, 63));
     }
     else if (name == "LCD_HD44780") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr1 = 0, addr2 = 0;
-        const char* line1 = "";
-        const char* line2 = "";
-
-        if (elem->FirstChildElement("Line1Address"))
-            addr1 = AddressFromHex(elem->FirstChildElement("Line1Address"));
-        if (elem->FirstChildElement("Line2Address"))
-            addr2 = AddressFromHex(elem->FirstChildElement("Line2Address"));
-        if (elem->FirstChildElement("Line1Text"))
-            line1 = XmlChildText(elem, "Line1Text");
-        if (elem->FirstChildElement("Line2Text"))
-            line2 = XmlChildText(elem, "Line2Text");
-
-        float pSize = 2.5f;
-        if (elem->FirstChildElement("PixelSize"))
-            elem->FirstChildElement("PixelSize")->QueryFloatText(&pSize);
-
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-
-        bool useFixed = false;
-        if (elem->FirstChildElement("UseFixed"))
-            elem->FirstChildElement("UseFixed")->QueryBoolText(&useFixed);
-
-        return std::make_unique<LCD_HD44780_Widget>(lbl, addr1, line1, addr2, line2, pSize, le, useFixed);
+        return std::make_unique<LCD_HD44780_Widget>(ReadText(elem, "Text"),
+            ReadAddress(elem, "Line1Address"), ReadText(elem, "Line1Text"),
+            ReadAddress(elem, "Line2Address"), ReadText(elem, "Line2Text"),
+            ReadPositive(elem, "PixelSize", 2.5f, 20.0f), ReadBool(elem, "LittleEndian", true), ReadBool(elem, "UseFixed", false));
     }
     else if (name == "VerticalGauge") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 100.0f;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        float w = 120.0f, h = 300.0f;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        XMLElement* heightElem = elem->FirstChildElement("Height");
-        if (!heightElem) heightElem = elem->FirstChildElement("Height");
-        if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        int dataType = FLOAT;
-        if (elem->FirstChildElement("DataType"))
-            elem->FirstChildElement("DataType")->QueryIntText(&dataType);
-        return std::make_unique<VerticalGaugeWidget>(lbl, addr, minV, maxV, w, h, le, dataType);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 100.0f);
+        OrderRange(minV, maxV);
+        return std::make_unique<VerticalGaugeWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadPositive(elem, "Width", 120.0f, kMaxExtent), ReadPositive(elem, "Height", 300.0f, kMaxExtent),
+            ReadBool(elem, "LittleEndian", true), ReadDataType(elem, "DataType", FLOAT));
     }
-    else if (name == "NeumorphicKnob") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 1.0f;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        float rad = 50.0f;
-        if (elem->FirstChildElement("Radius"))
-            elem->FirstChildElement("Radius")->QueryFloatText(&rad);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        int dataType = S16_DEC;
-        if (elem->FirstChildElement("DataType"))
-            elem->FirstChildElement("DataType")->QueryIntText(&dataType);
+    else if (name == "NeumorphicKnob" || name == "StyledKnob") {
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 1.0f);
+        OrderRange(minV, maxV);
+        const char* lbl = ReadText(elem, "Text");
+        const uint32_t addr = ReadAddress(elem, "Address");
+        const float rad = ReadPositive(elem, "Radius", 50.0f, kMaxRadius);
+        const bool le = ReadBool(elem, "LittleEndian", true);
+        const int dataType = ReadDataType(elem, "DataType", S16_DEC);
+        if (name == "StyledKnob")
+            return std::make_unique<StyledKnobWidget>(lbl, addr, minV, maxV, rad, le, dataType);
         return std::make_unique<NeumorphicKnobWidget>(lbl, addr, minV, maxV, rad, le, dataType);
     }
-    else if (name == "StyledKnob") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 1.0f;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        float radius = 50.0f;
-        if (elem->FirstChildElement("Radius"))
-            elem->FirstChildElement("Radius")->QueryFloatText(&radius);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        int dataType = S16_DEC;
-        if (elem->FirstChildElement("DataType"))
-            elem->FirstChildElement("DataType")->QueryIntText(&dataType);
-        return std::make_unique<StyledKnobWidget>(lbl, addr, minV, maxV, radius, le, dataType);
-    }
     else if (name == "CustomVerticalSlider") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 1.0f;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        float w = 20.0f, h = 100.0f;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        XMLElement* heightElem = elem->FirstChildElement("Height");
-        if (!heightElem) heightElem = elem->FirstChildElement("Height");
-        if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        int dataType = FLOAT;
-        if (elem->FirstChildElement("DataType"))
-            elem->FirstChildElement("DataType")->QueryIntText(&dataType);
-        return std::make_unique<CustomVerticalSliderWidget>(lbl, addr, minV, maxV, w, h, le, dataType);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 1.0f);
+        OrderRange(minV, maxV);
+        return std::make_unique<CustomVerticalSliderWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadPositive(elem, "Width", 20.0f, kMaxExtent), ReadPositive(elem, "Height", 100.0f, kMaxExtent),
+            ReadBool(elem, "LittleEndian", true), ReadDataType(elem, "DataType", FLOAT));
     }
     else if (name == "BitControl8Bit") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-
-        float scale = 0.55f;
-        if (elem->FirstChildElement("Scale"))
-            elem->FirstChildElement("Scale")->QueryFloatText(&scale);
-
-        return std::make_unique<BitControl8BitWidget>(lbl, addr, le, scale);
+        return std::make_unique<BitControl8BitWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadBool(elem, "LittleEndian", true), ReadPositive(elem, "Scale", 0.55f, 10.0f));
     }
     else if (name == "BitControl") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        int modeInt = Bits8;
-        if (elem->FirstChildElement("Mode"))
-            elem->FirstChildElement("Mode")->QueryIntText(&modeInt);
-        BitMode mode = static_cast<BitMode>(modeInt);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        bool switchable = true;
-        if (elem->FirstChildElement("Switchable"))
-            elem->FirstChildElement("Switchable")->QueryBoolText(&switchable);
-        return std::make_unique<BitControlWidget>(lbl, addr, mode, le, switchable);
+        const int mode = ReadChoice(elem, "Mode", Bits8, { Bits8, Bits16, Bits32 });
+        return std::make_unique<BitControlWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            static_cast<BitMode>(mode), ReadBool(elem, "LittleEndian", true), ReadBool(elem, "Switchable", true));
     }
     else if (name == "RotarySwitch") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        int minPos = 0, maxPos = 3;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryIntText(&minPos);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryIntText(&maxPos);
-        float rad = 40.0f;
-        if (elem->FirstChildElement("Radius"))
-            elem->FirstChildElement("Radius")->QueryFloatText(&rad);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<RotarySwitchWidget>(lbl, addr, minPos, maxPos, rad, le);
+        int minPos = ReadInt(elem, "Min", 0, 0, 65535), maxPos = ReadInt(elem, "Max", 3, 0, 65535);
+        OrderRange(minPos, maxPos);
+        return std::make_unique<RotarySwitchWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minPos, maxPos,
+            ReadPositive(elem, "Radius", 40.0f, kMaxRadius), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "LedIndicator") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float rad = 10.0f;
-        if (elem->FirstChildElement("Radius"))
-            elem->FirstChildElement("Radius")->QueryFloatText(&rad);
-
-        ImU32 colorOn = IM_COL32(255, 0, 0, 255);
-        ImU32 colorOff = IM_COL32(50, 0, 0, 255);
-
-        if (elem->FirstChildElement("ColorOn")) {
-            const char* colStr = elem->FirstChildElement("ColorOn")->GetText();
-            if (colStr && colStr[0] == '#') {
-                unsigned int hex = 0;
-                int ret = sscanf(colStr + 1, "%x", &hex);
-                if (strlen(colStr) == 7) {
-                    colorOn = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                }
-                else if (strlen(colStr) == 9) {
-                    colorOn = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                }
-            }
-        }
-        if (elem->FirstChildElement("ColorOff")) {
-            const char* colStr = elem->FirstChildElement("ColorOff")->GetText();
-            if (colStr && colStr[0] == '#') {
-                unsigned int hex = 0;
-                int ret = sscanf(colStr + 1, "%x", &hex);
-                if (strlen(colStr) == 7) {
-                    colorOff = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                }
-                else if (strlen(colStr) == 9) {
-                    colorOff = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                }
-            }
-        }
-
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-
-        return std::make_unique<LedIndicatorWidget>(lbl, addr, rad, colorOn, colorOff, le);
+        return std::make_unique<LedIndicatorWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadPositive(elem, "Radius", 10.0f, kMaxRadius), ReadColor(elem, "ColorOn", IM_COL32(255, 0, 0, 255)),
+            ReadColor(elem, "ColorOff", IM_COL32(50, 0, 0, 255)), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "Image") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        const char* file = XmlChildText(elem, "File", "");
-        float scale = 1.0f;
-        if (elem->FirstChildElement("Scale"))
-            elem->FirstChildElement("Scale")->QueryFloatText(&scale);
-
-        float fixW = 0, fixH = 0;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&fixW);
-        if (elem->FirstChildElement("Height"))
-            elem->FirstChildElement("Height")->QueryFloatText(&fixH);
-
-        ImU32 tint = IM_COL32(255, 255, 255, 255);
-        if (elem->FirstChildElement("Tint")) {
-            const char* tintStr = elem->FirstChildElement("Tint")->GetText();
-            if (tintStr && tintStr[0] == '#') {
-                unsigned int hex = 0;
-                int ret = sscanf(tintStr + 1, "%x", &hex);
-                if (strlen(tintStr) == 7) {
-                    tint = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                }
-                else if (strlen(tintStr) == 9) {
-                    tint = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                }
-            }
-        }
-
-        ImU32 border = 0;
-        if (elem->FirstChildElement("Border")) {
-            const char* borderStr = elem->FirstChildElement("Border")->GetText();
-            if (borderStr && borderStr[0] == '#') {
-                unsigned int hex = 0;
-                int ret = sscanf(borderStr + 1, "%x", &hex);
-                if (strlen(borderStr) == 7) {
-                    border = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                }
-                else if (strlen(borderStr) == 9) {
-                    border = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-                }
-            }
-        }
-
-        ImVec2 uv0(0, 0), uv1(1, 1);
-        if (elem->FirstChildElement("UV0")) {
-            const char* uv0Str = elem->FirstChildElement("UV0")->GetText();
-            if (uv0Str) { int ret = sscanf(uv0Str, "%f,%f", &uv0.x, &uv0.y); }
-        }
-        if (elem->FirstChildElement("UV1")) {
-            const char* uv1Str = elem->FirstChildElement("UV1")->GetText();
-            if (uv1Str) { int ret = sscanf(uv1Str, "%f,%f", &uv1.x, &uv1.y); }
-        }
-
-        return std::make_unique<ImageWidget>(lbl, file, scale, fixW, fixH, uv0, uv1, tint, border);
+        return std::make_unique<ImageWidget>(ReadText(elem, "Text"), ReadText(elem, "File"),
+            ReadPositive(elem, "Scale", 1.0f, 100.0f),
+            ReadFloat(elem, "Width", 0.0f, 0.0f, kMaxExtent), ReadFloat(elem, "Height", 0.0f, 0.0f, kMaxExtent),
+            ReadPoint(elem, "UV0", ImVec2(0, 0)), ReadPoint(elem, "UV1", ImVec2(1, 1)),
+            ReadColor(elem, "Tint", IM_COL32(255, 255, 255, 255)), ReadColor(elem, "Border", 0));
     }
     else if (name == "Gif") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        const char* file = XmlChildText(elem, "File", "");
-        float scale = 1.0f;
-        if (elem->FirstChildElement("Scale"))
-            elem->FirstChildElement("Scale")->QueryFloatText(&scale);
-        float fixW = 0, fixH = 0;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&fixW);
-        if (elem->FirstChildElement("Height"))
-            elem->FirstChildElement("Height")->QueryFloatText(&fixH);
-        bool loop = true;
-        if (elem->FirstChildElement("Loop"))
-            elem->FirstChildElement("Loop")->QueryBoolText(&loop);
-        float speed = 1.0f;
-        if (elem->FirstChildElement("Speed"))
-            elem->FirstChildElement("Speed")->QueryFloatText(&speed);
-        return std::make_unique<GifWidget>(lbl, file, fixW, fixH, scale, loop, speed);
+        return std::make_unique<GifWidget>(ReadText(elem, "Text"), ReadText(elem, "File"),
+            ReadFloat(elem, "Width", 0.0f, 0.0f, kMaxExtent), ReadFloat(elem, "Height", 0.0f, 0.0f, kMaxExtent),
+            ReadPositive(elem, "Scale", 1.0f, 100.0f), ReadBool(elem, "Loop", true), ReadPositive(elem, "Speed", 1.0f, 100.0f));
     }
     else if (name == "RPMIndicator") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 8000.0f, rad = 100.0f;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        if (elem->FirstChildElement("Radius"))
-            elem->FirstChildElement("Radius")->QueryFloatText(&rad);
-        const char* unit = "rpm";
-        if (elem->FirstChildElement("Unit"))
-            unit = XmlChildText(elem, "Unit");
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 8000.0f);
+        OrderRange(minV, maxV);
 
         std::vector<RPMZone> zones;
         XMLElement* zonesElem = elem->FirstChildElement("Zones");
         if (zonesElem) {
             for (XMLElement* zoneElem = zonesElem->FirstChildElement("Zone"); zoneElem; zoneElem = zoneElem->NextSiblingElement("Zone")) {
-                RPMZone zone;
                 float start = 0, end = 0;
-                const char* colorStr = nullptr;
-                zoneElem->QueryFloatAttribute("start", &start);
-                zoneElem->QueryFloatAttribute("end", &end);
-                colorStr = zoneElem->Attribute("color");
-                if (colorStr && colorStr[0] == '#') {
-                    unsigned int hex = 0;
-                    int ret = sscanf(colorStr + 1, "%x", &hex);
-                    zone.start = start;
-                    zone.end = end;
-                    zone.color = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 200);
-                    zones.push_back(zone);
-                }
+                unsigned int rgba = 0;
+                // Zones are sorted below: non-finite bounds would break the ordering.
+                if (zoneElem->QueryFloatAttribute("start", &start) != XML_SUCCESS ||
+                    zoneElem->QueryFloatAttribute("end", &end) != XML_SUCCESS ||
+                    !std::isfinite(start) || !std::isfinite(end) ||
+                    !ParseTextColor(zoneElem->Attribute("color"), &rgba))
+                    continue;
+                zones.push_back({ start, end, IM_COL32((rgba >> 24) & 0xFF, (rgba >> 16) & 0xFF, (rgba >> 8) & 0xFF, 200) });
             }
         }
         if (zones.empty()) {
@@ -1222,247 +581,81 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         }
         std::sort(zones.begin(), zones.end());
 
-        return std::make_unique<RPMIndicatorWidget>(lbl, addr, minV, maxV, rad, unit, zones, le);
+        return std::make_unique<RPMIndicatorWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadPositive(elem, "Radius", 100.0f, kMaxRadius), ReadText(elem, "Unit", "rpm"), zones, ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "Keypad") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        int minV = 0, maxV = 9999;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryIntText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryIntText(&maxV);
-        int digits = 4;
-        if (elem->FirstChildElement("Digits"))
-            elem->FirstChildElement("Digits")->QueryIntText(&digits);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<KeypadWidget>(lbl, addr, minV, maxV, digits, le);
+        int minV = ReadInt(elem, "Min", 0), maxV = ReadInt(elem, "Max", 9999);
+        OrderRange(minV, maxV);
+        return std::make_unique<KeypadWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadInt(elem, "Digits", 4, 1, 9), ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "Equalizer") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        int bands = 10;
-        if (elem->FirstChildElement("Bands"))
-            elem->FirstChildElement("Bands")->QueryIntText(&bands);
-        float minV = 0.0f, maxV = 100.0f;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        float bandWidth = 20.0f, height = 120.0f;
-        if (elem->FirstChildElement("BandWidth"))
-            elem->FirstChildElement("BandWidth")->QueryFloatText(&bandWidth);
-        if (elem->FirstChildElement("Height"))
-            elem->FirstChildElement("Height")->QueryFloatText(&height);
-        const char* typeStr = XmlChildText(elem, "DataType", "float");
-        EqDataType dtype = EQ_FLOAT;
-        if (strcmp(typeStr, "int16") == 0) dtype = EQ_INT16;
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 100.0f);
+        OrderRange(minV, maxV);
+        const EqDataType dtype = (strcmp(ReadText(elem, "DataType", "float"), "int16") == 0) ? EQ_INT16 : EQ_FLOAT;
         // Byte distance between neighbouring bands: one float or one int16 by default.
-        int step = 4;
-        if (dtype == EQ_INT16) step = 2;
-        if (elem->FirstChildElement("AddressStep"))
-            elem->FirstChildElement("AddressStep")->QueryIntText(&step);
-        return std::make_unique<EqualizerWidget>(lbl, addr, bands, minV, maxV, bandWidth, height, dtype, le, step);
+        const int step = ReadInt(elem, "AddressStep", dtype == EQ_INT16 ? 2 : 4, 0, 4096);
+        return std::make_unique<EqualizerWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadInt(elem, "Bands", 10, 1, 64), minV, maxV, ReadPositive(elem, "BandWidth", 20.0f, kMaxExtent),
+            ReadPositive(elem, "Height", 120.0f, kMaxExtent), dtype, ReadBool(elem, "LittleEndian", true), step);
     }
     else if (name == "Tank") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 100.0f;
-        if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        float w = 150.0f, h = 250.0f;
-        if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
-        XMLElement* heightElem = elem->FirstChildElement("Height");
-        if (!heightElem) heightElem = elem->FirstChildElement("Height");
-        if (heightElem) heightElem->QueryFloatText(&h);
-        const char* unit = "";
-        if (elem->FirstChildElement("Unit")) unit = XmlChildText(elem, "Unit");
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-
-        ImU32 liquidColor = IM_COL32(64, 164, 223, 255);
-        if (elem->FirstChildElement("LiquidColor")) {
-            const char* colStr = elem->FirstChildElement("LiquidColor")->GetText();
-            if (colStr && colStr[0] == '#') {
-                unsigned int hex = 0;
-                sscanf(colStr + 1, "%x", &hex);
-                if (strlen(colStr) == 7)
-                    liquidColor = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                else if (strlen(colStr) == 9)
-                    liquidColor = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-            }
-        }
-        ImU32 metalColor = IM_COL32(160, 160, 170, 255);
-        if (elem->FirstChildElement("MetalColor")) {
-            const char* colStr = elem->FirstChildElement("MetalColor")->GetText();
-            if (colStr && colStr[0] == '#') {
-                unsigned int hex = 0;
-                sscanf(colStr + 1, "%x", &hex);
-                if (strlen(colStr) == 7)
-                    metalColor = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
-                else if (strlen(colStr) == 9)
-                    metalColor = IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, (hex >> 24) & 0xFF);
-            }
-        }
-        int dataType = 0;
-        if (elem->FirstChildElement("DataType")) elem->FirstChildElement("DataType")->QueryIntText(&dataType);
-        return std::make_unique<TankWidget>(lbl, addr, minV, maxV, w, h, unit, liquidColor, metalColor, le, dataType);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 100.0f);
+        OrderRange(minV, maxV);
+        return std::make_unique<TankWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV,
+            ReadPositive(elem, "Width", 150.0f, kMaxExtent), ReadPositive(elem, "Height", 250.0f, kMaxExtent),
+            ReadText(elem, "Unit"), ReadColor(elem, "LiquidColor", IM_COL32(64, 164, 223, 255)),
+            ReadColor(elem, "MetalColor", IM_COL32(160, 160, 170, 255)), ReadBool(elem, "LittleEndian", true),
+            ReadChoice(elem, "DataType", TANK_FLOAT, { TANK_FLOAT, TANK_U16, TANK_S16, TANK_U32, TANK_S32 }));
     }
     else if (name == "VUMeter") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        float minV = 0.0f, maxV = 100.0f;
-        if (elem->FirstChildElement("Min"))
-            elem->FirstChildElement("Min")->QueryFloatText(&minV);
-        if (elem->FirstChildElement("Max"))
-            elem->FirstChildElement("Max")->QueryFloatText(&maxV);
-        const char* orientStr = XmlChildText(elem, "Orientation", "horizontal");
-        VUOrientation orient = VU_HORIZONTAL;
-        if (strcmp(orientStr, "vertical") == 0) orient = VU_VERTICAL;
-        float w = 200.0f, h = 30.0f;
-        if (elem->FirstChildElement("Width"))
-            elem->FirstChildElement("Width")->QueryFloatText(&w);
-        XMLElement* heightElem = elem->FirstChildElement("Height");
-        if (!heightElem) heightElem = elem->FirstChildElement("Height");
-        if (heightElem) heightElem->QueryFloatText(&h);
-        const char* unit = "";
-        if (elem->FirstChildElement("Unit"))
-            unit = XmlChildText(elem, "Unit");
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        bool peak = false;
-        if (elem->FirstChildElement("ShowPeak"))
-            elem->FirstChildElement("ShowPeak")->QueryBoolText(&peak);
-        return std::make_unique<VUMeterWidget>(lbl, addr, minV, maxV, orient, w, h, unit, le, peak);
+        float minV = ReadFloat(elem, "Min", 0.0f), maxV = ReadFloat(elem, "Max", 100.0f);
+        OrderRange(minV, maxV);
+        const VUOrientation orient = (strcmp(ReadText(elem, "Orientation", "horizontal"), "vertical") == 0) ? VU_VERTICAL : VU_HORIZONTAL;
+        return std::make_unique<VUMeterWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), minV, maxV, orient,
+            ReadPositive(elem, "Width", 200.0f, kMaxExtent), ReadPositive(elem, "Height", 30.0f, kMaxExtent),
+            ReadText(elem, "Unit"), ReadBool(elem, "LittleEndian", true), ReadBool(elem, "ShowPeak", false));
     }
     else if (name == "SegmentButton") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-
         std::vector<SegmentItem> segments;
         XMLElement* itemsElem = elem->FirstChildElement("Items");
         if (itemsElem) {
             for (XMLElement* segElem = itemsElem->FirstChildElement("Segment"); segElem; segElem = segElem->NextSiblingElement("Segment")) {
                 SegmentItem item;
-                const char* text = XmlChildText(segElem, "Text", "");
-                int val = 0;
-                if (segElem->FirstChildElement("Value"))
-                    segElem->FirstChildElement("Value")->QueryIntText(&val);
-                item.text = text;
-                item.value = val;
+                item.text = ReadText(segElem, "Text");
+                item.value = ReadInt(segElem, "Value", 0);
                 segments.push_back(item);
             }
         }
-
         if (segments.empty()) {
             segments.push_back({ "Low", 0 });
             segments.push_back({ "Med", 1 });
             segments.push_back({ "High", 2 });
         }
-
-        return std::make_unique<SegmentButtonWidget>(lbl, addr, segments, le);
+        return std::make_unique<SegmentButtonWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"), segments,
+            ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "GlossyButton") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t addr = 0;
-        if (elem->FirstChildElement("Address"))
-            addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        int mode = 1;
-        if (elem->FirstChildElement("Mode"))
-            elem->FirstChildElement("Mode")->QueryIntText(&mode);
-        int writeVal = 1;
-        if (elem->FirstChildElement("Value"))
-            elem->FirstChildElement("Value")->QueryIntText(&writeVal);
-        float radius = 20.0f;
-        if (elem->FirstChildElement("Radius"))
-            elem->FirstChildElement("Radius")->QueryFloatText(&radius);
-        return std::make_unique<GlossyButtonWidget>(lbl, addr, le, (GlossyButtonMode)mode, writeVal, radius);
+        const int mode = ReadChoice(elem, "Mode", GLOSSY_BUTTON_TOGGLE,
+            { GLOSSY_BUTTON_SETBIT, GLOSSY_BUTTON_TOGGLE, GLOSSY_BUTTON_WRITE, GLOSSY_BUTTON_MOMENTARY });
+        return std::make_unique<GlossyButtonWidget>(ReadText(elem, "Text"), ReadAddress(elem, "Address"),
+            ReadBool(elem, "LittleEndian", true), (GlossyButtonMode)mode, ReadInt(elem, "Value", 1),
+            ReadPositive(elem, "Radius", 20.0f, kMaxRadius));
     }
     else if (name == "MemoryView") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t base = 0;
-        if (elem->FirstChildElement("BaseAddress"))
-            base = AddressFromHex(elem->FirstChildElement("BaseAddress"));
-        int bytes = 256;
-        if (elem->FirstChildElement("NumBytes"))
-            elem->FirstChildElement("NumBytes")->QueryIntText(&bytes);
-        int bpl = 16;
-        if (elem->FirstChildElement("BytesPerLine"))
-            elem->FirstChildElement("BytesPerLine")->QueryIntText(&bpl);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        return std::make_unique<MemoryViewWidget>(lbl, base, bytes, bpl, le);
+        return std::make_unique<MemoryViewWidget>(ReadText(elem, "Text"), ReadAddress(elem, "BaseAddress"),
+            (uint16_t)ReadInt(elem, "NumBytes", 256, 1, 65535), ReadInt(elem, "BytesPerLine", 16, 1, 256),
+            ReadBool(elem, "LittleEndian", true));
     }
     else if (name == "MemoryEditor") {
-        const char* lbl = XmlChildText(elem, "Text", "");
-        uint32_t base = 0;
-        if (elem->FirstChildElement("BaseAddress"))
-            base = AddressFromHex(elem->FirstChildElement("BaseAddress"));
-        int size = 256;
-        if (elem->FirstChildElement("Size"))
-            elem->FirstChildElement("Size")->QueryIntText(&size);
-        int cols = 16;
-        if (elem->FirstChildElement("Cols"))
-            elem->FirstChildElement("Cols")->QueryIntText(&cols);
-        bool readOnly = false;
-        if (elem->FirstChildElement("ReadOnly"))
-            elem->FirstChildElement("ReadOnly")->QueryBoolText(&readOnly);
-        bool showAscii = true;
-        if (elem->FirstChildElement("ShowAscii"))
-            elem->FirstChildElement("ShowAscii")->QueryBoolText(&showAscii);
-        bool showHexII = false;
-        if (elem->FirstChildElement("ShowHexII"))
-            elem->FirstChildElement("ShowHexII")->QueryBoolText(&showHexII);
-        bool showOptions = true;
-        if (elem->FirstChildElement("ShowOptions"))
-            elem->FirstChildElement("ShowOptions")->QueryBoolText(&showOptions);
-        bool showPreview = true;
-        if (elem->FirstChildElement("ShowPreview"))
-            elem->FirstChildElement("ShowPreview")->QueryBoolText(&showPreview);
-        bool greyZero = true;
-        if (elem->FirstChildElement("GreyZero"))
-            elem->FirstChildElement("GreyZero")->QueryBoolText(&greyZero);
-        bool upperHex = true;
-        if (elem->FirstChildElement("UpperHex"))
-            elem->FirstChildElement("UpperHex")->QueryBoolText(&upperHex);
-        bool le = true;
-        if (elem->FirstChildElement("LittleEndian"))
-            elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
-        bool useExternal = false;
-        if (elem->FirstChildElement("UseExternal"))
-            elem->FirstChildElement("UseExternal")->QueryBoolText(&useExternal);
-        bool useCache = true; // true by default
-        if (elem->FirstChildElement("UseCache"))
-            elem->FirstChildElement("UseCache")->QueryBoolText(&useCache);
-
-        return std::make_unique<MemoryEditorWidget>(lbl, base, (size_t)size, cols,
-            readOnly, showAscii, showHexII,
-            showOptions, showPreview,
-            greyZero, upperHex, le, useExternal, useCache);
-            }
+        return std::make_unique<MemoryEditorWidget>(ReadText(elem, "Text"), ReadAddress(elem, "BaseAddress"),
+            (size_t)ReadInt(elem, "Size", 256, 1, IOMAP_SIZE), ReadInt(elem, "Cols", 16, 1, 64),
+            ReadBool(elem, "ReadOnly", false), ReadBool(elem, "ShowAscii", true), ReadBool(elem, "ShowHexII", false),
+            ReadBool(elem, "ShowOptions", true), ReadBool(elem, "ShowPreview", true),
+            ReadBool(elem, "GreyZero", true), ReadBool(elem, "UpperHex", true), ReadBool(elem, "LittleEndian", true),
+            ReadBool(elem, "UseExternal", false), ReadBool(elem, "UseCache", true));
+    }
     return nullptr;
 }
 
@@ -1538,7 +731,7 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
             wd.root = std::move(rootGroup);
         }
         else {
-            printf("Window '%s' has no <Items> – empty window.\n", wd.name.c_str());
+            printf("Window '%s' has no <Items>: empty window.\n", wd.name.c_str());
         }
         g_Windows.push_back(std::move(wd));
     }

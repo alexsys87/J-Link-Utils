@@ -13,6 +13,13 @@ class CustomVerticalSliderWidget : public LeafWidget {
 public:
     CustomVerticalSliderWidget(const char* lbl, uint32_t addr, float minV, float maxV, float w, float h, bool le, int dtype = FLOAT)
         : LeafWidget(lbl), address(addr), minVal(minV), maxVal(maxV), size(w, h), littleEndian(le), dataType(dtype) {
+        // ImGui sliders need a finite range within +-FLT_MAX/2 and a visible size.
+        if (!std::isfinite(minVal)) minVal = 0.0f;
+        if (!std::isfinite(maxVal)) maxVal = 1.0f;
+        minVal = std::clamp(minVal, -FLT_MAX / 2, FLT_MAX / 2);
+        maxVal = std::clamp(maxVal, -FLT_MAX / 2, FLT_MAX / 2);
+        if (!(size.x >= 1.0f)) size.x = 20.0f;
+        if (!(size.y >= 1.0f)) size.y = 100.0f;
     }
 
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
@@ -28,7 +35,8 @@ public:
         ImGui::PopID();
 
         // Value changed: write it back
-        if (value != oldValue)
+        // NaN in memory compares unequal to itself: do not write it back every frame.
+        if (value != oldValue && !(std::isnan(value) && std::isnan(oldValue)))
             WriteTypedValue(ctx, addr, dataType, littleEndian, value);
     }
 

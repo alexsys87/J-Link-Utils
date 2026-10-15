@@ -164,6 +164,7 @@ public:
 private:
     void InitBuffers() {
         bufferSize = std::clamp(bufferSize, 1, static_cast<int>(BUFF_SIZE));
+        smoothWindow = std::clamp(smoothWindow, 0, bufferSize);   // a wider window only costs time
         data.resize(lines.size());
         smoothed.resize(lines.size());
         for (size_t i = 0; i < lines.size(); ++i) {

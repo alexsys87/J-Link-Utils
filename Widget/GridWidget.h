@@ -7,18 +7,22 @@ class GridWidget : public ContainerWidget {
     uint32_t baseAddr;
     int addrInc;
 public:
-    GridWidget(int r, int c, int base, int inc) : rows(r), cols(c), baseAddr(base), addrInc(inc) {}
+    // More than 256 x 256 cells would stall every frame.
+    GridWidget(int r, int c, uint32_t base, int inc)
+        : rows(std::clamp(r, 0, 256)), cols(std::clamp(c, 0, 256)), baseAddr(base), addrInc(inc) {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
-        int currentAddr = baseAddr;
+        uint32_t currentAddr = baseAddr;
         for (int i = 0; i < rows * cols; ++i) {
             ImGui::PushID(i);
-            for (auto& child : children) {
+            for (size_t c = 0; c < children.size(); ++c) {
                 uint32_t childAddr = currentAddr;
-                child->Draw(ctx, &childAddr);
+                ImGui::PushID((int)c);
+                children[c]->Draw(ctx, &childAddr);
+                ImGui::PopID();
             }
             if ((i % cols) < (cols - 1)) ImGui::SameLine();
             ImGui::PopID();
-            currentAddr += addrInc;
+            currentAddr += (uint32_t)addrInc;   // wraps instead of signed overflow
         }
     }
 };

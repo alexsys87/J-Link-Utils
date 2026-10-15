@@ -42,6 +42,9 @@ MemoryEditorWidget::MemoryEditorWidget(const char* label,
     , m_use_cache(use_cache)
     , m_last_cache_update(0.0)
 {
+    // The buffers are allocated up front: keep them within the mapped memory window.
+    m_size = std::min<size_t>(std::max<size_t>(m_size, 1), IOMAP_SIZE);
+    m_cols = std::clamp(m_cols, 1, 64);
     if (!m_use_external && m_size > 0) {
         m_local_buffer.resize(m_size, 0);
     }
@@ -67,7 +70,7 @@ void MemoryEditorWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
 
     if (m_use_external && m_size > 0) {
         if (m_use_cache) {
-            UpdateCache(ctx); // ˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ DataReadWriteArray
+            UpdateCache(ctx); // refreshed through DataReadWriteArray
         }
 
         CallbackData cbData = { this, ctx };
@@ -80,7 +83,7 @@ void MemoryEditorWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         m_editor.UserData = nullptr;
     }
     else {
-        // ˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜
+        // Plain local buffer
         m_editor.ReadFn = nullptr;
         m_editor.WriteFn = nullptr;
         m_editor.UserData = nullptr;
@@ -91,7 +94,7 @@ void MemoryEditorWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
     }
 }
 
-// ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜ ˜ ˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜ DataReadWriteArray
+// Refreshes the cache from the communication cache through DataReadWriteArray
 void MemoryEditorWidget::UpdateCache(MainContext* ctx) {
     double now = ImGui::GetTime();
     if (now - m_last_cache_update < CACHE_UPDATE_INTERVAL)
@@ -99,7 +102,7 @@ void MemoryEditorWidget::UpdateCache(MainContext* ctx) {
 
     m_last_cache_update = now;
 
-    // ˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜ ˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜
+    // Request the whole range at once
     uint16_t req_size = (m_size > 0xFFFF) ? 0xFFFF : (uint16_t)m_size;
     if (DataReadWriteArray(ctx, nullptr, nullptr, &m_base_addr, req_size) > 0) {
         if (m_base_addr < ctx->mcu_memory_base)
@@ -118,7 +121,7 @@ void MemoryEditorWidget::UpdateCache(MainContext* ctx) {
     }
 }
 
-// ˜˜˜˜˜˜ ˜˜˜˜˜ ˜˜ ˜˜˜˜ (˜˜˜˜ ˜˜˜ ˜˜˜˜˜˜˜) ˜˜˜ ˜˜˜˜˜˜˜˜
+// Reads a byte from the cache (or directly) for the editor
 uint8_t MemoryEditorWidget::ReadByteCached(MainContext* ctx, uint32_t phys_addr) {
     if (!m_use_cache) {
         return DataReadWriteU08(ctx, nullptr, nullptr, &phys_addr);
@@ -129,19 +132,19 @@ uint8_t MemoryEditorWidget::ReadByteCached(MainContext* ctx, uint32_t phys_addr)
     return 0;
 }
 
-// ˜˜˜˜˜˜ ˜˜˜˜˜ ˜ ˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜
+// Writes a byte to the target
 void MemoryEditorWidget::WriteByteCached(MainContext* ctx, uint32_t phys_addr, uint8_t val) {
     DataReadWriteU08(ctx, nullptr, &val, &phys_addr);
     if (m_use_cache) {
         uint32_t off = phys_addr - m_base_addr;
         if (off < m_size)
-            m_cache[off] = val; // ˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜ ˜˜˜
+            m_cache[off] = val; // keep the cache in step
         else
-            m_last_cache_update = 0.0; // ˜˜˜ ˜˜˜˜˜˜ ˜˜ ˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜ ˜˜˜
+            m_last_cache_update = 0.0; // outside the cache: refresh it
     }
 }
 
-// ˜˜˜˜˜˜˜˜˜˜˜ callback ˜˜˜ ˜˜˜˜˜˜
+// Read callback for the editor
 ImU8 MemoryEditorWidget::ReadCallback(const ImU8* /*mem*/, size_t off, void* user_data) {
     CallbackData* data = static_cast<CallbackData*>(user_data);
     if (!data || !data->widget || !data->ctx) return 0;
@@ -152,7 +155,7 @@ ImU8 MemoryEditorWidget::ReadCallback(const ImU8* /*mem*/, size_t off, void* use
     return self->ReadByteCached(data->ctx, phys_addr);
 }
 
-// ˜˜˜˜˜˜˜˜˜˜˜ callback ˜˜˜ ˜˜˜˜˜˜
+// Write callback for the editor
 void MemoryEditorWidget::WriteCallback(ImU8* /*mem*/, size_t off, ImU8 d, void* user_data) {
     CallbackData* data = static_cast<CallbackData*>(user_data);
     if (!data || !data->widget || !data->ctx) return;

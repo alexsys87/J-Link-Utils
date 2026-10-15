@@ -11,7 +11,7 @@ class PlotTooltipWidget : public UIWidget {
     bool littleEndian;
     int dataType;
     bool autosize;
-    std::vector<float> m_displayBuf; // ˜˜˜˜˜ ˜ ˜˜˜˜
+    std::vector<float> m_displayBuf; // Values in display order
 
     float ReadValue(MainContext* ctx, uint32_t addr) const {
         return (float)ReadTypedValue(ctx, addr, dataType, littleEndian);
@@ -45,7 +45,7 @@ public:
             if (bufferId < 0 || bufferId >= MAX_BUFF || sizeVal <= 0 || sizeVal > BUFF_SIZE) return;
 
             int wp = writePos[bufferId];
-            // ˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜ ˜˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜ ˜ ˜˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜
+            // Copy the ring buffer into chronological order
             int idx = 0;
             for (int i = wp; i < sizeVal; ++i) m_displayBuf[idx++] = VirtualBuffer[bufferId][i];
             for (int i = 0; i < wp; ++i) m_displayBuf[idx++] = VirtualBuffer[bufferId][i];

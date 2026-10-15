@@ -1,1695 +1,486 @@
 // WidgetTemplateFactory.cpp
 #include "WidgetTemplateFactory.h"
-#include <tinyxml2/tinyxml2.h>
+#include "XMLSafety.h"
+#include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace WidgetTemplateFactory {
 
-    // ==================================================================
-    // Root widget templates
-    // ==================================================================
+    namespace {
+
+        using K = PropKind;
+
+        PropDef P(const char* name, PropKind kind, const char* value, const char* help = nullptr) {
+            PropDef p;
+            p.name = name;
+            p.kind = kind;
+            p.defaultValue = value;
+            p.help = help;
+            return p;
+        }
+
+        PropDef E(const char* name, const char* value, std::vector<EnumOption> options, const char* help = nullptr) {
+            PropDef p = P(name, K::Enum, value, help);
+            p.options = std::move(options);
+            return p;
+        }
+
+        // Read by the loader, but not written into new widgets (older formats, aliases).
+        PropDef Legacy(PropDef p) {
+            p.inTemplate = false;
+            return p;
+        }
+
+        PropDef Attr(PropDef p) {
+            p.attribute = true;
+            return p;
+        }
+
+        // Properties shared by many widgets
+        PropDef Text(const char* value) { return P("Text", K::Text, value); }
+        PropDef Addr(const char* name = "Address") { return P(name, K::Address, "0x20000000", "Target address: 0x20000000, #20000000 or decimal"); }
+        PropDef LE() { return P("LittleEndian", K::Bool, "true", "false swaps the bytes (big-endian data)"); }
+        PropDef Width(const char* value) { return P("Width", K::Float, value); }
+        PropDef Height(const char* value) { return P("Height", K::Float, value); }
+        PropDef MinF(const char* value) { return P("Min", K::Float, value); }
+        PropDef MaxF(const char* value) { return P("Max", K::Float, value); }
+        PropDef Format(const char* value) { return P("Format", K::Text, value, "printf format for one value, e.g. %d or %.2f"); }
+
+        PropDef DataType(const char* value) {
+            return E("DataType", value, {
+                {"0", "BOOLEAN"}, {"1", "S08"}, {"2", "U08"}, {"3", "S16"}, {"4", "U16"},
+                {"5", "S32"}, {"6", "U32"}, {"7", "FLOAT"}, {"8", "FLOAT_INV (byte order swapped)"},
+                {"9", "S64"}, {"10", "U64"} });
+        }
+
+        PropDef WriteMode(const char* value) {
+            return E("Mode", value, {
+                {"0", "Set: write Value on click"}, {"1", "Toggle bit 0"},
+                {"2", "Write: write Value on click"}, {"3", "Momentary: Value while held, 0 on release"} });
+        }
+
+        NodeDef N(const char* tag, std::vector<PropDef> props, const char* listTag = nullptr,
+            const char* itemTag = nullptr, std::vector<Sample> samples = {}, bool listed = true) {
+            NodeDef d;
+            d.tag = tag;
+            d.props = std::move(props);
+            d.listTag = listTag;
+            d.itemTag = itemTag;
+            d.samples = std::move(samples);
+            d.listed = listed;
+            return d;
+        }
+
+        // Containers hold any widget in <Items>.
+        NodeDef Container(const char* tag, std::vector<PropDef> props, bool listed = true) {
+            return N(tag, std::move(props), "Items", nullptr, {}, listed);
+        }
+
+        std::vector<PropDef> CaptureProps(bool histogram) {
+            std::vector<PropDef> p = {
+                Text(histogram ? "Histogram" : "DataLog"), Format("%.2f"), MinF("0"), MaxF("100"),
+                Width("300"), Height("150"),
+                P("ScaleX", K::Float, "1", "X distance between two samples"),
+                P("Size", K::Int, "100", "Number of array elements (1..4096)"),
+                P("Smooth", K::Int, "0", "Moving average window, 0 = off"),
+                P("DoneAddr", K::Address, "0", "Flag set by the MCU when the array is full; 0 = read continuously"),
+                LE(), P("AutoSize", K::Bool, "false", "Fit the Y axis to the data") };
+            if (histogram) p.push_back(P("BarWidth", K::Float, "0.8"));
+            // Single-line format without <Items>
+            p.push_back(Legacy(Addr()));
+            p.push_back(Legacy(P("ScaleY", K::Float, "1")));
+            p.push_back(Legacy(DataType("7")));
+            p.push_back(Legacy(P(histogram ? "Color" : "LineColor", K::Color, "#FFFFFFFF")));
+            return p;
+        }
+
+        std::vector<NodeDef> BuildWidgets() {
+            std::vector<NodeDef> w;
+            w.push_back(N("Text", { Text("New Text") }));
+            w.push_back(N("TextColored", { Text("Colored"), P("Color", K::Color, "#FF00FF") }));
+            w.push_back(N("Button", { Text("Button"), Width("80"), Height("40"), Addr(), WriteMode("0"),
+                P("Value", K::Int, "1", "16-bit value written by the button"), LE() }));
+            w.push_back(N("Checkbox", { Text("Checkbox"), Addr(),
+                P("AddrBool", K::Bool, "false", "true: 8-bit flag, false: 16-bit value") }));
+            w.push_back(Container("Group", {}));
+            w.push_back(Container("TreeNode", { Text("Node") }));
+            w.push_back(N("SameLine", { P("OffsetX", K::Float, "0"), P("Spacing", K::Float, "-1", "-1 = default spacing") }));
+            w.push_back(N("Spacing", {}));
+            w.push_back(N("Separator", {}));
+            w.push_back(N("Dummy", { Width("50"), Height("50") }));
+            w.push_back(Container("Grid", { P("Row", K::Int, "2"), P("Column", K::Int, "2"), Addr(),
+                P("AddressInc", K::Int, "2", "Address step from one cell to the next") }));
+            w.push_back(N("PlotLines", { Text("Plot"), MinF("0"), MaxF("100"), Width("-1"), Height("200"),
+                P("Freq", K::Float, "100", "Samples per second per line (up to 1000)"),
+                P("Size", K::Int, "100", "Points shown in the static plot (1..4096)"),
+                P("Smooth", K::Int, "0", "Moving average window, 0 = off"),
+                P("MaxSize", K::Int, "2000", "Minimum history length in points"),
+                P("AutoSize", K::Bool, "false", "Fit the Y axis to the data"),
+                // Single-line format without <Items>
+                Legacy(P("Name", K::Text, "")), Legacy(Addr()), Legacy(DataType("7")),
+                Legacy(P("Float", K::Bool, "true")), Legacy(LE()),
+                Legacy(P("Scale", K::Float, "1")), Legacy(P("BufferId", K::Int, "0")),
+                Legacy(P("LineColor", K::Color, "#FFFFFFFF")), Legacy(P("LineWeight", K::Float, "1")) },
+                "Items", "Line", { { {"Name", "Line 1"} } }));
+            w.push_back(N("TextFormatted", { Format("%d"), Addr(), P("Color", K::Color, "#FFFFFF") }));
+            w.push_back(N("TextFormattedF", { Format("%.2f"), Addr(), LE(), P("Color", K::Color, "#FFFFFF") }));
+            w.push_back(N("AlignTextToFramePadding", {}));
+            w.push_back(N("NewLine", {}));
+            w.push_back(N("LabelText", { P("Label", K::Text, "Label"), Format("%.2f"), Addr(), LE() }));
+            w.push_back(N("RadioButton", { Addr(), P("InSameLine", K::Bool, "false") }, "Items", "Radio",
+                { { {"Label", "Option 1"}, {"Value", "0"} }, { {"Label", "Option 2"}, {"Value", "1"} } }));
+            w.push_back(N("Tooltip", { Text("Tooltip text") }));
+            w.push_back(N("PlotTooltip", { Text("Tooltip"), Format("%.2f"), MinF("0"), MaxF("100"),
+                P("Size", K::Int, "100"), P("BufferId", K::Int, "0", "Plot buffer 0..63"), LE(), Addr(),
+                DataType("7"), P("AutoSize", K::Bool, "false") }));
+            w.push_back(N("ComboBox", { Text("Combo"), Addr() }, "Items", "Combo",
+                { { {"Label", "Item 1"}, {"Value", "0"} }, { {"Label", "Item 2"}, {"Value", "1"} } }));
+            w.push_back(N("ImputInt", { Text("Input"), Addr(), P("Min", K::Int, "0"), P("Max", K::Int, "100"),
+                P("Step", K::Int, "1"), P("Fast", K::Int, "10") }));
+            w.push_back(N("ImputFloat", { Text("Input"), Addr(), MinF("0"), MaxF("100"),
+                P("Step", K::Float, "0.1"), P("Fast", K::Float, "1"), Format("%.3f"), LE() }));
+            w.push_back(Container("FixedWidth", { Width("100") }));
+            w.push_back(N("SetCursorPos", { P("Width", K::Float, "0", "X position"), P("Height", K::Float, "0", "Y position") }));
+            w.push_back(N("Indent", { Width("20") }));
+            w.push_back(N("Histogram", CaptureProps(true), "Items", "Line", { { {"Name", "Data"} } }));
+            w.push_back(N("DataLog", CaptureProps(false), "Items", "Line", { { {"Name", "Data"} } }));
+            w.push_back(N("ProgressBar", { Width("200"), Height("20"), Addr(), LE() }));
+            w.push_back(N("SliderFloat", { Text("Slider"), Addr(), MinF("0"), MaxF("1"),
+                P("Step", K::Float, "0", "0 = continuous"), Format("%.3f"), LE() }));
+            w.push_back(N("SliderInt", { Text("Slider"), Addr(), P("Min", K::Int, "0"), P("Max", K::Int, "100"), Format("%d") }));
+            w.push_back(N("TabBar", { Text("TabBar") }, "Items", "Tab", { { {"Text", "Tab 1"} } }));
+            w.push_back(Container("Tab", { Text("Tab") }, false));
+            w.push_back(Container("Column", { P("Count", K::Int, "2", "Number of columns (1..64)") }));
+            w.push_back(N("SelectableText", { Format("%d"), Addr(),
+                P("AddrBool", K::Bool, "false", "true: 8-bit flag, false: 16-bit value") }));
+            w.push_back(Container("ChildWindow", { Text("Child"), Width("200"), Height("150") }));
+            w.push_back(Container("Header", { Text("Header") }));
+            w.push_back(Container("Popup", {}));
+            w.push_back(Container("HintBox", {}));
+            w.push_back(N("HelpMarker", { Text("Help text") }));
+            w.push_back(N("Watch", {}));
+            w.push_back(N("SevenSegment", { Text("7Seg"), Addr(), Width("80"), Height("40"), LE() }));
+            w.push_back(N("MechanicalSwitch2", { Text("Switch"), Addr(), Width("40"), Height("40"), LE() }));
+            w.push_back(N("Gauge", { Text("Gauge"), Addr(), MinF("0"), MaxF("200"), P("Radius", K::Float, "100"),
+                P("Unit", K::Text, ""), LE() }));
+            w.push_back(N("GlossyDisplay", { Text("Display"), Addr(), Width("120"), Height("60"), LE(), DataType("4"),
+                P("HexMode", K::Bool, "false"), P("Digits", K::Int, "0", "Leading zeros, 0 = none"),
+                P("DecimalPlaces", K::Int, "2", "Digits after the point for FLOAT"),
+                Legacy(P("Hex", K::Bool, "false", "Old name of HexMode")) }));
+            w.push_back(N("LCD_HD44780", { Text("LCD"), Addr("Line1Address"), P("Line1Text", K::Text, "Hello"),
+                Addr("Line2Address"), P("Line2Text", K::Text, "World"), P("PixelSize", K::Float, "2.5"), LE(),
+                P("UseFixed", K::Bool, "false", "Show Line1Text/Line2Text instead of memory") }));
+            w.push_back(N("VerticalGauge", { Text("V Gauge"), Addr(), MinF("0"), MaxF("100"), Width("120"), Height("300"),
+                LE(), DataType("7") }));
+            w.push_back(N("NeumorphicKnob", { Text("Knob"), Addr(), MinF("0"), MaxF("100"), P("Radius", K::Float, "50"),
+                LE(), DataType("3") }));
+            w.push_back(N("StyledKnob", { Text("Knob"), Addr(), MinF("0"), MaxF("100"), P("Radius", K::Float, "50"),
+                LE(), DataType("3") }));
+            w.push_back(N("CustomVerticalSlider", { Text("VSlider"), Addr(), MinF("0"), MaxF("1"), Width("20"), Height("100"),
+                LE(), DataType("7") }));
+            w.push_back(N("BitControl8Bit", { Text("Bits"), Addr(), LE(), P("Scale", K::Float, "0.55") }));
+            w.push_back(N("BitControl", { Text("BitCtrl"), Addr(),
+                E("Mode", "1", { {"1", "8 bits"}, {"2", "16 bits"}, {"4", "32 bits"} }), LE(),
+                P("Switchable", K::Bool, "true", "Allow switching the width at run time") }));
+            w.push_back(N("RotarySwitch", { Text("Rotary"), Addr(), P("Min", K::Int, "0"), P("Max", K::Int, "3"),
+                P("Radius", K::Float, "40"), LE() }));
+            w.push_back(N("LedIndicator", { Text("LED"), Addr(), P("Radius", K::Float, "10"),
+                P("ColorOn", K::Color, "#FF0000"), P("ColorOff", K::Color, "#320000"), LE() }));
+            w.push_back(N("Image", { Text("Image"), P("File", K::Text, "image.png", "File next to the program"),
+                P("Scale", K::Float, "1"), P("Width", K::Float, "0", "0 = image size"), P("Height", K::Float, "0", "0 = image size"),
+                P("Tint", K::Color, "#FFFFFFFF"), P("Border", K::Color, "#00000000"),
+                P("UV0", K::Point, "0,0"), P("UV1", K::Point, "1,1") }));
+            w.push_back(N("Gif", { Text("GIF"), P("File", K::Text, "animation.gif", "File next to the program"),
+                P("Scale", K::Float, "1"), P("Width", K::Float, "0", "0 = image size"), P("Height", K::Float, "0", "0 = image size"),
+                P("Loop", K::Bool, "true"), P("Speed", K::Float, "1") }));
+            w.push_back(N("RPMIndicator", { Text("RPM"), Addr(), MinF("0"), MaxF("8000"), P("Radius", K::Float, "100"),
+                P("Unit", K::Text, "rpm"), LE() }, "Zones", "Zone",
+                { { {"start", "0"}, {"end", "4000"}, {"color", "#64C850"} },
+                  { {"start", "4000"}, {"end", "6000"}, {"color", "#F0F050"} },
+                  { {"start", "6000"}, {"end", "8000"}, {"color", "#E64646"} } }));
+            w.push_back(N("Keypad", { Text("Keypad"), Addr(), P("Min", K::Int, "0"), P("Max", K::Int, "9999"),
+                P("Digits", K::Int, "4"), LE() }));
+            w.push_back(N("Equalizer", { Text("EQ"), Addr(), P("Bands", K::Int, "10", "1..64"), MinF("0"), MaxF("100"),
+                P("BandWidth", K::Float, "20"), Height("120"),
+                E("DataType", "float", { {"float", "float (32-bit)"}, {"int16", "int16 (16-bit)"} }), LE(),
+                P("AddressStep", K::Int, "4", "Bytes between bands: 4 for float, 2 for int16") }));
+            w.push_back(N("Tank", { Text("Tank"), Addr(), MinF("0"), MaxF("100"), Width("150"), Height("250"),
+                P("Unit", K::Text, "l"), LE(), P("LiquidColor", K::Color, "#40A4DF"), P("MetalColor", K::Color, "#A0A0AA"),
+                E("DataType", "0", { {"0", "FLOAT"}, {"1", "U16"}, {"2", "S16"}, {"3", "U32"}, {"4", "S32"} }) }));
+            w.push_back(N("VUMeter", { Text("VU"), Addr(), MinF("0"), MaxF("100"),
+                E("Orientation", "horizontal", { {"horizontal", "horizontal"}, {"vertical", "vertical"} }),
+                Width("200"), Height("30"), P("Unit", K::Text, ""), LE(), P("ShowPeak", K::Bool, "false") }));
+            w.push_back(N("SegmentButton", { Text("Segment"), Addr(), LE() }, "Items", "Segment",
+                { { {"Text", "Low"}, {"Value", "0"} }, { {"Text", "Med"}, {"Value", "1"} }, { {"Text", "High"}, {"Value", "2"} } }));
+            w.push_back(N("GlossyButton", { Text("Button"), Addr(), LE(), WriteMode("1"),
+                P("Value", K::Int, "1", "16-bit value written by the button"), P("Radius", K::Float, "20") }));
+            w.push_back(N("MemoryView", { Text("Memory"), Addr("BaseAddress"), P("NumBytes", K::Int, "256"),
+                P("BytesPerLine", K::Int, "16"), LE() }));
+            w.push_back(N("MemoryEditor", { Text("Memory Editor"), Addr("BaseAddress"), P("Size", K::Int, "256"),
+                P("Cols", K::Int, "16"), P("ReadOnly", K::Bool, "false"), P("ShowAscii", K::Bool, "true"),
+                P("ShowHexII", K::Bool, "false"), P("ShowOptions", K::Bool, "true"), P("ShowPreview", K::Bool, "true"),
+                P("GreyZero", K::Bool, "true"), P("UpperHex", K::Bool, "true"), LE(),
+                P("UseExternal", K::Bool, "false"), P("UseCache", K::Bool, "true") }));
+            return w;
+        }
+
+        struct ItemDef {
+            const char* owner;
+            NodeDef node;
+        };
+
+        std::vector<ItemDef> BuildItems() {
+            const NodeDef captureLine = N("Line", { P("Name", K::Text, "Data"), Addr(), P("ScaleY", K::Float, "1"),
+                P("Color", K::Color, "#FFFFFFFF"), DataType("7") });
+            return {
+                { "PlotLines", N("Line", { P("Name", K::Text, "Line"), Addr(), DataType("7"), LE(),
+                    P("Scale", K::Float, "1"), P("BufferId", K::Int, "0", "Plot buffer 0..63"),
+                    P("LineColor", K::Color, "#FFFFFFFF"), P("LineWeight", K::Float, "1") }) },
+                { "DataLog", captureLine },
+                { "Histogram", captureLine },
+                { "RadioButton", N("Radio", { P("Label", K::Text, "Option"), P("Value", K::Int, "0") }) },
+                { "ComboBox", N("Combo", { P("Label", K::Text, "Item"), P("Value", K::Int, "0") }) },
+                { "SegmentButton", N("Segment", { Text("Segment"), P("Value", K::Int, "0") }) },
+                { "RPMIndicator", N("Zone", { Attr(P("start", K::Float, "0")), Attr(P("end", K::Float, "1000")),
+                    Attr(P("color", K::ColorRGB, "#FF0000")) }) },
+            };
+        }
+
+        const std::vector<ItemDef>& Items() {
+            static const std::vector<ItemDef> items = BuildItems();
+            return items;
+        }
+
+        bool IsTag(const tinyxml2::XMLElement* e, const char* tag) {
+            return e && tag && std::strcmp(e->Name(), tag) == 0;
+        }
+
+        void SetValue(tinyxml2::XMLElement* owner, const PropDef& prop, const char* value) {
+            if (prop.attribute) {
+                owner->SetAttribute(prop.name, value);
+            }
+            else {
+                tinyxml2::XMLElement* e = owner->GetDocument()->NewElement(prop.name);
+                e->SetText(value);
+                owner->InsertEndChild(e);
+            }
+        }
+
+        // Writes the properties; values in the sample replace the defaults.
+        void FillProperties(tinyxml2::XMLElement* e, const NodeDef& def, const Sample* sample) {
+            for (const PropDef& prop : def.props) {
+                const char* value = prop.defaultValue;
+                bool found = false;
+                if (sample) {
+                    for (const auto& kv : *sample) {
+                        if (std::strcmp(kv.first, prop.name) == 0) { value = kv.second; found = true; }
+                    }
+                }
+                if (prop.inTemplate || found) SetValue(e, prop, value);
+            }
+        }
+
+        tinyxml2::XMLElement* CreateItemFrom(tinyxml2::XMLDocument* doc, const NodeDef& owner, const Sample* sample) {
+            if (!owner.listTag || !owner.itemTag) return nullptr;
+            const NodeDef* item = FindItem(owner.tag, owner.itemTag);
+            if (!item) return nullptr;
+            tinyxml2::XMLElement* e = doc->NewElement(item->tag);
+            FillProperties(e, *item, sample);
+            if (item->listTag) e->InsertEndChild(doc->NewElement(item->listTag));
+            return e;
+        }
+
+        bool IsWidgetList(const tinyxml2::XMLElement* e) {
+            if (!e) return false;
+            const tinyxml2::XMLElement* owner = e->Parent() ? e->Parent()->ToElement() : nullptr;
+            const NodeDef* def = owner ? DefinitionOf(owner) : nullptr;
+            return def && def->listTag && !def->itemTag && IsTag(e, def->listTag);
+        }
+    } // namespace
+
+    const std::vector<NodeDef>& Widgets() {
+        static const std::vector<NodeDef> widgets = BuildWidgets();
+        return widgets;
+    }
+
+    const NodeDef* FindWidget(const char* tag) {
+        if (!tag) return nullptr;
+        for (const NodeDef& d : Widgets())
+            if (std::strcmp(d.tag, tag) == 0) return &d;
+        return nullptr;
+    }
+
+    const NodeDef* FindItem(const char* ownerTag, const char* itemTag) {
+        if (!ownerTag || !itemTag) return nullptr;
+        for (const ItemDef& d : Items())
+            if (std::strcmp(d.owner, ownerTag) == 0 && std::strcmp(d.node.tag, itemTag) == 0) return &d.node;
+        // TabBar holds Tab widgets
+        const NodeDef* owner = FindWidget(ownerTag);
+        if (owner && owner->itemTag && std::strcmp(owner->itemTag, itemTag) == 0) return FindWidget(itemTag);
+        return nullptr;
+    }
+
+    const NodeDef& WindowDef() {
+        static const NodeDef window = N("Window", { Text("New Window") }, "Items");
+        return window;
+    }
+
+    const NodeDef* DefinitionOf(const tinyxml2::XMLElement* element) {
+        if (!element) return nullptr;
+        const tinyxml2::XMLNode* parentNode = element->Parent();
+        const tinyxml2::XMLElement* parent = parentNode ? parentNode->ToElement() : nullptr;
+        if (!parent) return IsTag(element, "Window") ? &WindowDef() : nullptr;
+        const tinyxml2::XMLNode* ownerNode = parent->Parent();
+        const tinyxml2::XMLElement* owner = ownerNode ? ownerNode->ToElement() : nullptr;
+        const NodeDef* ownerDef = owner ? DefinitionOf(owner) : nullptr;
+        if (!ownerDef || !ownerDef->listTag || !IsTag(parent, ownerDef->listTag)) return nullptr;
+        if (!ownerDef->itemTag) return FindWidget(element->Name());
+        return IsTag(element, ownerDef->itemTag) ? FindItem(ownerDef->tag, element->Name()) : nullptr;
+    }
+
+    const PropDef* FindProp(const NodeDef* def, const char* name) {
+        if (!def || !name) return nullptr;
+        for (const PropDef& p : def->props)
+            if (std::strcmp(p.name, name) == 0) return &p;
+        return nullptr;
+    }
+
+    tinyxml2::XMLElement* CreateNode(tinyxml2::XMLDocument* doc, const NodeDef& def) {
+        tinyxml2::XMLElement* e = doc->NewElement(def.tag);
+        FillProperties(e, def, nullptr);
+        if (def.listTag) {
+            tinyxml2::XMLElement* list = doc->NewElement(def.listTag);
+            for (const Sample& sample : def.samples) {
+                tinyxml2::XMLElement* item = CreateItemFrom(doc, def, &sample);
+                if (item) list->InsertEndChild(item);
+            }
+            e->InsertEndChild(list);
+        }
+        return e;
+    }
+
     tinyxml2::XMLElement* CreateNewWindow(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Window");
-        auto text = doc->NewElement("Text"); text->SetText("New Window"); elem->InsertEndChild(text);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
+        return CreateNode(doc, WindowDef());
     }
 
-    tinyxml2::XMLElement* CreateText(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Text");
-        auto text = doc->NewElement("Text");
-        text->SetText("New Text");
-        elem->InsertEndChild(text);
-        return elem;
+    tinyxml2::XMLElement* CreateProperty(tinyxml2::XMLDocument* doc, const PropDef& prop) {
+        tinyxml2::XMLElement* e = doc->NewElement(prop.name);
+        e->SetText(prop.defaultValue);
+        return e;
     }
 
-    tinyxml2::XMLElement* CreateTextColored(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("TextColored");
-        auto text = doc->NewElement("Text"); text->SetText("Colored"); elem->InsertEndChild(text);
-        auto color = doc->NewElement("Color"); color->SetText("#FF00FF"); elem->InsertEndChild(color);
-        return elem;
+    tinyxml2::XMLElement* CreateItem(tinyxml2::XMLDocument* doc, const NodeDef& owner) {
+        return CreateItemFrom(doc, owner, nullptr);
     }
 
-    // Button
-    tinyxml2::XMLElement* CreateButton(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Button");
-        auto text = doc->NewElement("Text"); text->SetText("Button"); elem->InsertEndChild(text);
-        auto w = doc->NewElement("Width"); w->SetText("80"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("30"); elem->InsertEndChild(h);
-        auto mode = doc->NewElement("Mode"); mode->SetText("0"); elem->InsertEndChild(mode);
-        auto val = doc->NewElement("Value"); val->SetText("1"); elem->InsertEndChild(val);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateCheckbox(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Checkbox");
-        auto text = doc->NewElement("Text"); text->SetText("Checkbox"); elem->InsertEndChild(text);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); elem->InsertEndChild(addr);
-        auto useBool = doc->NewElement("AddrBool"); useBool->SetText("false"); elem->InsertEndChild(useBool);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateGroup(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Group");
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateTreeNode(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("TreeNode");
-        auto text = doc->NewElement("Text"); text->SetText("Node"); elem->InsertEndChild(text);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSameLine(tinyxml2::XMLDocument* doc) {
-        return doc->NewElement("SameLine");
-    }
-
-    tinyxml2::XMLElement* CreateSpacing(tinyxml2::XMLDocument* doc) {
-        return doc->NewElement("Spacing");
-    }
-
-    tinyxml2::XMLElement* CreateSeparator(tinyxml2::XMLDocument* doc) {
-        return doc->NewElement("Separator");
-    }
-
-    tinyxml2::XMLElement* CreateDummy(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Dummy");
-        auto w = doc->NewElement("Width"); w->SetText("50"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("50"); elem->InsertEndChild(h);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateGrid(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Grid");
-        auto rows = doc->NewElement("Row"); rows->SetText("2"); elem->InsertEndChild(rows);
-        auto cols = doc->NewElement("Column"); cols->SetText("2"); elem->InsertEndChild(cols);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); elem->InsertEndChild(addr);
-        auto inc = doc->NewElement("AddressInc"); inc->SetText("1"); elem->InsertEndChild(inc);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    // PlotLines with one line by default
-    tinyxml2::XMLElement* CreatePlotLines(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("PlotLines");
-        auto text = doc->NewElement("Text"); text->SetText("Plot"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto w = doc->NewElement("Width"); w->SetText("-1"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("-1"); elem->InsertEndChild(h);
-        auto f = doc->NewElement("Freq"); f->SetText("1"); elem->InsertEndChild(f);
-        auto sz = doc->NewElement("Size"); sz->SetText("100"); elem->InsertEndChild(sz);
-        auto sm = doc->NewElement("Smooth"); sm->SetText("0"); elem->InsertEndChild(sm);
-        auto maxSize = doc->NewElement("MaxSize"); maxSize->SetText("2000"); elem->InsertEndChild(maxSize);
-        auto autosize = doc->NewElement("AutoSize"); autosize->SetText("false"); elem->InsertEndChild(autosize);
-
-        auto items = doc->NewElement("Items");
-        auto line = doc->NewElement("Line");
-        auto name = doc->NewElement("Name"); name->SetText("Line"); line->InsertEndChild(name);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); line->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); line->InsertEndChild(dtype); // FLOAT
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); line->InsertEndChild(le);
-        auto scale = doc->NewElement("Scale"); scale->SetText("1.0"); line->InsertEndChild(scale);
-        auto bufId = doc->NewElement("BufferId"); bufId->SetText("0"); line->InsertEndChild(bufId);
-        auto lineColor = doc->NewElement("LineColor"); lineColor->SetText("#FFFFFFFF"); line->InsertEndChild(lineColor);
-        auto weight = doc->NewElement("LineWeight"); weight->SetText("1.0"); line->InsertEndChild(weight);
-        items->InsertEndChild(line);
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateTextFormatted(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("TextFormatted");
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%d"); elem->InsertEndChild(fmt);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto color = doc->NewElement("Color"); color->SetText("#FFFFFF"); elem->InsertEndChild(color);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateTextFormattedF(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("TextFormattedF");
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%.2f"); elem->InsertEndChild(fmt);
-        auto color = doc->NewElement("Color"); color->SetText("#FFFFFF"); elem->InsertEndChild(color);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateAlignText(tinyxml2::XMLDocument* doc) {
-        return doc->NewElement("AlignTextToFramePadding");
-    }
-
-    tinyxml2::XMLElement* CreateNewLine(tinyxml2::XMLDocument* doc) {
-        return doc->NewElement("NewLine");
-    }
-
-    tinyxml2::XMLElement* CreateLabelText(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("LabelText");
-        auto lbl = doc->NewElement("Label"); lbl->SetText("Label"); elem->InsertEndChild(lbl);
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%d"); elem->InsertEndChild(fmt);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateRadioButton(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("RadioButton");
-        auto sameLine = doc->NewElement("InSameLine"); sameLine->SetText("false"); elem->InsertEndChild(sameLine);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto items = doc->NewElement("Items");
-        // Two sample items
-        auto radio1 = doc->NewElement("Radio");
-        auto lbl1 = doc->NewElement("Label"); lbl1->SetText("Option 1"); radio1->InsertEndChild(lbl1);
-        auto val1 = doc->NewElement("Value"); val1->SetText("0"); radio1->InsertEndChild(val1);
-        items->InsertEndChild(radio1);
-        auto radio2 = doc->NewElement("Radio");
-        auto lbl2 = doc->NewElement("Label"); lbl2->SetText("Option 2"); radio2->InsertEndChild(lbl2);
-        auto val2 = doc->NewElement("Value"); val2->SetText("1"); radio2->InsertEndChild(val2);
-        items->InsertEndChild(radio2);
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateTooltip(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Tooltip");
-        auto text = doc->NewElement("Text"); text->SetText("Tooltip text"); elem->InsertEndChild(text);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreatePlotTooltip(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("PlotTooltip");
-        auto text = doc->NewElement("Text"); text->SetText("Tooltip"); elem->InsertEndChild(text);
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%.2f"); elem->InsertEndChild(fmt);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto size = doc->NewElement("Size"); size->SetText("100"); elem->InsertEndChild(size);
-        auto id = doc->NewElement("BufferId"); id->SetText("0"); elem->InsertEndChild(id);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); elem->InsertEndChild(dtype); // FLOAT
-        auto autoSz = doc->NewElement("AutoSize"); autoSz->SetText("false"); elem->InsertEndChild(autoSz);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateComboBox(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ComboBox");
-        auto text = doc->NewElement("Text"); text->SetText("Combo"); elem->InsertEndChild(text);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto items = doc->NewElement("Items");  elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateInputInt(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ImputInt"); // the typo is kept for compatibility
-        auto text = doc->NewElement("Text"); text->SetText("Input"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto step = doc->NewElement("Step"); step->SetText("1"); elem->InsertEndChild(step);
-        auto fast = doc->NewElement("Fast"); fast->SetText("10"); elem->InsertEndChild(fast);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateInputFloat(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ImputFloat");
-        auto text = doc->NewElement("Text"); text->SetText("Input"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0.0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("1.0"); elem->InsertEndChild(max);
-        auto step = doc->NewElement("Step"); step->SetText("0.1"); elem->InsertEndChild(step);
-        auto fast = doc->NewElement("Fast"); fast->SetText("0.5"); elem->InsertEndChild(fast);
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%.3f"); elem->InsertEndChild(fmt);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateFixedWidth(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("FixedWidth");
-        auto w = doc->NewElement("Width"); w->SetText("100"); elem->InsertEndChild(w);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSetCursorPos(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("SetCursorPos");
-        auto x = doc->NewElement("Width"); x->SetText("0"); elem->InsertEndChild(x);
-        auto y = doc->NewElement("Height"); y->SetText("0"); elem->InsertEndChild(y);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateIndent(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Indent");
-        auto w = doc->NewElement("Width"); w->SetText("20"); elem->InsertEndChild(w);
-        return elem;
-    }
-
-    // Histogram with ScaleX, Smooth, DoneAddr, AutoSize, BarWidth and Items
-    tinyxml2::XMLElement* CreateHistogram(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Histogram");
-        auto text = doc->NewElement("Text"); text->SetText("Histogram"); elem->InsertEndChild(text);
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%.2f"); elem->InsertEndChild(fmt);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto w = doc->NewElement("Width"); w->SetText("200"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("80"); elem->InsertEndChild(h);
-        auto xs = doc->NewElement("ScaleX"); xs->SetText("1.0"); elem->InsertEndChild(xs);
-        auto sz = doc->NewElement("Size"); sz->SetText("100"); elem->InsertEndChild(sz);
-        auto sm = doc->NewElement("Smooth"); sm->SetText("0"); elem->InsertEndChild(sm);
-        auto done = doc->NewElement("DoneAddr"); done->SetText("0"); elem->InsertEndChild(done);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto autoSz = doc->NewElement("AutoSize"); autoSz->SetText("false"); elem->InsertEndChild(autoSz);
-        auto barWidth = doc->NewElement("BarWidth"); barWidth->SetText("0.8"); elem->InsertEndChild(barWidth);
-
-        auto items = doc->NewElement("Items");
-        auto line = doc->NewElement("Line");
-        auto name = doc->NewElement("Name"); name->SetText("Data"); line->InsertEndChild(name);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); line->InsertEndChild(addr);
-        auto yScale = doc->NewElement("ScaleY"); yScale->SetText("1.0"); line->InsertEndChild(yScale);
-        auto color = doc->NewElement("Color"); color->SetText("#FFFFFFFF"); line->InsertEndChild(color);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); line->InsertEndChild(dtype); // FLOAT
-        items->InsertEndChild(line);
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    // DataLog with ScaleX, Smooth, DoneAddr, AutoSize and Items
-    tinyxml2::XMLElement* CreateDataLog(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("DataLog");
-        auto text = doc->NewElement("Text"); text->SetText("DataLog"); elem->InsertEndChild(text);
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%.2f"); elem->InsertEndChild(fmt);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto w = doc->NewElement("Width"); w->SetText("200"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("150"); elem->InsertEndChild(h);
-        auto xs = doc->NewElement("ScaleX"); xs->SetText("1.0"); elem->InsertEndChild(xs);
-        auto sz = doc->NewElement("Size"); sz->SetText("100"); elem->InsertEndChild(sz);
-        auto sm = doc->NewElement("Smooth"); sm->SetText("0"); elem->InsertEndChild(sm);
-        auto done = doc->NewElement("DoneAddr"); done->SetText("0"); elem->InsertEndChild(done);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto autoSz = doc->NewElement("AutoSize"); autoSz->SetText("false"); elem->InsertEndChild(autoSz);
-
-        auto items = doc->NewElement("Items");
-        auto line = doc->NewElement("Line");
-        auto name = doc->NewElement("Name"); name->SetText("Data"); line->InsertEndChild(name);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); line->InsertEndChild(addr);
-        auto yScale = doc->NewElement("ScaleY"); yScale->SetText("1.0"); line->InsertEndChild(yScale);
-        auto color = doc->NewElement("Color"); color->SetText("#FFFFFFFF"); line->InsertEndChild(color);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); line->InsertEndChild(dtype);
-        items->InsertEndChild(line);
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateProgressBar(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ProgressBar");
-        auto w = doc->NewElement("Width"); w->SetText("200"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("20"); elem->InsertEndChild(h);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSliderFloat(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("SliderFloat");
-        auto text = doc->NewElement("Text"); text->SetText("Slider"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0.0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("1.0"); elem->InsertEndChild(max);
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%.3f"); elem->InsertEndChild(fmt);
-        auto step = doc->NewElement("Step"); step->SetText("0.01"); elem->InsertEndChild(step);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSliderInt(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("SliderInt");
-        auto text = doc->NewElement("Text"); text->SetText("Slider"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%d"); elem->InsertEndChild(fmt);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateTabBar(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("TabBar");
-        auto text = doc->NewElement("Text"); text->SetText("TabBar"); elem->InsertEndChild(text);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateTab(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Tab");
-        auto text = doc->NewElement("Text"); text->SetText("Tab"); elem->InsertEndChild(text);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateColumn(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Column");
-        auto cnt = doc->NewElement("Count"); cnt->SetText("2"); elem->InsertEndChild(cnt);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSelectableText(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("SelectableText");
-        auto fmt = doc->NewElement("Format"); fmt->SetText("%d"); elem->InsertEndChild(fmt);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateChildWindow(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ChildWindow");
-        auto text = doc->NewElement("Text"); text->SetText("Child"); elem->InsertEndChild(text);
-        auto w = doc->NewElement("Width"); w->SetText("200"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("150"); elem->InsertEndChild(h);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateHeader(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Header");
-        auto text = doc->NewElement("Text"); text->SetText("Header"); elem->InsertEndChild(text);
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreatePopup(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Popup");
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateHintBox(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("HintBox");
-        auto items = doc->NewElement("Items");
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateHelpMarker(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("HelpMarker");
-        auto text = doc->NewElement("Text"); text->SetText("Help text"); elem->InsertEndChild(text);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateWatch(tinyxml2::XMLDocument* doc) {
-        return doc->NewElement("Watch");
-    }
-
-    tinyxml2::XMLElement* CreateSevenSegment(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("SevenSegment");
-        auto text = doc->NewElement("Text"); text->SetText("7Seg"); elem->InsertEndChild(text);
-        auto w = doc->NewElement("Width"); w->SetText("80"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("40"); elem->InsertEndChild(h);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateMechanicalSwitch2(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("MechanicalSwitch2");
-        auto text = doc->NewElement("Text"); text->SetText("Switch"); elem->InsertEndChild(text);
-        auto w = doc->NewElement("Width"); w->SetText("40"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("40"); elem->InsertEndChild(h);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateGauge(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Gauge");
-        auto text = doc->NewElement("Text"); text->SetText("Gauge"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("200"); elem->InsertEndChild(max);
-        auto rad = doc->NewElement("Radius"); rad->SetText("100"); elem->InsertEndChild(rad);
-        auto unit = doc->NewElement("Unit"); unit->SetText("rpm"); elem->InsertEndChild(unit);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    // GlossyDisplay with DataType and DecimalPlaces
-    tinyxml2::XMLElement* CreateGlossyDisplay(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("GlossyDisplay");
-        auto text = doc->NewElement("Text"); text->SetText("Display"); elem->InsertEndChild(text);
-        auto w = doc->NewElement("Width"); w->SetText("120"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("60"); elem->InsertEndChild(h);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("4"); elem->InsertEndChild(dtype); // U16_DEC
-        auto hex = doc->NewElement("Hex"); hex->SetText("false"); elem->InsertEndChild(hex);
-        auto digits = doc->NewElement("Digits"); digits->SetText("0"); elem->InsertEndChild(digits);
-        auto decPlaces = doc->NewElement("DecimalPlaces"); decPlaces->SetText("2"); elem->InsertEndChild(decPlaces);
-        return elem;
-    }
-
-    // LCD_HD44780 with UseFixed
-    tinyxml2::XMLElement* CreateLCD_HD44780(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("LCD_HD44780");
-        auto text = doc->NewElement("Text"); text->SetText("LCD"); elem->InsertEndChild(text);
-        auto addr1 = doc->NewElement("Line1Address"); addr1->SetText("0x0000"); elem->InsertEndChild(addr1);
-        auto line1 = doc->NewElement("Line1Text"); line1->SetText("Hello"); elem->InsertEndChild(line1);
-        auto addr2 = doc->NewElement("Line2Address"); addr2->SetText("0x0002"); elem->InsertEndChild(addr2);
-        auto line2 = doc->NewElement("Line2Text"); line2->SetText("World"); elem->InsertEndChild(line2);
-        auto pSize = doc->NewElement("PixelSize"); pSize->SetText("2.5"); elem->InsertEndChild(pSize);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto useFixed = doc->NewElement("UseFixed"); useFixed->SetText("false"); elem->InsertEndChild(useFixed);
-        return elem;
-    }
-
-    // VerticalGauge with DataType
-    tinyxml2::XMLElement* CreateVerticalGauge(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("VerticalGauge");
-        auto text = doc->NewElement("Text"); text->SetText("V Gauge"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto w = doc->NewElement("Width"); w->SetText("80"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("200"); elem->InsertEndChild(h);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); elem->InsertEndChild(dtype); // FLOAT
-        return elem;
-    }
-
-    // NeumorphicKnob with DataType
-    tinyxml2::XMLElement* CreateNeumorphicKnob(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("NeumorphicKnob");
-        auto text = doc->NewElement("Text"); text->SetText("Knob"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("1"); elem->InsertEndChild(max);
-        auto rad = doc->NewElement("Radius"); rad->SetText("50"); elem->InsertEndChild(rad);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("3"); elem->InsertEndChild(dtype); // S16_DEC
-        return elem;
-    }
-
-    // StyledKnob with DataType
-    tinyxml2::XMLElement* CreateStyledKnob(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("StyledKnob");
-        auto text = doc->NewElement("Text"); text->SetText("Knob"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("1"); elem->InsertEndChild(max);
-        auto radius = doc->NewElement("Radius"); radius->SetText("50"); elem->InsertEndChild(radius);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("3"); elem->InsertEndChild(dtype);
-        return elem;
-    }
-
-    // CustomVerticalSlider with DataType
-    tinyxml2::XMLElement* CreateCustomVerticalSlider(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("CustomVerticalSlider");
-        auto text = doc->NewElement("Text"); text->SetText("VSlider"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("1"); elem->InsertEndChild(max);
-        auto w = doc->NewElement("Width"); w->SetText("20"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("100"); elem->InsertEndChild(h);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); elem->InsertEndChild(dtype);
-        return elem;
-    }
-
-    // BitControl8Bit with Scale
-    tinyxml2::XMLElement* CreateBitControl8Bit(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("BitControl8Bit");
-        auto text = doc->NewElement("Text"); text->SetText("Bits"); elem->InsertEndChild(text);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto scale = doc->NewElement("Scale"); scale->SetText("0.55"); elem->InsertEndChild(scale);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBitControl(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("BitControl");
-        auto text = doc->NewElement("Text"); text->SetText("BitCtrl"); elem->InsertEndChild(text);
-        auto mode = doc->NewElement("Mode"); mode->SetText("0"); elem->InsertEndChild(mode); // Bits8 = 0      
-        auto sw = doc->NewElement("Switchable"); sw->SetText("true"); elem->InsertEndChild(sw);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateRotarySwitch(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("RotarySwitch");
-        auto text = doc->NewElement("Text"); text->SetText("Rotary"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("3"); elem->InsertEndChild(max);
-        auto rad = doc->NewElement("Radius"); rad->SetText("40"); elem->InsertEndChild(rad);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLedIndicator(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("LedIndicator");
-        auto text = doc->NewElement("Text"); text->SetText("LED"); elem->InsertEndChild(text);
-        auto rad = doc->NewElement("Radius"); rad->SetText("10"); elem->InsertEndChild(rad);
-        auto colOn = doc->NewElement("ColorOn"); colOn->SetText("#FF0000"); elem->InsertEndChild(colOn);
-        auto colOff = doc->NewElement("ColorOff"); colOff->SetText("#330000"); elem->InsertEndChild(colOff);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    // Image with Width and Height
-    tinyxml2::XMLElement* CreateImage(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Image");
-        auto text = doc->NewElement("Text"); text->SetText("Image"); elem->InsertEndChild(text);
-        auto file = doc->NewElement("File"); file->SetText("image.png"); elem->InsertEndChild(file);
-        auto scale = doc->NewElement("Scale"); scale->SetText("1.0"); elem->InsertEndChild(scale);
-        auto w = doc->NewElement("Width"); w->SetText("0"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("0"); elem->InsertEndChild(h);
-        auto tint = doc->NewElement("Tint"); tint->SetText("#FFFFFFFF"); elem->InsertEndChild(tint);
-        auto border = doc->NewElement("Border"); border->SetText("#00000000"); elem->InsertEndChild(border);
-        auto uv0 = doc->NewElement("UV0"); uv0->SetText("0.0,0.0"); elem->InsertEndChild(uv0);
-        auto uv1 = doc->NewElement("UV1"); uv1->SetText("1.0,1.0"); elem->InsertEndChild(uv1);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateRPMIndicator(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("RPMIndicator");
-        auto text = doc->NewElement("Text"); text->SetText("RPM"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("8000"); elem->InsertEndChild(max);
-        auto rad = doc->NewElement("Radius"); rad->SetText("100"); elem->InsertEndChild(rad);
-        auto unit = doc->NewElement("Unit"); unit->SetText("rpm"); elem->InsertEndChild(unit);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        // Default zones
-        auto zones = doc->NewElement("Zones");
-        auto zone1 = doc->NewElement("Zone"); zone1->SetAttribute("start", "0"); zone1->SetAttribute("end", "4000"); zone1->SetAttribute("color", "#64C850"); zones->InsertEndChild(zone1);
-        auto zone2 = doc->NewElement("Zone"); zone2->SetAttribute("start", "4000"); zone2->SetAttribute("end", "6000"); zone2->SetAttribute("color", "#F0F050"); zones->InsertEndChild(zone2);
-        auto zone3 = doc->NewElement("Zone"); zone3->SetAttribute("start", "6000"); zone3->SetAttribute("end", "8000"); zone3->SetAttribute("color", "#E64646"); zones->InsertEndChild(zone3);
-        elem->InsertEndChild(zones);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateKeypad(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Keypad");
-        auto text = doc->NewElement("Text"); text->SetText("Keypad"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("9999"); elem->InsertEndChild(max);
-        auto digits = doc->NewElement("Digits"); digits->SetText("4"); elem->InsertEndChild(digits);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateEqualizer(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Equalizer");
-        auto text = doc->NewElement("Text"); text->SetText("EQ"); elem->InsertEndChild(text);
-        auto bands = doc->NewElement("Bands"); bands->SetText("10"); elem->InsertEndChild(bands);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto bw = doc->NewElement("BandWidth"); bw->SetText("20"); elem->InsertEndChild(bw);
-        auto h = doc->NewElement("Height"); h->SetText("120"); elem->InsertEndChild(h);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        return elem;
-    }
-
-    // Tank with DataType
-    tinyxml2::XMLElement* CreateTank(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Tank");
-        auto text = doc->NewElement("Text"); text->SetText("Tank"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto w = doc->NewElement("Width"); w->SetText("150"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("250"); elem->InsertEndChild(h);
-        auto unit = doc->NewElement("Unit"); unit->SetText("l"); elem->InsertEndChild(unit);
-        auto liq = doc->NewElement("LiquidColor"); liq->SetText("#40A0DF"); elem->InsertEndChild(liq);
-        auto metal = doc->NewElement("MetalColor"); metal->SetText("#A0A0AA"); elem->InsertEndChild(metal);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("0"); elem->InsertEndChild(dtype);
-        return elem;
-    }
-
-    // VUMeter with Unit and ShowPeak
-    tinyxml2::XMLElement* CreateVUMeter(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("VUMeter");
-        auto text = doc->NewElement("Text"); text->SetText("VU"); elem->InsertEndChild(text);
-        auto min = doc->NewElement("Min"); min->SetText("0"); elem->InsertEndChild(min);
-        auto max = doc->NewElement("Max"); max->SetText("100"); elem->InsertEndChild(max);
-        auto orient = doc->NewElement("Orientation"); orient->SetText("horizontal"); elem->InsertEndChild(orient);
-        auto w = doc->NewElement("Width"); w->SetText("200"); elem->InsertEndChild(w);
-        auto h = doc->NewElement("Height"); h->SetText("30"); elem->InsertEndChild(h);
-        auto unit = doc->NewElement("Unit"); unit->SetText(""); elem->InsertEndChild(unit);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto peak = doc->NewElement("ShowPeak"); peak->SetText("false"); elem->InsertEndChild(peak);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSegmentButton(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("SegmentButton");
-        auto text = doc->NewElement("Text"); text->SetText("Segment"); elem->InsertEndChild(text);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-        auto items = doc->NewElement("Items");
-        auto seg1 = doc->NewElement("Segment");
-        auto txt1 = doc->NewElement("Text"); txt1->SetText("Low"); seg1->InsertEndChild(txt1);
-        auto val1 = doc->NewElement("Value"); val1->SetText("0"); seg1->InsertEndChild(val1);
-        items->InsertEndChild(seg1);
-        auto seg2 = doc->NewElement("Segment");
-        auto txt2 = doc->NewElement("Text"); txt2->SetText("Med"); seg2->InsertEndChild(txt2);
-        auto val2 = doc->NewElement("Value"); val2->SetText("1"); seg2->InsertEndChild(val2);
-        items->InsertEndChild(seg2);
-        auto seg3 = doc->NewElement("Segment");
-        auto txt3 = doc->NewElement("Text"); txt3->SetText("High"); seg3->InsertEndChild(txt3);
-        auto val3 = doc->NewElement("Value"); val3->SetText("2"); seg3->InsertEndChild(val3);
-        items->InsertEndChild(seg3);
-        elem->InsertEndChild(items);
-        return elem;
-    }
-
-    // MemoryView without WordSize
-    tinyxml2::XMLElement* CreateMemoryView(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("MemoryView");
-        auto text = doc->NewElement("Text"); text->SetText("Memory"); elem->InsertEndChild(text);
-        auto base = doc->NewElement("BaseAddress"); base->SetText("0x0000"); elem->InsertEndChild(base);
-        auto bytes = doc->NewElement("NumBytes"); bytes->SetText("256"); elem->InsertEndChild(bytes);
-        auto bpl = doc->NewElement("BytesPerLine"); bpl->SetText("16"); elem->InsertEndChild(bpl);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-        return elem;
-    }
-
-        tinyxml2::XMLElement* CreateGif(tinyxml2::XMLDocument * doc) {
-            auto elem = doc->NewElement("Gif");
-            auto text = doc->NewElement("Text"); text->SetText("GIF"); elem->InsertEndChild(text);
-            auto file = doc->NewElement("File"); file->SetText("animation.gif"); elem->InsertEndChild(file);
-            auto scale = doc->NewElement("Scale"); scale->SetText("1.0"); elem->InsertEndChild(scale);
-            auto w = doc->NewElement("Width"); w->SetText("0"); elem->InsertEndChild(w);
-            auto h = doc->NewElement("Height"); h->SetText("0"); elem->InsertEndChild(h);
-            auto loop = doc->NewElement("Loop"); loop->SetText("true"); elem->InsertEndChild(loop);
-            auto speed = doc->NewElement("Speed"); speed->SetText("1.0"); elem->InsertEndChild(speed);
-            return elem;
+    tinyxml2::XMLElement* EnsureList(tinyxml2::XMLElement* owner, const NodeDef& def) {
+        if (!owner || !def.listTag) return nullptr;
+        tinyxml2::XMLElement* list = owner->FirstChildElement(def.listTag);
+        if (!list) {
+            list = owner->GetDocument()->NewElement(def.listTag);
+            owner->InsertEndChild(list);
         }
+        return list;
+    }
 
-        tinyxml2::XMLElement* CreateGlossyButton(tinyxml2::XMLDocument * doc) {
-            auto elem = doc->NewElement("GlossyButton");
-            auto text = doc->NewElement("Text"); text->SetText("Button"); elem->InsertEndChild(text);
-            auto addr = doc->NewElement("Address"); addr->SetText("0x0000"); elem->InsertEndChild(addr);
-            auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-            auto mode = doc->NewElement("Mode"); mode->SetText("1"); elem->InsertEndChild(mode);
-            auto val = doc->NewElement("Value"); val->SetText("1"); elem->InsertEndChild(val);
-            auto rad = doc->NewElement("Radius"); rad->SetText("20.0"); elem->InsertEndChild(rad);
-            return elem;
+    tinyxml2::XMLElement* AddProperty(tinyxml2::XMLElement* owner, const PropDef& prop) {
+        if (!owner) return nullptr;
+        if (prop.attribute) {
+            owner->SetAttribute(prop.name, prop.defaultValue);
+            return owner;
         }
+        tinyxml2::XMLElement* e = CreateProperty(owner->GetDocument(), prop);
+        // Keep the properties in front of the list, as the templates do.
+        tinyxml2::XMLElement* list = nullptr;
+        const NodeDef* def = DefinitionOf(owner);
+        if (def && def->listTag) list = owner->FirstChildElement(def->listTag);
+        tinyxml2::XMLNode* before = list ? list->PreviousSibling() : nullptr;
+        if (!list) owner->InsertEndChild(e);
+        else if (before) owner->InsertAfterChild(before, e);
+        else owner->InsertFirstChild(e);
+        return e;
+    }
 
-        tinyxml2::XMLElement* CreateMemoryEditor(tinyxml2::XMLDocument* doc) {
-            auto elem = doc->NewElement("MemoryEditor");
-            auto text = doc->NewElement("Text"); text->SetText("Memory Editor"); elem->InsertEndChild(text);
-            auto base = doc->NewElement("BaseAddress"); base->SetText("0x0000"); elem->InsertEndChild(base);
-            auto size = doc->NewElement("Size"); size->SetText("256"); elem->InsertEndChild(size);
-            auto cols = doc->NewElement("Cols"); cols->SetText("16"); elem->InsertEndChild(cols);
-            auto readOnly = doc->NewElement("ReadOnly"); readOnly->SetText("false"); elem->InsertEndChild(readOnly);
-            auto showAscii = doc->NewElement("ShowAscii"); showAscii->SetText("true"); elem->InsertEndChild(showAscii);
-            auto showHexII = doc->NewElement("ShowHexII"); showHexII->SetText("false"); elem->InsertEndChild(showHexII);
-            auto showOptions = doc->NewElement("ShowOptions"); showOptions->SetText("true"); elem->InsertEndChild(showOptions);
-            auto showPreview = doc->NewElement("ShowPreview"); showPreview->SetText("true"); elem->InsertEndChild(showPreview);
-            auto greyZero = doc->NewElement("GreyZero"); greyZero->SetText("true"); elem->InsertEndChild(greyZero);
-            auto upperHex = doc->NewElement("UpperHex"); upperHex->SetText("true"); elem->InsertEndChild(upperHex);
-            auto le = doc->NewElement("LittleEndian"); le->SetText("true"); elem->InsertEndChild(le);
-            auto useExternal = doc->NewElement("UseExternal"); useExternal->SetText("false"); elem->InsertEndChild(useExternal);
-            auto useCache = doc->NewElement("UseCache"); useCache->SetText("true"); elem->InsertEndChild(useCache);
-            return elem;
+    std::vector<const PropDef*> MissingProperties(const tinyxml2::XMLElement* element, const NodeDef& def) {
+        std::vector<const PropDef*> missing;
+        if (!element) return missing;
+        for (const PropDef& p : def.props) {
+            const bool present = p.attribute ? element->Attribute(p.name) != nullptr
+                                             : element->FirstChildElement(p.name) != nullptr;
+            if (!present) missing.push_back(&p);
         }
-
-    // ==================================================================
-    // Simple child elements (parameters)
-    // ==================================================================
-
-    tinyxml2::XMLElement* CreateTextElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Text");
-        elem->SetText("New Text");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateColorElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Color");
-        elem->SetText("#FFFFFFFF");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateWidthElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Width");
-        elem->SetText("80");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateHeightElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Height");
-        elem->SetText("30");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateAddressElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Address");
-        elem->SetText("0x00000000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateAddrBoolElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("AddrBool");
-        elem->SetText("false");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateMinElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Min");
-        elem->SetText("0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateMaxElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Max");
-        elem->SetText("100");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateStepElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Step");
-        elem->SetText("1");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateFastElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Fast");
-        elem->SetText("10");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateFormatElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Format");
-        elem->SetText("%d");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateUnitElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Unit");
-        elem->SetText("rpm");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateRadiusElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Radius");
-        elem->SetText("100");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateDigitsElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Digits");
-        elem->SetText("4");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateFileElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("File");
-        elem->SetText("image.png");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateTintElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Tint");
-        elem->SetText("#FFFFFFFF");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBorderElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Border");
-        elem->SetText("#00000000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateUV0Element(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("UV0");
-        elem->SetText("0.0,0.0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateUV1Element(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("UV1");
-        elem->SetText("1.0,1.0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLabelElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Label");
-        elem->SetText("Label");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateModeElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Mode");
-        elem->SetText("0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateValueElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Value");
-        elem->SetText("1");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateScaleElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Scale");
-        elem->SetText("1.0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateScaleXElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ScaleX");
-        elem->SetText("1.0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateScaleYElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ScaleY");
-        elem->SetText("1.0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBarWidthElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("BarWidth");
-        elem->SetText("0.8");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateDataTypeElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("DataType");
-        elem->SetText("7");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateFreqElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Freq");
-        elem->SetText("1");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSizeElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Size");
-        elem->SetText("100");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSmoothElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Smooth");
-        elem->SetText("0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateMaxSizeElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("MaxSize");
-        elem->SetText("2000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateAutoSizeElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("AutoSize");
-        elem->SetText("false");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBufferIdElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("BufferId");
-        elem->SetText("0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLineColorElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("LineColor");
-        elem->SetText("#FFFFFFFF");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLineWeightElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("LineWeight");
-        elem->SetText("1.0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBandWidthElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("BandWidth");
-        elem->SetText("20");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateAddressStepElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("AddressStep");
-        elem->SetText("2");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateOrientationElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Orientation");
-        elem->SetText("horizontal");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateShowPeakElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ShowPeak");
-        elem->SetText("false");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLoopElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Loop");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSpeedElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Speed");
-        elem->SetText("1.0");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBaseAddressElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("BaseAddress");
-        elem->SetText("0x0000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateMemorySizeElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Size");
-        elem->SetText("256");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateMemoryColsElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Cols");
-        elem->SetText("16");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateReadOnlyElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ReadOnly");
-        elem->SetText("false");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateShowAsciiElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ShowAscii");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateShowHexIIElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ShowHexII");
-        elem->SetText("false");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateShowOptionsElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ShowOptions");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateShowPreviewElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ShowPreview");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateGreyZeroElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("GreyZero");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateUpperHexElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("UpperHex");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateUseExternalElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("UseExternal");
-        elem->SetText("false");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateUseCacheElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("UseCache");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateDecimalPlacesElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("DecimalPlaces");
-        elem->SetText("2");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreatePixelSizeElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("PixelSize");
-        elem->SetText("2.5");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateUseFixedElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("UseFixed");
-        elem->SetText("false");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLittleEndianElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("LittleEndian");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateHexElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Hex");
-        elem->SetText("false");
-        return elem;
-    }
-    tinyxml2::XMLElement* CreateSwitchableElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Switchable");
-        elem->SetText("true");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateDoneAddrElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("DoneAddr");
-        elem->SetText("0x00000000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLine1AddressElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Line1Address");
-        elem->SetText("0x00000000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLine1TextElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Line1Text");
-        elem->SetText("Hello");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLine2AddressElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Line2Address");
-        elem->SetText("0x00000000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateLine2TextElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Line2Text");
-        elem->SetText("World");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateCountElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Count");
-        elem->SetText("2");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateNumBytesElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("NumBytes");
-        elem->SetText("256");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBytesPerLineElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("BytesPerLine");
-        elem->SetText("16");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateBandsElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Bands");
-        elem->SetText("10");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateColorOnElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ColorOn");
-        elem->SetText("#FF0000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateColorOffElement(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("ColorOff");
-        elem->SetText("#330000");
-        return elem;
-    }
-
-    // ==================================================================
-    // Nested elements (for containers)
-    // ==================================================================
-
-    tinyxml2::XMLElement* CreateComboItem(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Combo");
-        auto lbl = doc->NewElement("Label"); lbl->SetText("New Item"); elem->InsertEndChild(lbl);
-        auto val = doc->NewElement("Value"); val->SetText("0"); elem->InsertEndChild(val);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateRadioItem(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Radio");
-        auto lbl = doc->NewElement("Label"); lbl->SetText("Option"); elem->InsertEndChild(lbl);
-        auto val = doc->NewElement("Value"); val->SetText("0"); elem->InsertEndChild(val);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateSegmentItem(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Segment");
-        auto txt = doc->NewElement("Text"); txt->SetText("Segment"); elem->InsertEndChild(txt);
-        auto val = doc->NewElement("Value"); val->SetText("0"); elem->InsertEndChild(val);
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateZoneItem(tinyxml2::XMLDocument* doc) {
-        auto elem = doc->NewElement("Zone");
-        elem->SetAttribute("start", "0");
-        elem->SetAttribute("end", "100");
-        elem->SetAttribute("color", "#FF0000");
-        return elem;
-    }
-
-    tinyxml2::XMLElement* CreateDataLogLine(tinyxml2::XMLDocument* doc) {
-        auto line = doc->NewElement("Line");
-        auto name = doc->NewElement("Name"); name->SetText("New Line"); line->InsertEndChild(name);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); line->InsertEndChild(addr);
-        auto yScale = doc->NewElement("ScaleY"); yScale->SetText("1.0"); line->InsertEndChild(yScale);
-        auto color = doc->NewElement("Color"); color->SetText("#FFFFFFFF"); line->InsertEndChild(color);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); line->InsertEndChild(dtype);
-        return line;
-    }
-
-    tinyxml2::XMLElement* CreateHistogramLine(tinyxml2::XMLDocument* doc) {
-        auto line = doc->NewElement("Line");
-        auto name = doc->NewElement("Name"); name->SetText("New Line"); line->InsertEndChild(name);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); line->InsertEndChild(addr);
-        auto yScale = doc->NewElement("ScaleY"); yScale->SetText("1.0"); line->InsertEndChild(yScale);
-        auto color = doc->NewElement("Color"); color->SetText("#FFFFFFFF"); line->InsertEndChild(color);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); line->InsertEndChild(dtype);
-        return line;
-    }
-
-    tinyxml2::XMLElement* CreatePlotLinesLine(tinyxml2::XMLDocument* doc) {
-        auto line = doc->NewElement("Line");
-        auto name = doc->NewElement("Name"); name->SetText("New Line"); line->InsertEndChild(name);
-        auto addr = doc->NewElement("Address"); addr->SetText("0x00000000"); line->InsertEndChild(addr);
-        auto dtype = doc->NewElement("DataType"); dtype->SetText("7"); line->InsertEndChild(dtype);
-        auto le = doc->NewElement("LittleEndian"); le->SetText("true"); line->InsertEndChild(le);
-        auto scale = doc->NewElement("Scale"); scale->SetText("1.0"); line->InsertEndChild(scale);
-        auto bufId = doc->NewElement("BufferId"); bufId->SetText("0"); line->InsertEndChild(bufId);
-        auto lineColor = doc->NewElement("LineColor"); lineColor->SetText("#FFFFFFFF"); line->InsertEndChild(lineColor);
-        auto weight = doc->NewElement("LineWeight"); weight->SetText("1.0"); line->InsertEndChild(weight);
-        return line;
-    }
-
-    // ==================================================================
-    // Creator maps
-    // ==================================================================
-
-    const std::map<std::string, Creator>& GetRootCreators() {
-        static std::map<std::string, Creator> rootCreators = {
-            {"Window", CreateNewWindow},
-            {"Text", CreateText},
-            {"TextColored", CreateTextColored},
-            {"Button", CreateButton},
-            {"Checkbox", CreateCheckbox},
-            {"Group", CreateGroup},
-            {"TreeNode", CreateTreeNode},
-            {"SameLine", CreateSameLine},
-            {"Spacing", CreateSpacing},
-            {"Separator", CreateSeparator},
-            {"Dummy", CreateDummy},
-            {"Grid", CreateGrid},
-            {"PlotLines", CreatePlotLines},
-            {"TextFormatted", CreateTextFormatted},
-            {"TextFormattedF", CreateTextFormattedF},
-            {"AlignTextToFramePadding", CreateAlignText},
-            {"NewLine", CreateNewLine},
-            {"LabelText", CreateLabelText},
-            {"RadioButton", CreateRadioButton},
-            {"Tooltip", CreateTooltip},
-            {"PlotTooltip", CreatePlotTooltip},
-            {"ComboBox", CreateComboBox},
-            {"ImputInt", CreateInputInt},   
-            {"ImputFloat", CreateInputFloat},
-            {"FixedWidth", CreateFixedWidth},
-            {"SetCursorPos", CreateSetCursorPos},
-            {"Indent", CreateIndent},
-            {"Histogram", CreateHistogram},
-            {"DataLog", CreateDataLog},
-            {"ProgressBar", CreateProgressBar},
-            {"SliderFloat", CreateSliderFloat},
-            {"SliderInt", CreateSliderInt},
-            {"TabBar", CreateTabBar},
-            {"Tab", CreateTab},
-            {"Column", CreateColumn},
-            {"SelectableText", CreateSelectableText},
-            {"ChildWindow", CreateChildWindow},
-            {"Header", CreateHeader},
-            {"Popup", CreatePopup},
-            {"HintBox", CreateHintBox},
-            {"HelpMarker", CreateHelpMarker},
-            {"Watch", CreateWatch},
-            {"SevenSegment", CreateSevenSegment},
-            {"MechanicalSwitch2", CreateMechanicalSwitch2},
-            {"Gauge", CreateGauge},
-            {"GlossyDisplay", CreateGlossyDisplay},
-            {"LCD_HD44780", CreateLCD_HD44780},
-            {"VerticalGauge", CreateVerticalGauge},
-            {"NeumorphicKnob", CreateNeumorphicKnob},
-            {"StyledKnob", CreateStyledKnob},
-            {"CustomVerticalSlider", CreateCustomVerticalSlider},
-            {"BitControl8Bit", CreateBitControl8Bit},
-            {"BitControl", CreateBitControl},
-            {"RotarySwitch", CreateRotarySwitch},
-            {"LedIndicator", CreateLedIndicator},
-            {"Image", CreateImage},
-            {"RPMIndicator", CreateRPMIndicator},
-            {"Keypad", CreateKeypad},
-            {"Equalizer", CreateEqualizer},
-            {"Tank", CreateTank},
-            {"VUMeter", CreateVUMeter},
-            {"SegmentButton", CreateSegmentButton},
-            {"MemoryView", CreateMemoryView},
-            {"Gif", CreateGif},
-            {"GlossyButton", CreateGlossyButton},
-            {"MemoryEditor", CreateMemoryEditor},
-        };
-        return rootCreators;
-    }
-
-    const std::map<std::string, ChildCreatorMap>& GetChildCreators() {
-        static std::map<std::string, ChildCreatorMap> childMap = {
-            // Specialized containers
-            {"ComboBox", {
-                {"Combo", CreateComboItem}
-            }},
-            {"RadioButton", {
-                {"Radio", CreateRadioItem}
-            }},
-            {"SegmentButton", {
-                {"Segment", CreateSegmentItem}
-            }},
-            {"RPMIndicator", {
-                {"Zone", CreateZoneItem}
-            }},
-
-            // Widgets whose children are parameters
-            {"TextColored", {
-                {"Text", CreateTextElement},
-                {"Color", CreateColorElement}
-            }},
-            {"Button", {
-                {"Text", CreateTextElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"Address", CreateAddressElement},
-                {"Mode", CreateModeElement},
-                {"Value", CreateValueElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            {"Checkbox", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"AddrBool", CreateAddrBoolElement}
-            }},
-            {"SliderInt", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Format", CreateFormatElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            {"SliderFloat", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Format", CreateFormatElement},
-                {"Step", CreateStepElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            {"ProgressBar", {
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"Address", CreateAddressElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            {"Gauge", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Radius", CreateRadiusElement},
-                {"Unit", CreateUnitElement}
-            }},
-            {"SevenSegment", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement}
-            }},
-            {"InputInt", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Step", CreateStepElement},
-                {"Fast", CreateFastElement}
-            }},
-            {"InputFloat", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Step", CreateStepElement},
-                {"Fast", CreateFastElement},
-                {"Format", CreateFormatElement}
-            }},
-            {"PlotLines", {
-                {"Text", CreateTextElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"BufferId", CreateBufferIdElement},
-                {"Freq", CreateFreqElement},
-                {"Size", CreateSizeElement},
-                {"Smooth", CreateSmoothElement},
-                {"MaxSize", CreateMaxSizeElement},
-                {"AutoSize", CreateAutoSizeElement},
-                {"Line", CreatePlotLinesLine}
-            }},
-            {"TextFormatted", {
-                {"Format", CreateFormatElement},
-                {"Address", CreateAddressElement}
-            }},
-            {"TextFormattedF", {
-                {"Format", CreateFormatElement},
-                {"Address", CreateAddressElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            { "LabelText", {
-                {"Label", CreateLabelElement},
-                {"Format", CreateFormatElement},
-                {"Address", CreateAddressElement}
-            } },
-            {"Tooltip", {
-                {"Text", CreateTextElement}
-            }},
-            {"PlotTooltip", {
-                {"Text", CreateTextElement},
-                {"Format", CreateFormatElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Size", CreateSizeElement},
-                {"BufferId", CreateBufferIdElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"Address", CreateAddressElement},
-                {"DataType", CreateDataTypeElement},
-                {"AutoSize", CreateAutoSizeElement}
-            }},
-            {"SetCursorPos", {
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement}
-            }},
-            {"Indent", {
-                {"Width", CreateWidthElement}
-            }},
-            {"Histogram", {
-                {"Text", CreateTextElement},
-                {"Format", CreateFormatElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"ScaleX", CreateScaleXElement},
-                {"Size", CreateSizeElement},
-                {"Smooth", CreateSmoothElement},
-                {"DoneAddr", CreateDoneAddrElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"AutoSize", CreateAutoSizeElement},
-                {"BarWidth", CreateBarWidthElement},
-                {"Line", CreateHistogramLine}
-            }},
-            {"DataLog", {
-                {"Text", CreateTextElement},
-                {"Format", CreateFormatElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"ScaleX", CreateScaleXElement},
-                {"Size", CreateSizeElement},
-                {"Smooth", CreateSmoothElement},
-                {"DoneAddr", CreateDoneAddrElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"AutoSize", CreateAutoSizeElement},
-                {"Line", CreateDataLogLine}
-            }},
-            {"SelectableText", {
-                {"Format", CreateFormatElement},
-                {"Address", CreateAddressElement},
-                {"AddrBool", CreateAddrBoolElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            {"HelpMarker", {
-                {"Text", CreateTextElement}
-            }},
-            {"MechanicalSwitch2", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement}
-            }},
-            {"GlossyDisplay", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"Hex", CreateHexElement},
-                {"Digits", CreateDigitsElement},
-                {"DataType", CreateDataTypeElement},
-                {"DecimalPlaces", CreateDecimalPlacesElement}
-            }},
-            { "LCD_HD44780", {
-                {"Text", CreateTextElement},
-                {"Line1Address", CreateLine1AddressElement},
-                {"Line1Text", CreateLine1TextElement},
-                {"Line2Address", CreateLine2AddressElement},
-                {"Line2Text", CreateLine2TextElement},
-                {"PixelSize", CreatePixelSizeElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"UseFixed", CreateUseFixedElement}
-            } },
-            {"VerticalGauge", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"DataType", CreateDataTypeElement}
-            }},
-            {"NeumorphicKnob", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Radius", CreateRadiusElement},
-                {"DataType", CreateDataTypeElement}
-            }},
-            {"StyledKnob", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Radius", CreateRadiusElement},
-                {"DataType", CreateDataTypeElement}
-            }},
-            {"CustomVerticalSlider", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"DataType", CreateDataTypeElement}
-            }},
-            {"BitControl8Bit", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Scale", CreateScaleElement}
-            }},
-            {"BitControl", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Mode", CreateModeElement},
-                {"Switchable", CreateSwitchableElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            {"RotarySwitch", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Radius", CreateRadiusElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            { "LedIndicator", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Radius", CreateRadiusElement},
-                {"ColorOn", CreateColorOnElement},
-                {"ColorOff", CreateColorOffElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            } },
-            { "Image", {
-                {"Text", CreateTextElement},
-                {"File", CreateFileElement},
-                {"Scale", CreateScaleElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"Tint", CreateTintElement},
-                {"Border", CreateBorderElement},
-                {"UV0", CreateUV0Element},
-                {"UV1", CreateUV1Element}
-            } },
-            {"Keypad", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Digits", CreateDigitsElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            }},
-            { "Equalizer", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Bands", CreateBandsElement},        // was CreateDigitsElement by mistake
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"BandWidth", CreateBandWidthElement},
-                {"Height", CreateHeightElement},
-                {"DataType", CreateDataTypeElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"AddressStep", CreateAddressStepElement}
-            } },
-            {"Tank", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"Unit", CreateUnitElement},
-                {"LiquidColor", CreateColorElement},
-                {"MetalColor", CreateColorElement},
-                {"DataType", CreateDataTypeElement}
-            }},
-            {"VUMeter", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"Min", CreateMinElement},
-                {"Max", CreateMaxElement},
-                {"Orientation", CreateOrientationElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"Unit", CreateUnitElement},
-                {"ShowPeak", CreateShowPeakElement}
-            }},
-            { "MemoryView", {
-                {"Text", CreateTextElement},
-                {"BaseAddress", CreateBaseAddressElement},
-                {"NumBytes", CreateNumBytesElement},
-                {"BytesPerLine", CreateBytesPerLineElement},
-                {"LittleEndian", CreateLittleEndianElement}
-            } },
-            {"TreeNode", {
-                {"Text", CreateTextElement}
-            }},
-            {"TabBar", {
-                {"Text", CreateTextElement}
-            }},
-            {"Tab", {
-                {"Text", CreateTextElement}
-            }},
-            {"Column", {
-                {"Count", CreateCountElement}
-            }},
-            {"ChildWindow", {
-                {"Text", CreateTextElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement}
-            }},
-            {"Header", {
-                {"Text", CreateTextElement}
-            }},
-            { "Gif", {
-                {"Text", CreateTextElement},
-                {"File", CreateFileElement},
-                {"Scale", CreateStepElement},
-                {"Width", CreateWidthElement},
-                {"Height", CreateHeightElement},
-                {"Loop", CreateLoopElement},
-                {"Speed", CreateSpeedElement}
-            } },
-            {"GlossyButton", {
-                {"Text", CreateTextElement},
-                {"Address", CreateAddressElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"Mode", CreateModeElement},
-                {"Value", CreateValueElement},
-                {"Radius", CreateRadiusElement}
-            }},
-            { "MemoryEditor", {
-                {"Text", CreateTextElement},
-                {"BaseAddress", CreateBaseAddressElement},   // <BaseAddress>0x0000</BaseAddress>
-                {"Size", CreateMemorySizeElement},           // <Size>256</Size>
-                {"Cols", CreateMemoryColsElement},           // <Cols>16</Cols>
-                {"ReadOnly", CreateReadOnlyElement},
-                {"ShowAscii", CreateShowAsciiElement},
-                {"ShowHexII", CreateShowHexIIElement},
-                {"ShowOptions", CreateShowOptionsElement},
-                {"ShowPreview", CreateShowPreviewElement},
-                {"GreyZero", CreateGreyZeroElement},
-                {"UpperHex", CreateUpperHexElement},
-                {"LittleEndian", CreateLittleEndianElement},
-                {"UseExternal", CreateUseExternalElement},
-                {"UseCache", CreateUseCacheElement}
-            } }
-        };
-        return childMap;
+        return missing;
+    }
+
+    bool InsertWidget(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* selected, tinyxml2::XMLElement* widget) {
+        if (!doc || !widget) return false;
+        tinyxml2::XMLElement* child = nullptr;   // previous element on the way up
+        for (tinyxml2::XMLElement* e = selected; e; child = e, e = e->Parent() ? e->Parent()->ToElement() : nullptr) {
+            // A widget list (<Items> of a container or window)
+            if (IsWidgetList(e)) {
+                if (child) e->InsertAfterChild(child, widget);
+                else e->InsertEndChild(widget);
+                return true;
+            }
+            const NodeDef* def = DefinitionOf(e);
+            // A container or window: append to its list
+            if (def && def->listTag && !def->itemTag && e == selected) {
+                EnsureList(e, *def)->InsertEndChild(widget);
+                return true;
+            }
+            // A widget inside a list: insert right after it
+            tinyxml2::XMLElement* parent = e->Parent() ? e->Parent()->ToElement() : nullptr;
+            if (def && parent && IsWidgetList(parent)) {
+                parent->InsertAfterChild(e, widget);
+                return true;
+            }
+        }
+        tinyxml2::XMLElement* window = doc->FirstChildElement("Window");
+        if (!window) return false;
+        EnsureList(window, WindowDef())->InsertEndChild(widget);
+        return true;
+    }
+
+    bool ParseAddress(const char* text, uint32_t* out) {
+        return ui_safety::ParseAddressText(text, out);
+    }
+
+    bool ParseColor(const char* text, float rgba[4]) {
+        if (!text || text[0] != '#') return false;
+        const size_t len = std::strlen(text + 1);
+        if (len != 6 && len != 8) return false;
+        for (size_t i = 1; i <= len; ++i)
+            if (!std::isxdigit(static_cast<unsigned char>(text[i]))) return false;
+        const unsigned long hex = std::strtoul(text + 1, nullptr, 16);
+        rgba[0] = ((hex >> 16) & 0xFF) / 255.0f;
+        rgba[1] = ((hex >> 8) & 0xFF) / 255.0f;
+        rgba[2] = (hex & 0xFF) / 255.0f;
+        rgba[3] = (len == 8) ? ((hex >> 24) & 0xFF) / 255.0f : 1.0f;
+        return true;
+    }
+
+    std::string FormatColor(const float rgba[4], bool withAlpha) {
+        unsigned int c[4];
+        for (int i = 0; i < 4; ++i) {
+            const float v = std::isfinite(rgba[i]) ? rgba[i] : 0.0f;
+            c[i] = (unsigned int)(std::fmin(std::fmax(v, 0.0f), 1.0f) * 255.0f + 0.5f);
+        }
+        char buf[16];
+        if (withAlpha) std::snprintf(buf, sizeof(buf), "#%02X%02X%02X%02X", c[3], c[0], c[1], c[2]);
+        else std::snprintf(buf, sizeof(buf), "#%02X%02X%02X", c[0], c[1], c[2]);
+        return buf;
+    }
+
+    std::string FormatFloat(float value) {
+        char buf[32];
+        for (int precision = 6; precision <= 9; ++precision) {
+            std::snprintf(buf, sizeof(buf), "%.*g", precision, (double)value);
+            if (std::strtof(buf, nullptr) == value) break;
+        }
+        return buf;
     }
 
 } // namespace WidgetTemplateFactory

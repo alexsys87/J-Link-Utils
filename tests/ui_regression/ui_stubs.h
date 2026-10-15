@@ -56,12 +56,14 @@ constexpr int ImGuiWindowFlags_HorizontalScrollbar=0, ImGuiInputTextFlags_CharsH
 inline float ImSaturate(float v){return std::clamp(v,0.0f,1.0f);}
 struct ImPlotSpec { int Offset=0, Stride=0; ImVec4 LineColor; float LineWeight=1.0f; };
 struct ImGuiIO {float DeltaTime=0.1f;bool MouseDown[5]={};};
+#define IM_DRAWLIST_TEX_LINES_WIDTH_MAX 32
 namespace ImGui {
 inline ImVec4 ColorConvertU32ToFloat4(ImU32 c){return ImVec4((c&0xFF)/255.0f,((c>>8)&0xFF)/255.0f,((c>>16)&0xFF)/255.0f,((c>>24)&0xFF)/255.0f);}
 inline bool hovered=true;
 inline int plotCount=0;
 inline std::vector<float> plotted;
 inline bool IsItemHovered(){return hovered;}
+inline bool IsItemActive(){return false;}
 inline void BeginTooltip(){}
 inline void EndTooltip(){}
 inline void Spacing(){}

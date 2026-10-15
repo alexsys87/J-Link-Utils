@@ -7,8 +7,7 @@ public:
     HintBoxWidget() {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         if (ImGui::IsItemHovered()) {
-            for (auto& child : children)
-                child->Draw(ctx, dynamicAddr);
+            DrawChildren(ctx, dynamicAddr);
         }
     }
 };

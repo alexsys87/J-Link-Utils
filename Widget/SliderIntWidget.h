@@ -7,6 +7,8 @@ class SliderIntWidget : public LeafWidget {
     uint32_t address;
     int minVal, maxVal;
     std::string format;
+    bool dragging = false;   // the value is written when the mouse is released
+    int lastValue = 0;
 public:
     SliderIntWidget(const char* lbl, uint32_t addr, int minV, int maxV, const char* fmt)
         : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), format(ui_safety::ScalarFormatOrDefault(fmt, ui_safety::ScalarKind::Integer)) {
@@ -14,17 +16,18 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
         int value = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-        static std::unordered_map<uint16_t, bool> dragging;
-        static std::unordered_map<uint16_t, int> lastValue;
+        if (dragging) value = lastValue;
+        ImGui::PushID(this);
         if (ImGui::SliderInt(label.c_str(), &value, minVal, maxVal, format.c_str())) {
-            dragging[addr] = true;
-            lastValue[addr] = value;
+            dragging = true;
+            lastValue = value;
         }
+        ImGui::PopID();
         ImGuiIO& io = ImGui::GetIO();
-        if (!io.MouseDown[0] && dragging[addr]) {
-            uint16_t v = lastValue[addr];
+        if (!io.MouseDown[0] && dragging) {
+            uint16_t v = (uint16_t)lastValue;
             DataReadWriteU16(ctx, nullptr, &v, &addr);
-            dragging[addr] = false;
+            dragging = false;
         }
     }
 };

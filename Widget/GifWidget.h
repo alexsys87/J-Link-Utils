@@ -29,6 +29,7 @@ class GifWidget : public LeafWidget {
     int currentFrame;
     double nextFrameTime;          // ImGui time of the next frame switch
     bool loaded;
+    bool triedLoad = false;
 
 public:
     GifWidget(const char* lbl, const char* path,
@@ -49,8 +50,18 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         (void)dynamicAddr;
 
-        if (!loaded && !filePath.empty()) {
+        // One attempt only: a missing or broken file is not reread every frame,
+        // and a partly decoded file does not add textures again and again.
+        if (!triedLoad && !filePath.empty()) {
+            triedLoad = true;
             loaded = (LoadGifFrames(ctx->Renderer, filePath.c_str(), frames, delays) > 0);
+            if (!loaded) {
+                for (auto tex : frames) {
+                    if (tex) SDL_DestroyTexture(tex);
+                }
+                frames.clear();
+                delays.clear();
+            }
         }
 
         if (!loaded || frames.empty()) {

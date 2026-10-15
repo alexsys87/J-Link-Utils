@@ -153,12 +153,14 @@ inline char* GetFilePath(const char* Config) {
         if (!data_path)
         {
             fprintf(stderr, "Unable to allocate memory\r\n");
+            SDL_free(base_path);
             return NULL;
         }
 
         SDL_memset(data_path, 0, MAX_PATH);
         SDL_strlcpy(&data_path[0], base_path, MAX_PATH);
         SDL_strlcpy(&data_path[SDL_strlen(data_path)], Config, MAX_PATH - SDL_strlen(data_path));
+        SDL_free(base_path);   // SDL_GetBasePath() allocates the string
     }
     else {
         data_path = SDL_strdup(Config);
@@ -201,6 +203,16 @@ public:
 class ContainerWidget : public UIWidget {
 protected:
     std::vector<std::unique_ptr<UIWidget>> children;
+
+    // Each child gets its own ID scope, so children with the same or an empty label
+    // neither collide nor end up with the window's own ID (an ImGui assertion).
+    void DrawChildren(MainContext* ctx, uint32_t* dynamicAddr) {
+        for (size_t i = 0; i < children.size(); ++i) {
+            ImGui::PushID((int)i);
+            children[i]->Draw(ctx, dynamicAddr);
+            ImGui::PopID();
+        }
+    }
 public:
     void AddChild(std::unique_ptr<UIWidget> child) {
         if (child) children.push_back(std::move(child));

@@ -22,6 +22,7 @@ class ImageWidget : public LeafWidget {
     ImTextureID texID;
     int texWidth, texHeight;
     bool texLoaded;
+    bool triedLoad = false;
 
 public:
     ImageWidget(const char* lbl, const char* path, float s,
@@ -42,7 +43,9 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         (void)dynamicAddr;
 
-        if (!texLoaded && !filePath.empty()) {
+        // One attempt only: a missing file is not looked up on disk every frame.
+        if (!texLoaded && !triedLoad && !filePath.empty()) {
+            triedLoad = true;
             texID = LoadTextureFromFile(ctx->Renderer, filePath.c_str(), &texWidth, &texHeight);
             texLoaded = (texID != ImTextureID());
         }

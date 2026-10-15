@@ -5,69 +5,32 @@
 #include "tinyxml2/tinyxml2.h"
 #include <string>
 #include <vector>
-#include <map>
-#include <set>
-#include <functional>
 #include <cctype>
 #include <cstdlib>
 #include <cerrno>
 #include <climits>
 #include <cmath>
+#include <cstring>
 
 #include "WidgetTemplateFactory.h"
 #include "XMLSafety.h"
 
+namespace wtf = WidgetTemplateFactory;
+using tinyxml2::XMLElement;
+using tinyxml2::XMLNode;
+using tinyxml2::XMLUtil;
+
 // ------------------------------------------------------------------
-// Color conversion helpers
+// Value guessing for elements the widget table does not describe
+// (IOMap entries, misspelled or foreign tags)
 // ------------------------------------------------------------------
 static bool ParseColor(const char* str, ImVec4& outColor) {
-    if (!str || str[0] != '#') return false;
-    unsigned int hex = 0;
-    int len = (int)strlen(str);
-    for (int i = 1; i < len; ++i) {
-        if (!std::isxdigit(static_cast<unsigned char>(str[i]))) return false;
-    }
-    if (len == 7) { // #RRGGBB
-        if (sscanf(str + 1, "%06x", &hex) == 1) {
-            outColor.x = ((hex >> 16) & 0xFF) / 255.0f;
-            outColor.y = ((hex >> 8) & 0xFF) / 255.0f;
-            outColor.z = (hex & 0xFF) / 255.0f;
-            outColor.w = 1.0f;
-            return true;
-        }
-    }
-    else if (len == 9) { // #AARRGGBB
-        if (sscanf(str + 1, "%08x", &hex) == 1) {
-            outColor.w = ((hex >> 24) & 0xFF) / 255.0f;
-            outColor.x = ((hex >> 16) & 0xFF) / 255.0f;
-            outColor.y = ((hex >> 8) & 0xFF) / 255.0f;
-            outColor.z = (hex & 0xFF) / 255.0f;
-            return true;
-        }
-    }
-    return false;
+    float rgba[4];
+    if (!wtf::ParseColor(str, rgba)) return false;
+    outColor = ImVec4(rgba[0], rgba[1], rgba[2], rgba[3]);
+    return true;
 }
 
-static std::string FormatColor(const ImVec4& col, bool withAlpha = true) {
-    unsigned int r = (unsigned int)(col.x * 255.0f + 0.5f);
-    unsigned int g = (unsigned int)(col.y * 255.0f + 0.5f);
-    unsigned int b = (unsigned int)(col.z * 255.0f + 0.5f);
-    if (withAlpha) {
-        unsigned int a = (unsigned int)(col.w * 255.0f + 0.5f);
-        char buf[10];
-        snprintf(buf, sizeof(buf), "#%02X%02X%02X%02X", a, r, g, b);
-        return std::string(buf);
-    }
-    else {
-        char buf[8];
-        snprintf(buf, sizeof(buf), "#%02X%02X%02X", r, g, b);
-        return std::string(buf);
-    }
-}
-
-// ------------------------------------------------------------------
-// Checks whether a string is a boolean
-// ------------------------------------------------------------------
 static bool IsBooleanString(const char* str, bool& outValue) {
     if (!str) return false;
     std::string lower;
@@ -83,9 +46,6 @@ static bool IsBooleanString(const char* str, bool& outValue) {
     return false;
 }
 
-// ------------------------------------------------------------------
-// Checks whether a string is a number (int/float)
-// ------------------------------------------------------------------
 static bool IsNumberString(const char* str, bool& isFloat) {
     if (!str || *str == '\0') return false;
     char* endptr;
@@ -111,114 +71,262 @@ static bool IsNumberString(const char* str, bool& isFloat) {
 }
 
 // ------------------------------------------------------------------
-// Whether an element may have child elements
+// Editor state
 // ------------------------------------------------------------------
-static bool CanHaveChildren(const char* elementName) {
-    // Generic containers that may hold any widget
-    static const std::set<std::string> containers = {
-        "Group", "TreeNode", "TabBar", "Tab", "ChildWindow", "Header", "Popup", "HintBox",
-        "FixedWidth", "Column", "Grid", "Window"
-    };
-    if (containers.find(elementName) != containers.end()) {
-        return true;
-    }
-    // Does childMap have an entry for this element?
-    const auto& childMap = WidgetTemplateFactory::GetChildCreators();
-    if (childMap.find(elementName) != childMap.end()) {
-        return true;
-    }
-    return false;
-}
-
-// ------------------------------------------------------------------
-// Editor helpers and globals
-// ------------------------------------------------------------------
-static tinyxml2::XMLNode* g_selectedNode = nullptr;
+static XMLNode* g_selectedNode = nullptr;
 static char g_newAttrName[128] = "";
 static char g_newAttrValue[128] = "";
+static char g_widgetFilter[64] = "";
 
 void ResetXMLEditorState() {
     g_selectedNode = nullptr;
     g_newAttrName[0] = '\0';
     g_newAttrValue[0] = '\0';
+    g_widgetFilter[0] = '\0';
+}
+
+static const ImVec4 kWarningColor(1.0f, 0.55f, 0.3f, 1.0f);
+
+static bool HasChildElements(const XMLElement* e) {
+    return e && e->FirstChildElement() != nullptr;
+}
+
+static int CountChildElements(const XMLElement* e) {
+    int n = 0;
+    for (const XMLElement* c = e ? e->FirstChildElement() : nullptr; c; c = c->NextSiblingElement()) ++n;
+    return n;
+}
+
+static XMLElement* ParentElement(XMLNode* node) {
+    return (node && node->Parent()) ? node->Parent()->ToElement() : nullptr;
+}
+
+static const XMLElement* ParentElement(const XMLNode* node) {
+    return (node && node->Parent()) ? node->Parent()->ToElement() : nullptr;
+}
+
+// XML names: a letter or '_' first, then letters, digits, '_', '-', '.'
+static bool IsValidTagName(const char* name) {
+    if (!name || !(std::isalpha(static_cast<unsigned char>(name[0])) || name[0] == '_')) return false;
+    for (const char* p = name + 1; *p; ++p) {
+        const unsigned char c = static_cast<unsigned char>(*p);
+        if (!(std::isalnum(c) || c == '_' || c == '-' || c == '.')) return false;
+    }
+    return true;
+}
+
+// The widget whose list this element is (<Items> of a container, <Zones> of an RPMIndicator)
+static const wtf::NodeDef* ListOwner(const XMLElement* e) {
+    const XMLElement* owner = ParentElement(e);
+    const wtf::NodeDef* def = owner ? wtf::DefinitionOf(owner) : nullptr;
+    return (def && def->listTag && std::strcmp(def->listTag, e->Name()) == 0) ? def : nullptr;
+}
+
+static void HelpTooltip(const wtf::PropDef* prop) {
+    if (prop && prop->help && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", prop->help);
 }
 
 // ------------------------------------------------------------------
-// Finds the container that receives new child widgets
+// Input control for one value. Returns true with the new text in 'out'.
 // ------------------------------------------------------------------
-static tinyxml2::XMLElement* GetContainerForChildren(tinyxml2::XMLElement* parent, tinyxml2::XMLDocument* doc, const char* childName = nullptr) {
-    const char* name = parent->Name();
+static bool EditText(const char* text, std::string& out) {
+    char buf[1024];
+    strncpy(buf, text ? text : "", sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    if (!ImGui::InputText("##value", buf, sizeof(buf))) return false;
+    out = buf;
+    return true;
+}
 
-    // DataLog, Histogram, PlotLines: parameters (not Line) go into the element, Line goes into <Items>
-    if (strcmp(name, "DataLog") == 0 || strcmp(name, "Histogram") == 0 || strcmp(name, "PlotLines") == 0) {
-        if (childName && strcmp(childName, "Line") == 0) {
-            tinyxml2::XMLElement* items = parent->FirstChildElement("Items");
-            if (!items) {
-                items = doc->NewElement("Items");
-                parent->InsertEndChild(items);
+static void InvalidNote(const char* what) {
+    ImGui::SameLine();
+    ImGui::TextColored(kWarningColor, "%s", what);
+}
+
+static bool EditKnownValue(const wtf::PropDef& prop, const char* text, std::string& out) {
+    ImGui::SetNextItemWidth(220.0f);
+    switch (prop.kind) {
+    case wtf::PropKind::Int: {
+        int value = 0;
+        if (!text || !XMLUtil::ToInt(text, &value)) {
+            const bool changed = EditText(text, out);
+            InvalidNote("not an integer, the default is used");
+            return changed;
+        }
+        if (!ImGui::InputInt("##value", &value)) return false;
+        out = std::to_string(value);
+        return true;
+    }
+    case wtf::PropKind::Float: {
+        float value = 0.0f;
+        if (!text || !XMLUtil::ToFloat(text, &value) || !std::isfinite(value)) {
+            const bool changed = EditText(text, out);
+            InvalidNote("not a number, the default is used");
+            return changed;
+        }
+        if (!ImGui::InputFloat("##value", &value, 0.0f, 0.0f, "%g")) return false;
+        if (!std::isfinite(value)) return false;
+        out = wtf::FormatFloat(value);
+        return true;
+    }
+    case wtf::PropKind::Bool: {
+        bool value = false;
+        if (!text || !XMLUtil::ToBool(text, &value)) {
+            const bool changed = EditText(text, out);
+            InvalidNote("expected true or false");
+            return changed;
+        }
+        if (!ImGui::Checkbox("##value", &value)) return false;
+        out = value ? "true" : "false";
+        return true;
+    }
+    case wtf::PropKind::Color:
+    case wtf::PropKind::ColorRGB: {
+        float rgba[4];
+        if (!wtf::ParseColor(text, rgba)) {
+            const bool changed = EditText(text, out);
+            InvalidNote("expected #RRGGBB or #AARRGGBB");
+            return changed;
+        }
+        const bool rgbOnly = prop.kind == wtf::PropKind::ColorRGB;
+        const bool changed = rgbOnly
+            ? ImGui::ColorEdit3("##value", rgba)
+            : ImGui::ColorEdit4("##value", rgba, ImGuiColorEditFlags_AlphaPreviewHalf | ImGuiColorEditFlags_AlphaBar);
+        if (!changed) return false;
+        // Keep the alpha digits once the color has them, or when it is not opaque.
+        const bool withAlpha = !rgbOnly && (std::strlen(text) == 9 || rgba[3] < 0.999f);
+        out = wtf::FormatColor(rgba, withAlpha);
+        return true;
+    }
+    case wtf::PropKind::Address: {
+        // Shown as written; only valid addresses are stored, so an invalid edit reverts.
+        char buf[64];
+        strncpy(buf, text ? text : "", sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        const bool edited = ImGui::InputText("##value", buf, sizeof(buf), ImGuiInputTextFlags_CharsNoBlank);
+        uint32_t address = 0;
+        if (!wtf::ParseAddress(text, &address)) InvalidNote("invalid address, 0 is used");
+        else {
+            ImGui::SameLine();
+            ImGui::TextDisabled("= 0x%08X", address);
+        }
+        if (!edited || !wtf::ParseAddress(buf, nullptr)) return false;
+        out = buf;
+        return true;
+    }
+    case wtf::PropKind::Enum: {
+        const char* preview = nullptr;
+        std::string unknown;
+        for (const wtf::EnumOption& o : prop.options) {
+            if (text && std::strcmp(o.value, text) == 0) preview = o.label;
+        }
+        if (!preview) {
+            unknown = std::string(text ? text : "") + " (unknown)";
+            preview = unknown.c_str();
+        }
+        bool changed = false;
+        if (ImGui::BeginCombo("##value", preview)) {
+            for (const wtf::EnumOption& o : prop.options) {
+                const bool selected = text && std::strcmp(o.value, text) == 0;
+                std::string label = std::string(o.value) + " - " + o.label;
+                if (ImGui::Selectable(label.c_str(), selected)) {
+                    out = o.value;
+                    changed = true;
+                }
             }
-            return items;
+            ImGui::EndCombo();
         }
-        return parent; // parameters (Text, Format, ...) go into the element
+        return changed;
     }
-
-    // Specialized containers
-    if (strcmp(name, "ComboBox") == 0 || strcmp(name, "RadioButton") == 0 ||
-        strcmp(name, "SegmentButton") == 0) {
-        tinyxml2::XMLElement* items = parent->FirstChildElement("Items");
-        if (!items) {
-            items = doc->NewElement("Items");
-            parent->InsertEndChild(items);
+    case wtf::PropKind::Point: {
+        float xy[2] = { 0.0f, 0.0f };
+        if (!text || sscanf(text, "%f,%f", &xy[0], &xy[1]) != 2) {
+            const bool changed = EditText(text, out);
+            InvalidNote("expected x,y");
+            return changed;
         }
-        return items;
+        if (!ImGui::InputFloat2("##value", xy, "%g")) return false;
+        if (!std::isfinite(xy[0]) || !std::isfinite(xy[1])) return false;
+        out = wtf::FormatFloat(xy[0]) + "," + wtf::FormatFloat(xy[1]);
+        return true;
     }
-    if (strcmp(name, "RPMIndicator") == 0) {
-        tinyxml2::XMLElement* zones = parent->FirstChildElement("Zones");
-        if (!zones) {
-            zones = doc->NewElement("Zones");
-            parent->InsertEndChild(zones);
-        }
-        return zones;
+    case wtf::PropKind::Text:
+    default:
+        return EditText(text, out);
     }
+}
 
-    // Generic containers (Group, Tab, ChildWindow, Header, Popup, HintBox, ...) use <Items>
-    tinyxml2::XMLElement* items = parent->FirstChildElement("Items");
-    if (items) return items;
-
-    // Nothing found: insert directly into the parent
-    return parent;
+// Elements the table does not know: guess the control from the value.
+static bool EditGuessedValue(const char* name, const char* text, std::string& out) {
+    ImGui::SetNextItemWidth(220.0f);
+    if (std::strstr(name, "Address") || std::strcmp(name, "DoneAddr") == 0) {
+        wtf::PropDef address;
+        address.name = name;
+        address.kind = wtf::PropKind::Address;
+        address.defaultValue = "0";
+        return EditKnownValue(address, text, out);
+    }
+    ImVec4 color;
+    bool boolValue = false;
+    bool isFloat = false;
+    if (text && ParseColor(text, color)) {
+        if (!ImGui::ColorEdit4("##value", &color.x, ImGuiColorEditFlags_AlphaPreviewHalf)) return false;
+        const float rgba[4] = { color.x, color.y, color.z, color.w };
+        out = wtf::FormatColor(rgba, std::strlen(text) == 9 || color.w < 0.999f);
+        return true;
+    }
+    if (text && IsBooleanString(text, boolValue)) {
+        if (!ImGui::Checkbox("##value", &boolValue)) return false;
+        out = boolValue ? "true" : "false";
+        return true;
+    }
+    if (text && IsNumberString(text, isFloat)) {
+        // A double keeps integers integral and still accepts fractions.
+        double value = std::strtod(text, nullptr);
+        if (!ImGui::InputDouble("##value", &value, 0.0, 0.0, "%.10g") || !std::isfinite(value)) return false;
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%.10g", value);
+        out = buf;
+        return true;
+    }
+    return EditText(text, out);
 }
 
 // ------------------------------------------------------------------
-// Finds the parent for a new widget
-// (used by the "Add Widget" button)
+// Widget picker popup: returns the chosen widget type
 // ------------------------------------------------------------------
-static tinyxml2::XMLElement* FindInsertionParent(tinyxml2::XMLDocument* doc, const char* widgetType = nullptr) {
-    // If an element is selected, use it as the parent
-    if (g_selectedNode && g_selectedNode->ToElement()) {
-        return GetContainerForChildren(g_selectedNode->ToElement(), doc, widgetType);
-    }
-    // Otherwise use the first Window element
-    tinyxml2::XMLElement* root = doc->FirstChildElement("Window");
-    if (root) {
-        // Make sure the window has <Items>
-        tinyxml2::XMLElement* items = root->FirstChildElement("Items");
-        if (!items) {
-            items = doc->NewElement("Items");
-            root->InsertEndChild(items);
+static const wtf::NodeDef* WidgetPicker(const char* popupId) {
+    const wtf::NodeDef* chosen = nullptr;
+    if (!ImGui::BeginPopup(popupId)) return nullptr;
+    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::InputTextWithHint("##filter", "filter", g_widgetFilter, sizeof(g_widgetFilter));
+    std::string filter;
+    for (const char* p = g_widgetFilter; *p; ++p) filter.push_back((char)std::tolower(static_cast<unsigned char>(*p)));
+    if (ImGui::BeginChild("##widgets", ImVec2(260, 320))) {
+        for (const wtf::NodeDef& def : wtf::Widgets()) {
+            if (!def.listed) continue;
+            std::string name;
+            for (const char* p = def.tag; *p; ++p) name.push_back((char)std::tolower(static_cast<unsigned char>(*p)));
+            if (!filter.empty() && name.find(filter) == std::string::npos) continue;
+            if (ImGui::Selectable(def.tag)) {
+                chosen = &def;
+                ImGui::CloseCurrentPopup();
+            }
         }
-        return items;
     }
-    return nullptr;
+    ImGui::EndChild();
+    ImGui::EndPopup();
+    return chosen;
 }
 
 // ------------------------------------------------------------------
 // Recursive XML tree view
 // ------------------------------------------------------------------
-static void ShowXMLNode(tinyxml2::XMLNode* node, int depth) {
+static void ShowXMLNode(XMLNode* node, int depth) {
     if (!node) return;
 
-    tinyxml2::XMLElement* element = node->ToElement();
+    XMLElement* element = node->ToElement();
     tinyxml2::XMLText* text = node->ToText();
     tinyxml2::XMLComment* comment = node->ToComment();
     tinyxml2::XMLDeclaration* decl = node->ToDeclaration();
@@ -227,11 +335,22 @@ static void ShowXMLNode(tinyxml2::XMLNode* node, int depth) {
     ImGui::PushID(node);
 
     if (element) {
+        // Widgets show their caption, which tells equal widgets apart
         std::string tag = "<" + std::string(element->Name()) + ">";
+        const wtf::NodeDef* def = wtf::DefinitionOf(element);
+        const char* caption = nullptr;
+        if (def) {
+            for (const char* key : { "Text", "Label", "Name" }) {
+                if (!caption && wtf::FindProp(def, key)) caption = ui_safety::XmlChildText(element, key, nullptr);
+            }
+        }
+        if (caption && *caption) tag += std::string(" ") + caption;
+
         ImGuiTreeNodeFlags flags = (g_selectedNode == node) ? ImGuiTreeNodeFlags_Selected : 0;
         flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+        if (!element->FirstChild() && !element->FirstAttribute()) flags |= ImGuiTreeNodeFlags_Leaf;
 
-        bool open = ImGui::TreeNodeEx(element->Name(), flags, "%s%s", prefix.c_str(), tag.c_str());
+        bool open = ImGui::TreeNodeEx("##node", flags, "%s%s", prefix.c_str(), tag.c_str());
         if (ImGui::IsItemClicked()) {
             g_selectedNode = node;
         }
@@ -240,7 +359,7 @@ static void ShowXMLNode(tinyxml2::XMLNode* node, int depth) {
             for (const tinyxml2::XMLAttribute* attr = element->FirstAttribute(); attr; attr = attr->Next()) {
                 ImGui::Text("%s  @%s = \"%s\"", prefix.c_str(), attr->Name(), attr->Value());
             }
-            for (tinyxml2::XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
+            for (XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
                 ShowXMLNode(child, depth + 1);
             }
             ImGui::TreePop();
@@ -269,345 +388,308 @@ static void ShowXMLNode(tinyxml2::XMLNode* node, int depth) {
 }
 
 // ------------------------------------------------------------------
-// Properties panel for the selected node
+// Properties panel for an element
 // ------------------------------------------------------------------
-static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* doc, MainContext* ctx) {
+// Attributes: typed controls for the ones the table knows, free editing for the rest.
+// Returns true when the panel must stop drawing this frame.
+static bool ShowAttributes(XMLElement* element, const wtf::NodeDef* def, MainContext* ctx) {
+    if (!ImGui::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) return false;
+    std::vector<std::pair<std::string, std::string>> attrs;
+    for (const tinyxml2::XMLAttribute* attr = element->FirstAttribute(); attr; attr = attr->Next()) {
+        attrs.emplace_back(attr->Name(), attr->Value());
+    }
+
+    for (size_t i = 0; i < attrs.size(); ++i) {
+        ImGui::PushID((int)i);
+        const wtf::PropDef* prop = wtf::FindProp(def, attrs[i].first.c_str());
+        if (prop && prop->attribute) {
+            ImGui::Text("%s:", prop->name);
+            HelpTooltip(prop);
+            ImGui::SameLine(140.0f);
+            std::string value;
+            if (EditKnownValue(*prop, attrs[i].second.c_str(), value)) {
+                element->SetAttribute(prop->name, value.c_str());
+                ctx->xml_modified = true;
+            }
+        }
+        else {
+            char nameBuf[128], valueBuf[256];
+            strncpy(nameBuf, attrs[i].first.c_str(), sizeof(nameBuf) - 1);
+            nameBuf[sizeof(nameBuf) - 1] = '\0';
+            strncpy(valueBuf, attrs[i].second.c_str(), sizeof(valueBuf) - 1);
+            valueBuf[sizeof(valueBuf) - 1] = '\0';
+
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf), ImGuiInputTextFlags_EnterReturnsTrue) &&
+                IsValidTagName(nameBuf)) {
+                element->DeleteAttribute(attrs[i].first.c_str());
+                element->SetAttribute(nameBuf, valueBuf);
+                ctx->xml_modified = true;
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(220.0f);
+            if (ImGui::InputText("##value", valueBuf, sizeof(valueBuf))) {
+                element->SetAttribute(attrs[i].first.c_str(), valueBuf);
+                ctx->xml_modified = true;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("X")) {
+            element->DeleteAttribute(attrs[i].first.c_str());
+            ctx->xml_modified = true;
+            ImGui::PopID();
+            return true;
+        }
+        ImGui::PopID();
+    }
+
+    // New attribute
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputTextWithHint("##newAttrName", "name", g_newAttrName, sizeof(g_newAttrName));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::InputTextWithHint("##newAttrValue", "value", g_newAttrValue, sizeof(g_newAttrValue));
+    ImGui::SameLine();
+    if (ImGui::Button("Add") && IsValidTagName(g_newAttrName)) {
+        element->SetAttribute(g_newAttrName, g_newAttrValue);
+        g_newAttrName[0] = g_newAttrValue[0] = '\0';
+        ctx->xml_modified = true;
+    }
+    return false;
+}
+
+// One row of the child element list. Returns true when the tree changed in a way
+// that invalidates the rest of this frame's list (move, delete, select).
+static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElement* child,
+    size_t index, size_t count, MainContext* ctx) {
+    const char* childName = child->Name();
+    const wtf::PropDef* prop = wtf::FindProp(def, childName);
+    if (prop && prop->attribute) prop = nullptr;
+
+    ImGui::PushID(child);
+    ImGui::AlignTextToFramePadding();
+    if (def && !prop && !HasChildElements(child) && !(def->listTag && std::strcmp(def->listTag, childName) == 0)) {
+        ImGui::TextColored(kWarningColor, "%s:", childName);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("<%s> does not use <%s>; the loader ignores it.", def->tag, childName);
+    }
+    else {
+        ImGui::Text("%s:", childName);
+        HelpTooltip(prop);
+    }
+    ImGui::SameLine(140.0f);
+
+    bool restart = false;
+    if (HasChildElements(child) || (def && def->listTag && std::strcmp(def->listTag, childName) == 0)) {
+        // A list or a nested element: open it instead of editing text
+        const wtf::NodeDef* childDef = wtf::DefinitionOf(child);
+        const char* caption = childDef ? ui_safety::XmlChildText(child, "Text", nullptr) : nullptr;
+        if (!caption && childDef) caption = ui_safety::XmlChildText(child, "Name", nullptr);
+        if (!caption && childDef) caption = ui_safety::XmlChildText(child, "Label", nullptr);
+        if (caption) ImGui::Text("%s", caption);
+        else ImGui::TextDisabled("%d element(s)", CountChildElements(child));
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Open")) {
+            g_selectedNode = child;
+            restart = true;
+        }
+    }
+    else {
+        std::string value;
+        const bool changed = prop ? EditKnownValue(*prop, child->GetText(), value)
+                                  : EditGuessedValue(childName, child->GetText(), value);
+        if (changed) {
+            child->SetText(value.c_str());
+            ctx->xml_modified = true;
+        }
+    }
+
+    // Move up/down and delete
+    if (!restart && index > 0) {
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("##up", ImGuiDir_Up)) {
+            XMLNode* prev = child->PreviousSiblingElement();
+            XMLNode* prevPrev = prev ? prev->PreviousSibling() : nullptr;
+            if (prevPrev) element->InsertAfterChild(prevPrev, child);
+            else element->InsertFirstChild(child);
+            ctx->xml_modified = true;
+            restart = true;
+        }
+    }
+    if (!restart && index + 1 < count) {
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("##down", ImGuiDir_Down)) {
+            XMLNode* next = child->NextSiblingElement();
+            if (next) element->InsertAfterChild(next, child);
+            ctx->xml_modified = true;
+            restart = true;
+        }
+    }
+    if (!restart) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X")) {
+            element->DeleteChild(child);
+            ctx->xml_modified = true;
+            restart = true;
+        }
+    }
+    ImGui::PopID();
+    return restart;
+}
+
+static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainContext* ctx) {
     if (!node) {
         ImGui::Text("No node selected");
         return;
     }
 
-    tinyxml2::XMLElement* element = node->ToElement();
+    XMLElement* element = node->ToElement();
     tinyxml2::XMLText* textNode = node->ToText();
     tinyxml2::XMLComment* commentNode = node->ToComment();
     tinyxml2::XMLDeclaration* declNode = node->ToDeclaration();
 
-    // Element names that may repeat
-    static const std::set<std::string> multipleElements = {
-        "Line", "Zone", "Combo", "Radio", "Segment", "SameLine", "Spacing", "Separator"
-    };
-
     if (element) {
+        const wtf::NodeDef* def = wtf::DefinitionOf(element);
+        XMLElement* parent = ParentElement(element);
+        const wtf::NodeDef* parentDef = parent ? wtf::DefinitionOf(parent) : nullptr;
+        const wtf::NodeDef* listOwner = ListOwner(element);
+        const wtf::PropDef* ownProp = (!def && parentDef) ? wtf::FindProp(parentDef, element->Name()) : nullptr;
+
+        // What this element is
+        if (def == &wtf::WindowDef()) ImGui::Text("Window");
+        else if (def && parent && ListOwner(parent) && ListOwner(parent)->itemTag)
+            ImGui::Text("Item <%s> of <%s>", element->Name(), ListOwner(parent)->tag);
+        else if (def) ImGui::Text("Widget <%s>", element->Name());
+        else if (listOwner) ImGui::Text("List of <%s>", listOwner->tag);
+        else if (ownProp) ImGui::Text("Property <%s> of <%s>", element->Name(), parentDef->tag);
+        else ImGui::TextColored(kWarningColor, "<%s> is not a known widget, list or property here", element->Name());
+        ImGui::Separator();
+
         // Element name
-        static char elemName[256];
+        char elemName[256];
         strncpy(elemName, element->Name(), sizeof(elemName) - 1);
         elemName[sizeof(elemName) - 1] = '\0';
-        if (ImGui::InputText("Tag name", elemName, sizeof(elemName))) {
-            element->SetName(elemName);
-            ctx->xml_modified = true;
-        }
-
-        // Attribute table
-        if (ImGui::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
-            std::vector<std::pair<std::string, std::string>> attrs;
-            for (const tinyxml2::XMLAttribute* attr = element->FirstAttribute(); attr; attr = attr->Next()) {
-                attrs.emplace_back(attr->Name(), attr->Value());
-            }
-
-            for (size_t i = 0; i < attrs.size(); ++i) {
-                ImGui::PushID((int)i);
-                char nameBuf[128], valueBuf[256];
-                strncpy(nameBuf, attrs[i].first.c_str(), sizeof(nameBuf) - 1);
-                nameBuf[sizeof(nameBuf) - 1] = '\0';
-                strncpy(valueBuf, attrs[i].second.c_str(), sizeof(valueBuf) - 1);
-                valueBuf[sizeof(valueBuf) - 1] = '\0';
-
-                if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    element->DeleteAttribute(attrs[i].first.c_str());
-                    element->SetAttribute(nameBuf, valueBuf);
-                    ctx->xml_modified = true;
-                }
-                ImGui::SameLine();
-                if (ImGui::InputText("##value", valueBuf, sizeof(valueBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    element->SetAttribute(attrs[i].first.c_str(), valueBuf);
-                    ctx->xml_modified = true;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("X")) {
-                    element->DeleteAttribute(attrs[i].first.c_str());
-                    ctx->xml_modified = true;
-                }
-                ImGui::PopID();
-            }
-
-            // New attribute
-            ImGui::InputTextWithHint("##newAttrName", "name", g_newAttrName, sizeof(g_newAttrName));
-            ImGui::SameLine();
-            ImGui::InputTextWithHint("##newAttrValue", "value", g_newAttrValue, sizeof(g_newAttrValue));
-            ImGui::SameLine();
-            if (ImGui::Button("Add")) {
-                if (g_newAttrName[0] && g_newAttrValue[0]) {
-                    element->SetAttribute(g_newAttrName, g_newAttrValue);
-                    g_newAttrName[0] = g_newAttrValue[0] = '\0';
-                    ctx->xml_modified = true;
-                }
+        if (ImGui::InputText("Tag name", elemName, sizeof(elemName), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            if (IsValidTagName(elemName)) {
+                element->SetName(elemName);
+                ctx->xml_modified = true;
             }
         }
 
-        // Text content of the element (first text node)
-        tinyxml2::XMLText* textChild = nullptr;
-        for (tinyxml2::XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
-            if (child->ToText()) {
-                textChild = child->ToText();
-                break;
+        if (ownProp && !HasChildElements(element) && !ownProp->attribute) {
+            // A single property: the same typed control as in its widget
+            ImGui::PushID(element);
+            ImGui::Text("Value:");
+            HelpTooltip(ownProp);
+            ImGui::SameLine(140.0f);
+            std::string value;
+            if (EditKnownValue(*ownProp, element->GetText(), value)) {
+                element->SetText(value.c_str());
+                ctx->xml_modified = true;
             }
+            ImGui::PopID();
         }
-        if (ImGui::CollapsingHeader("Text content", ImGuiTreeNodeFlags_DefaultOpen)) {
-            static char textBuf[1024];
-            if (textChild) {
-                strncpy(textBuf, textChild->Value(), sizeof(textBuf) - 1);
+
+        if (ShowAttributes(element, def, ctx)) return;
+
+        // Text content: for unknown elements, and for text already there (<Text>Hello</Text>
+        // is a valid Text widget); widgets otherwise keep their values in child elements.
+        XMLNode* first = element->FirstChild();
+        tinyxml2::XMLText* textChild = first ? first->ToText() : nullptr;
+        if (((!def && !listOwner && !ownProp) || textChild) && !HasChildElements(element)) {
+            if (ImGui::CollapsingHeader("Text content", ImGuiTreeNodeFlags_DefaultOpen)) {
+                char textBuf[1024];
+                strncpy(textBuf, textChild ? textChild->Value() : "", sizeof(textBuf) - 1);
                 textBuf[sizeof(textBuf) - 1] = '\0';
-                if (ImGui::InputTextMultiline("##text", textBuf, sizeof(textBuf))) {
-                    textChild->SetValue(textBuf);
-                    ctx->xml_modified = true;
-                }
-            }
-            else {
-                ImGui::Text("(no text)");
-                if (ImGui::Button("Add text")) {
-                    element->InsertEndChild(doc->NewText(""));
+                if (ImGui::InputTextMultiline("##text", textBuf, sizeof(textBuf), ImVec2(-1, 60))) {
+                    element->SetText(textBuf);
                     ctx->xml_modified = true;
                 }
             }
         }
 
-        // Child elements (elements only, no text nodes)
-        if (ImGui::CollapsingHeader("Child Elements", ImGuiTreeNodeFlags_DefaultOpen)) {
-            std::vector<tinyxml2::XMLElement*> children;
-            for (tinyxml2::XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
-                if (child->ToElement()) {
-                    children.push_back(child->ToElement());
-                }
+        // Child elements
+        if (HasChildElements(element) && ImGui::CollapsingHeader("Child Elements", ImGuiTreeNodeFlags_DefaultOpen)) {
+            std::vector<XMLElement*> children;
+            for (XMLElement* child = element->FirstChildElement(); child; child = child->NextSiblingElement()) {
+                children.push_back(child);
             }
-
-            if (children.empty()) {
-                ImGui::Text("No child elements.");
+            for (size_t i = 0; i < children.size(); ++i) {
+                if (ShowChildRow(element, def, children[i], i, children.size(), ctx)) return;
             }
-            else {
-                for (size_t i = 0; i < children.size(); ++i) {
-                    tinyxml2::XMLElement* childElem = children[i];
-                    const char* childName = childElem->Name();
-                    const char* childText = childElem->GetText(); // may be nullptr
+        }
 
-                    ImGui::PushID(childElem);
+        ImGui::Separator();
 
-                    // Tag name on the left
-                    ImGui::Text("%s:", childName);
-                    ImGui::SameLine();
-
-                    // Pick a control that fits the value
-                    ImVec4 color;
-                    bool boolVal;
-                    bool isFloat;
-                    bool isAddress = (strcmp(childName, "Address") == 0 ||
-                        strcmp(childName, "BaseAddress") == 0 ||
-                        strcmp(childName, "Line1Address") == 0 ||
-                        strcmp(childName, "Line2Address") == 0 ||
-                        strcmp(childName, "DoneAddr") == 0);
-
-                    if (childText && isAddress) {
-                        // Address, edited as hex
-                        unsigned int addr = 0;
-                        const char* text = childText;
-                        if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
-                            sscanf(text + 2, "%x", &addr);
-                        }
-                        else if (text[0] == '#') {
-                            sscanf(text + 1, "%x", &addr);
-                        }
-                        else {
-                            sscanf(text, "%x", &addr);
-                        }
-                        char hexBuf[32];
-                        snprintf(hexBuf, sizeof(hexBuf), "0x%08X", addr);
-                        if (ImGui::InputText("##value", hexBuf, sizeof(hexBuf))) {
-                            unsigned int newAddr;
-                            if (sscanf(hexBuf, "%x", &newAddr) == 1) {
-                                char out[16];
-                                snprintf(out, sizeof(out), "0x%08X", newAddr);
-                                childElem->SetText(out);
-                                ctx->xml_modified = true;
-                            }
-                        }
-                    }
-                    else if (childText && ParseColor(childText, color)) {
-                        // Color
-                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_NoInputs;
-                        if (ImGui::ColorEdit4("##value", (float*)&color, flags)) {
-                            bool hasAlpha = (color.w < 0.999f);
-                            std::string newText = FormatColor(color, hasAlpha);
-                            childElem->SetText(newText.c_str());
-                            ctx->xml_modified = true;
-                        }
-                    }
-                    else if (childText && IsBooleanString(childText, boolVal)) {
-                        bool current = boolVal;
-                        if (ImGui::Checkbox("##value", &current)) {
-                            childElem->SetText(current ? "true" : "false");
-                            ctx->xml_modified = true;
-                        }
-                    }
-                    else if (childText && IsNumberString(childText, isFloat)) {
-                        if (isFloat) {
-                            float f = (float)atof(childText);
-                            if (ImGui::InputFloat("##value", &f, 0.0f, 0.0f, "%.3f")) {
-                                char buf[64];
-                                snprintf(buf, sizeof(buf), "%g", f);
-                                childElem->SetText(buf);
-                                ctx->xml_modified = true;
-                            }
-                        }
-                        else {
-                            int i = atoi(childText);
-                            if (ImGui::InputInt("##value", &i)) {
-                                char buf[32];
-                                snprintf(buf, sizeof(buf), "%d", i);
-                                childElem->SetText(buf);
-                                ctx->xml_modified = true;
-                            }
-                        }
-                    }
-                    else {
-                        // Plain text
-                        static char textBuf[1024];
-                        strncpy(textBuf, childText ? childText : "", sizeof(textBuf) - 1);
-                        textBuf[sizeof(textBuf) - 1] = '\0';
-                        if (ImGui::InputText("##value", textBuf, sizeof(textBuf))) {
-                            childElem->SetText(textBuf);
-                            ctx->xml_modified = true;
-                        }
-                    }
-
-                    // Move up/down buttons
-                    ImGui::SameLine();
-                    if (i > 0) {
-                        if (ImGui::ArrowButton("##up", ImGuiDir_Up)) {
-                            tinyxml2::XMLNode* parent = childElem->Parent();
-                            tinyxml2::XMLNode* prev = childElem->PreviousSibling();
-                            tinyxml2::XMLNode* prevPrev = prev ? prev->PreviousSibling() : nullptr;
-                            if (prevPrev) {
-                                parent->InsertAfterChild(prevPrev, childElem);
-                            }
-                            else {
-                                parent->InsertFirstChild(childElem);
-                            }
-                            ctx->xml_modified = true;
-                            ImGui::PopID();
-                            return;
-                        }
-                        ImGui::SameLine();
-                    }
-                    if (i < children.size() - 1) {
-                        if (ImGui::ArrowButton("##down", ImGuiDir_Down)) {
-                            tinyxml2::XMLNode* parent = childElem->Parent();
-                            tinyxml2::XMLNode* next = childElem->NextSibling();
-                            if (next) {
-                                parent->InsertAfterChild(next, childElem);
-                            }
-                            ctx->xml_modified = true;
-                            ImGui::PopID();
-                            return;
-                        }
-                        ImGui::SameLine();
-                    }
-
-                    if (ImGui::Button("X")) {
-                        element->DeleteChild(childElem);
+        // Missing properties of a widget, window or list item
+        if (def) {
+            const std::vector<const wtf::PropDef*> missing = wtf::MissingProperties(element, *def);
+            if (!missing.empty()) {
+                if (ImGui::Button("Add property")) ImGui::OpenPopup("AddPropertyPopup");
+                ImGui::SameLine();
+            }
+            if (ImGui::BeginPopup("AddPropertyPopup")) {
+                for (const wtf::PropDef* prop : missing) {
+                    std::string label = std::string(prop->name) + (prop->inTemplate ? "" : "  (old format)");
+                    if (ImGui::Selectable(label.c_str())) {
+                        wtf::AddProperty(element, *prop);
                         ctx->xml_modified = true;
-                        ImGui::PopID();
-                        return;
                     }
-                    ImGui::PopID();
+                    HelpTooltip(prop);
                 }
+                ImGui::EndPopup();
             }
         }
 
-        // Node buttons
-        bool canHaveChildren = CanHaveChildren(element->Name());
-        if (canHaveChildren) {
-            if (ImGui::Button("Add child widget")) {
-                ImGui::OpenPopup("AddChildWidgetPopup");
+        // Lists: items of a widget, or child widgets of a container
+        const wtf::NodeDef* owner = def && def->listTag ? def : listOwner;
+        if (owner) {
+            XMLElement* ownerElement = (owner == def) ? element : parent;
+            if (owner->itemTag) {
+                std::string label = std::string("Add ") + owner->itemTag;
+                if (ImGui::Button(label.c_str())) {
+                    XMLElement* item = wtf::CreateItem(doc, *owner);
+                    if (item) {
+                        wtf::EnsureList(ownerElement, *owner)->InsertEndChild(item);
+                        ctx->xml_modified = true;
+                    }
+                }
+            }
+            else {
+                if (ImGui::Button("Add child widget")) {
+                    g_widgetFilter[0] = '\0';
+                    ImGui::OpenPopup("AddChildWidgetPopup");
+                }
+                if (const wtf::NodeDef* chosen = WidgetPicker("AddChildWidgetPopup")) {
+                    XMLElement* widget = wtf::CreateNode(doc, *chosen);
+                    wtf::EnsureList(ownerElement, *owner)->InsertEndChild(widget);
+                    g_selectedNode = widget;
+                    ctx->xml_modified = true;
+                    return;
+                }
             }
             ImGui::SameLine();
         }
 
         if (ImGui::Button("Add comment")) {
             tinyxml2::XMLComment* newComment = doc->NewComment("New comment");
-            tinyxml2::XMLElement* container = GetContainerForChildren(element, doc, nullptr);
+            XMLElement* container = (def && def->listTag) ? wtf::EnsureList(element, *def) : element;
             container->InsertEndChild(newComment);
             ctx->xml_modified = true;
         }
         ImGui::SameLine();
 
         if (ImGui::Button("Delete this node")) {
-            tinyxml2::XMLNode* parent = node->Parent();
-            if (parent)
-                parent->DeleteChild(node);
+            XMLNode* parentNode = node->Parent();
+            if (parentNode)
+                parentNode->DeleteChild(node);
             g_selectedNode = nullptr;
             ctx->xml_modified = true;
             return;
         }
-
-        // Popup to choose the child widget type
-        if (canHaveChildren && ImGui::BeginPopup("AddChildWidgetPopup")) {
-            ImGui::Text("Select child widget type:");
-            ImGui::Separator();
-
-            const char* parentType = element->Name();
-            const auto& childMap = WidgetTemplateFactory::GetChildCreators();
-            auto it = childMap.find(parentType);
-
-            // Names of the existing child elements
-            std::set<std::string> existingNames;
-            for (tinyxml2::XMLNode* child = element->FirstChild(); child; child = child->NextSibling()) {
-                if (child->ToElement()) {
-                    existingNames.insert(child->ToElement()->Name());
-                }
-            }
-
-            if (it != childMap.end()) {
-                bool anyAvailable = false;
-                for (const auto& pair : it->second) {
-                    bool isMultiple = (multipleElements.find(pair.first) != multipleElements.end());
-                    if (isMultiple || existingNames.find(pair.first) == existingNames.end()) {
-                        anyAvailable = true;
-                        if (ImGui::Selectable(pair.first.c_str())) {
-                            tinyxml2::XMLElement* newElem = pair.second(doc);
-                            if (newElem) {
-                                tinyxml2::XMLElement* container = GetContainerForChildren(element, doc, pair.first.c_str());
-                                container->InsertEndChild(newElem);
-                                ctx->xml_modified = true;
-                            }
-                            ImGui::CloseCurrentPopup();
-                        }
-                    }
-                }
-                if (!anyAvailable) {
-                    ImGui::Text("All available elements already added.");
-                }
-            }
-            else {
-                for (const auto& pair : WidgetTemplateFactory::GetRootCreators()) {
-                    bool isMultiple = (multipleElements.find(pair.first) != multipleElements.end());
-                    if (isMultiple || existingNames.find(pair.first) == existingNames.end()) {
-                        if (ImGui::Selectable(pair.first.c_str())) {
-                            tinyxml2::XMLElement* newElem = pair.second(doc);
-                            if (newElem) {
-                                tinyxml2::XMLElement* container = GetContainerForChildren(element, doc, pair.first.c_str());
-                                container->InsertEndChild(newElem);
-                                ctx->xml_modified = true;
-                            }
-                            ImGui::CloseCurrentPopup();
-                        }
-                    }
-                }
-            }
-            ImGui::EndPopup();
-        }
     }
     else if (textNode) {
         // Text node
-        static char textBuf[1024];
+        char textBuf[1024];
         strncpy(textBuf, textNode->Value(), sizeof(textBuf) - 1);
         textBuf[sizeof(textBuf) - 1] = '\0';
         if (ImGui::InputTextMultiline("Text", textBuf, sizeof(textBuf))) {
@@ -615,9 +697,9 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             ctx->xml_modified = true;
         }
         if (ImGui::Button("Delete this node")) {
-            tinyxml2::XMLNode* parent = node->Parent();
-            if (parent)
-                parent->DeleteChild(node);
+            XMLNode* parentNode = node->Parent();
+            if (parentNode)
+                parentNode->DeleteChild(node);
             g_selectedNode = nullptr;
             ctx->xml_modified = true;
             return;
@@ -626,7 +708,7 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
     else if (commentNode) {
         // Comment
         ImGui::Text("Comment");
-        static char commentBuf[1024];
+        char commentBuf[1024];
         strncpy(commentBuf, commentNode->Value(), sizeof(commentBuf) - 1);
         commentBuf[sizeof(commentBuf) - 1] = '\0';
         if (ImGui::InputTextMultiline("##comment", commentBuf, sizeof(commentBuf))) {
@@ -634,9 +716,9 @@ static void ShowNodeProperties(tinyxml2::XMLNode* node, tinyxml2::XMLDocument* d
             ctx->xml_modified = true;
         }
         if (ImGui::Button("Delete this comment")) {
-            tinyxml2::XMLNode* parent = node->Parent();
-            if (parent)
-                parent->DeleteChild(node);
+            XMLNode* parentNode = node->Parent();
+            if (parentNode)
+                parentNode->DeleteChild(node);
             g_selectedNode = nullptr;
             ctx->xml_modified = true;
             return;
@@ -665,15 +747,15 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         g_selectedNode = nullptr;   // node from an old document, drop the selection
     }
 
-    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(900, 600), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Widget Editor", p_open)) {
         ImGui::End();
         return;
     }
 
     // Left panel: XML tree
-    if (ImGui::BeginChild("Tree", ImVec2(300, -ImGui::GetFrameHeightWithSpacing() - 30), true)) {
-        tinyxml2::XMLNode* root = ctx->CurrentXMLDoc->FirstChild();
+    if (ImGui::BeginChild("Tree", ImVec2(300, -ImGui::GetFrameHeightWithSpacing() - 30), ImGuiChildFlags_Borders)) {
+        XMLNode* root = ctx->CurrentXMLDoc->FirstChild();
         while (root) {
             ShowXMLNode(root, 0);
             root = root->NextSibling();
@@ -684,24 +766,26 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
     ImGui::SameLine();
 
     // Right panel: properties
-    if (ImGui::BeginChild("Properties", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 30), true)) {
+    if (ImGui::BeginChild("Properties", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 30), ImGuiChildFlags_Borders)) {
         ShowNodeProperties(g_selectedNode, ctx->CurrentXMLDoc, ctx);
     }
     ImGui::EndChild();
 
     // Bottom toolbar
     if (ImGui::Button("Add Window", ImVec2(120, 0))) {
-        tinyxml2::XMLElement* newWindow = WidgetTemplateFactory::CreateNewWindow(ctx->CurrentXMLDoc);
-        if (newWindow) {
-            ctx->CurrentXMLDoc->InsertEndChild(newWindow);
-            ctx->xml_modified = true;
-        }
+        XMLElement* newWindow = wtf::CreateNewWindow(ctx->CurrentXMLDoc);
+        ctx->CurrentXMLDoc->InsertEndChild(newWindow);
+        g_selectedNode = newWindow;
+        ctx->xml_modified = true;
     }
     ImGui::SameLine();
 
     if (ImGui::Button("Add Widget", ImVec2(120, 0))) {
+        g_widgetFilter[0] = '\0';
         ImGui::OpenPopup("AddWidgetPopup");
     }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Into the selected container, after the selected widget, or into the first window");
     ImGui::SameLine();
 
     if (ImGui::Button("Save", ImVec2(120, 0))) {
@@ -716,46 +800,26 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         }
     }
 
-    // Popup to add a root widget (into the selected node or the window's Items)
-    if (ImGui::BeginPopup("AddWidgetPopup")) {
-        ImGui::Text("Select widget type:");
-        ImGui::Separator();
-
-        static const std::set<std::string> multipleElements = {
-            "Line", "Zone", "Combo", "Radio", "Segment", "SameLine", "Spacing", "Separator"
-        };
-
-        for (const auto& pair : WidgetTemplateFactory::GetRootCreators()) {
-            // Parent that receives the widget
-            tinyxml2::XMLElement* parent = FindInsertionParent(ctx->CurrentXMLDoc, pair.first.c_str());
-            if (parent) {
-                // Names of the existing child elements
-                std::set<std::string> existingNames;
-                for (tinyxml2::XMLNode* child = parent->FirstChild(); child; child = child->NextSibling()) {
-                    if (child->ToElement()) {
-                        existingNames.insert(child->ToElement()->Name());
-                    }
-                }
-
-                bool isMultiple = (multipleElements.find(pair.first) != multipleElements.end());
-                if (isMultiple || existingNames.find(pair.first) == existingNames.end()) {
-                    if (ImGui::Selectable(pair.first.c_str())) {
-                        tinyxml2::XMLElement* newElem = pair.second(ctx->CurrentXMLDoc);
-                        if (newElem) {
-                            // The right container inside the parent
-                            tinyxml2::XMLElement* container = GetContainerForChildren(parent, ctx->CurrentXMLDoc, pair.first.c_str());
-                            container->InsertEndChild(newElem);
-                            ctx->xml_modified = true;
-                        }
-                        ImGui::CloseCurrentPopup();
-                    }
-                }
-            }
+    if (const wtf::NodeDef* chosen = WidgetPicker("AddWidgetPopup")) {
+        XMLElement* selected = g_selectedNode ? g_selectedNode->ToElement() : nullptr;
+        if (!selected && g_selectedNode) selected = ParentElement(g_selectedNode);
+        XMLElement* widget = wtf::CreateNode(ctx->CurrentXMLDoc, *chosen);
+        if (wtf::InsertWidget(ctx->CurrentXMLDoc, selected, widget)) {
+            g_selectedNode = widget;
+            ctx->xml_modified = true;
         }
-        ImGui::EndPopup();
+        else {
+            ctx->CurrentXMLDoc->DeleteNode(widget);
+            ImGui::OpenPopup("No Window");
+        }
     }
 
     // Notification popups
+    if (ImGui::BeginPopupModal("No Window", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Add a window first.");
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
     if (ImGui::BeginPopupModal("Saved", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("File saved successfully.");
         if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();

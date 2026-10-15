@@ -16,7 +16,9 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
         float value = (float)ReadTypedValue(ctx, addr, FLOAT, littleEndian);
+        ImGui::PushID(this);
         if (ImGui::SliderFloat(label.c_str(), &value, minVal, maxVal, format.c_str(), 0))
             WriteTypedValue(ctx, addr, FLOAT, littleEndian, value);
+        ImGui::PopID();
     }
 };

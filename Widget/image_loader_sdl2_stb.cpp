@@ -25,7 +25,7 @@ extern "C" {
 
         // 4. Create the SDL texture
         SDL_Texture* texture = SDL_CreateTexture(renderer,
-            SDL_PIXELFORMAT_RGBA8888,
+            SDL_PIXELFORMAT_RGBA32,   // stb_image bytes R,G,B,A in memory order
             SDL_TEXTUREACCESS_STATIC,
             w, h);
 

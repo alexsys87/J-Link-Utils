@@ -8,8 +8,7 @@ public:
     FixedWidthWidget(float w) : width(w) {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         ImGui::PushItemWidth(width);
-        for (auto& child : children)
-            child->Draw(ctx, dynamicAddr);
+        DrawChildren(ctx, dynamicAddr);
         ImGui::PopItemWidth();
     }
 };

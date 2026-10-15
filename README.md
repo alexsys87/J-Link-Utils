@@ -22,6 +22,17 @@ Byte order: every widget that reads or writes numbers takes `<LittleEndian>`. It
 
 For faster signals use **DataLog**/**Histogram** with `DoneAddr`: the microcontroller fills an array at the rate it needs and sets the flag; the program reads the whole array and clears the flag only after the read has completed, so the array is never overwritten while it is being read. In this mode the sample rate is limited only by the microcontroller.
 
+## XML editor
+
+**Widget Editor** edits the open configuration as a tree. Select a window, widget or list item to see its properties:
+
+- Each property gets a control for its type: number fields, check boxes, color pickers, address fields (which accept `0x`, `#` and decimal and show the result), and drop-down lists for data types, modes and orientations. Hover a property name for a short description.
+- **Add property** lists the properties the element can have but does not have yet, with their default values. Elements the loader ignores for that widget are shown in orange.
+- **Add Widget** inserts a new widget into the selected container, after the selected widget, or at the end of the first window. **Add child widget**, **Add Line**, **Add Combo** and similar buttons fill containers and lists.
+- **Save** writes the file and reloads the windows.
+
+A missing property always falls back to a safe default, and out-of-range values (zero or negative sizes, reversed or empty ranges, `nan`, `inf`, unknown data types or modes) are corrected when the file is loaded, so a hand-written or partly edited file cannot crash the program.
+
 **Caution:** writing memory changes the state of real hardware. Check addresses and configurations; do not use untested XML files with hardware connected.
 
 ## Demo
@@ -38,11 +49,10 @@ Open `J-Link Utils.sln` in Visual Studio with the C++ and Windows SDK components
 
 **The repository is not yet self-contained for a full build.** Missing:
 
-- the Dear ImGui sources in `include/imgui` (including the SDL2 backend and the FreeType renderer);
 - the SDL2 and FreeType libraries and their dependencies listed in the `.vcxproj`, in `lib`;
 - the J-Link import library: `JLinkARM_x64.lib` for x64 or `JLinkARM.lib` for Win32, and the matching DLL to run.
 
-Third-party headers are in `include`: `SDL2`, `tinyxml2`, `ifqueue` (lfqueue), `JLinkSDK`, `implot` and single-file headers (`stb_image.h`, `gif_load.h`, `noc_file_dialog.h` and others). `include/freetype2` contains only the FreeType headers (`ft2build.h` and `freetype/`).
+Third-party code is in `include`: Dear ImGui with the SDL2 backends and the FreeType renderer (`imgui`), ImPlot (`implot`), `SDL2` headers, `tinyxml2`, `ifqueue` (lfqueue), `JLinkSDK` and single-file headers (`stb_image.h`, `gif_load.h`, `noc_file_dialog.h` and others). `include/freetype2` contains only the FreeType headers (`ft2build.h` and `freetype/`).
 
 The libraries must match the architecture, the Debug/Release configuration and the static CRT (`/MTd` or `/MT`). Distribute the J-Link SDK according to the SEGGER license. A full Windows build and operation with a physical J-Link are **not verified**.
 
@@ -53,8 +63,9 @@ On Linux with Python 3, GCC/G++ and the standard tools:
 ```sh
 sh tests/run_transport_tests.sh
 python3 tests/ui_regression/run.py
+python3 tests/widget_smoke/run.py
 ```
 
-The tests compile the exchange code against simulated SDL and J-Link, use the real tinyxml2/lfqueue, and check individual widgets without a graphics window. They cover connection errors, memory bounds, block merging and polling, write-through, short reads and writes, plot sampling, the `DoneAddr` handshake, XML safety and formatting, with AddressSanitizer, UndefinedBehaviorSanitizer and leak checking enabled. These are regression checks, **not** a build of the full application and **not** a hardware test.
+The tests compile the exchange code against simulated SDL and J-Link, use the real tinyxml2/lfqueue, and check individual widgets without a graphics window. They cover connection errors, memory bounds, block merging and polling, write-through, short reads and writes, plot sampling, the `DoneAddr` handshake, XML safety and formatting, with AddressSanitizer, UndefinedBehaviorSanitizer and leak checking enabled. The widget smoke test builds the real Dear ImGui and ImPlot and draws every widget loaded with no properties, with the editor's defaults and with hostile values in every property, inside every container, plus `examples/demo.xml`; it also draws the editor panel for every element and checks that the editor offers exactly the properties the loader reads. Any ImGui assertion fails it. These are regression checks, **not** a build of the full application and **not** a hardware test.
 
-GitHub Actions runs both test suites on every push and pull request; **Regression tests** can also be started manually.
+GitHub Actions runs all three test suites on every push and pull request; **Regression tests** can also be started manually.

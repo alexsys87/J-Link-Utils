@@ -52,6 +52,13 @@ private:
         ImDrawList* draw = window->DrawList;
         ImVec2 center = ImVec2(pos.x + radius, pos.y + radius);
 
+        // Position of a value on the scale, 0..1
+        const float range = (std::isfinite(max_val - min_val) && max_val != min_val) ? max_val - min_val : 1.0f;
+        auto scale_t = [&](float v) {
+            const float t = (v - min_val) / range;
+            return std::isfinite(t) ? ImClamp(t, 0.0f, 1.0f) : 0.0f;
+        };
+
         // Style colors with small adjustments
         ImU32 col_bg_dark = ImGui::GetColorU32(ImGuiCol_FrameBg);          // dark background
         ImU32 col_bg_light = ImGui::ColorConvertFloat4ToU32(ImVec4(
@@ -91,8 +98,8 @@ private:
 
         // --- Colored zones (arcs) with a slight glow ---
         auto draw_arc_zone = [&](float val_start, float val_end, ImU32 color, float thickness_scale = 1.0f) {
-            float a_start = DegToRad(start_angle + (val_start / max_val) * angle_range);
-            float a_end = DegToRad(start_angle + (val_end / max_val) * angle_range);
+            float a_start = DegToRad(start_angle + scale_t(val_start) * angle_range);
+            float a_end = DegToRad(start_angle + scale_t(val_end) * angle_range);
             // Main arc
             draw->PathArcTo(center, radius * 0.88f, a_start, a_end, 32);
             draw->PathStroke(color, 0, radius * 0.08f * thickness_scale);
@@ -104,15 +111,15 @@ private:
             draw->PathStroke(glow, 0, radius * 0.02f);
             };
 
-        // The zones are fixed for the 0-200 range; they could be made configurable
-        draw_arc_zone(0, 120, IM_COL32(100, 200, 80, 200), 1.2f);   // green, thicker
-        draw_arc_zone(120, 150, IM_COL32(230, 220, 50, 200));
-        draw_arc_zone(150, 200, IM_COL32(230, 70, 70, 200));
+        // Zones at 60% and 75% of the scale
+        draw_arc_zone(min_val, min_val + range * 0.60f, IM_COL32(100, 200, 80, 200), 1.2f);   // green, thicker
+        draw_arc_zone(min_val + range * 0.60f, min_val + range * 0.75f, IM_COL32(230, 220, 50, 200));
+        draw_arc_zone(min_val + range * 0.75f, min_val + range, IM_COL32(230, 70, 70, 200));
 
         // --- Ticks and numbers with a 3D effect ---
         for (int i = 0; i <= 10; i++) {
-            float val = i * 20.0f;
-            float angle = DegToRad(start_angle + (val / max_val) * angle_range);
+            float val = min_val + range * (i / 10.0f);
+            float angle = DegToRad(start_angle + (i / 10.0f) * angle_range);
             ImVec2 dir(cosf(angle), sinf(angle));
 
             // Main (thick) tick
@@ -126,7 +133,8 @@ private:
 
             // Numbers
             char buf[16];
-            snprintf(buf, 16, "%d", (int)val);
+            // Decimals only for small ranges (e.g. 0..1)
+            snprintf(buf, 16, range >= 10.0f ? "%.0f" : (range >= 1.0f ? "%.1f" : "%.2f"), val);
             ImVec2 text_size = ImGui::CalcTextSize(buf);
             ImVec2 text_pos = ImVec2(center.x + dir.x * radius * 0.62f - text_size.x * 0.5f,
                 center.y + dir.y * radius * 0.62f - text_size.y * 0.5f);
@@ -165,8 +173,7 @@ private:
             col_text, val_buf);
 
         // --- Needle with a shadow and a gradient ---
-        float clamped_val = ImClamp(value, min_val, max_val);
-        float arrow_angle = DegToRad(start_angle + (clamped_val / max_val) * angle_range);
+        float arrow_angle = DegToRad(start_angle + scale_t(value) * angle_range);
         ImVec2 arrow_dir(cosf(arrow_angle), sinf(arrow_angle));
 
         // Needle shadow
