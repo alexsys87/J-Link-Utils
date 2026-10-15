@@ -102,6 +102,104 @@ Vendored SDL2 and FreeType headers in `include` remain untouched for the Linux
 regression tests; Dear ImGui, ImPlot, tinyxml2, lfqueue and single-file code
 are still compiled from the repository, not replaced with vcpkg copies.
 
+### Сборка в Visual Studio 2026
+
+В **Visual Studio Installer → Изменить** установите **Разработка классических
+приложений на C++**, инструменты MSVC для x64/x86 (набор инструментов `v145`)
+и Windows 10 или Windows 11 SDK. Также нужны Git, PowerShell **7.2+** и CMake
+с поддержкой генератора **Visual Studio 18 2026**. Проверить доступные генераторы
+можно командой `cmake --help`.
+
+Если PowerShell 7 или CMake ещё не установлены:
+
+```powershell
+winget install --id Microsoft.PowerShell --exact
+winget install --id Kitware.CMake --exact
+```
+
+После установки закройте и заново откройте терминал (при необходимости весь
+Windows Terminal или Visual Studio), чтобы обновился `PATH`. Проверьте инструменты:
+
+```powershell
+pwsh --version
+git --version
+cmake --version
+ctest --version
+tar --version
+```
+
+Если CMake установлен, но команда по-прежнему не найдена, добавьте его стандартный
+каталог в `PATH` **текущего сеанса** и повторите проверку:
+
+```powershell
+$env:PATH += ";C:\Program Files\CMake\bin"
+Get-Command cmake, ctest
+```
+
+Перейдите в каталог проекта (замените путь своим):
+
+```powershell
+cd F:\J-Link-Utils
+```
+
+Если ранее уже запускалась настройка для VS 2022, перед сменой генератора удалите
+только каталоги настройки и проверочных сборок. Исходники, скачанные архивы
+и установленные зависимости эта команда не удаляет:
+
+```powershell
+Remove-Item -Recurse -Force `
+    .dependencies\tool-build, `
+    .dependencies\probe-x64, `
+    .dependencies\probe-x86 `
+    -ErrorAction SilentlyContinue
+```
+
+**Сборка только зависимостей** (для каждой архитектуры сразу Debug и Release;
+J-Link не требуется):
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File scripts/Build-WindowsDependencies.ps1 -Architecture x64 -Generator "Visual Studio 18 2026"
+pwsh -ExecutionPolicy Bypass -File scripts/Build-WindowsDependencies.ps1 -Architecture x86 -Generator "Visual Studio 18 2026"
+```
+
+**Полная сборка EXE, Release** (зависимости также собираются автоматически,
+поэтому отдельный запуск предыдущих команд не обязателен):
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File scripts/Build-WindowsApp.ps1 -Architecture x64 -Generator "Visual Studio 18 2026" -PlatformToolset v145
+pwsh -ExecutionPolicy Bypass -File scripts/Build-WindowsApp.ps1 -Architecture x86 -Generator "Visual Studio 18 2026" -PlatformToolset v145
+```
+
+EXE: `out/app/x64/Release/J-Link Utils.exe` или
+`out/app/x86/Release/J-Link Utils.exe`. Пакеты с ресурсами:
+`out/package/J-Link-Utils-x64-Release/` и
+`out/package/J-Link-Utils-x86-Release/`. Для запуска нужна соответствующая DLL
+SEGGER рядом с EXE: `JLink_x64.dll` для x64 или `JLinkARM.dll` для x86.
+
+Типичные ошибки:
+
+- **`pwsh` не распознано** — установите PowerShell 7 и перезапустите терминал.
+  Встроенный Windows PowerShell (`powershell.exe`, обычно 5.1) не подходит:
+  скрипты требуют PowerShell 7.2+.
+- **Выполнение сценариев отключено** — приведённые команды используют
+  `-ExecutionPolicy Bypass` только для запускаемого процесса; постоянная политика
+  системы не меняется. Используйте это только для доверенных скриптов.
+  Ограничения, заданные администратором через групповую политику, этот параметр
+  не отменяет.
+- **`cmake` или `ctest` не распознано** — перезапустите терминал после установки
+  CMake либо добавьте каталог `bin` в `PATH`, как показано выше.
+- **`Visual Studio 17 2022 could not find any instance of Visual Studio`** —
+  передайте `-Generator "Visual Studio 18 2026"` явно. Скрипты по умолчанию
+  передают `-G "Visual Studio 17 2022"`, поэтому одной переменной
+  `$env:CMAKE_GENERATOR` недостаточно. При смене генератора очистите каталоги
+  настройки указанной выше командой.
+
+**Ограничение проверки:** автоматические Windows-сборки проверены на VS 2022,
+не на VS 2026. Передача генератора устраняет выбор VS 2022, но не гарантирует
+совместимость всей цепочки сборки с VS 2026. В проекте закреплена старая версия
+vcpkg; если далее именно vcpkg не обнаружит MSVC/VS 2026, потребуется отдельное
+согласованное обновление закреплённой версии и проверка зависимостей.
+
 ## Checks without hardware
 
 On Linux with Python 3, GCC/G++ and the standard tools:
