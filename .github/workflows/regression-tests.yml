@@ -31,6 +31,12 @@ jobs:
         run: python3 tests/ui_regression/run.py
       - name: Check searchable User Guide with real ImGui
         run: python3 tests/user_guide/run.py
+      - name: Check atomic INI persistence and validation
+        run: sh tests/settings/run.sh
+      - name: Check restored window geometry
+        run: python3 tests/settings_window/run.py
+      - name: Check editor and widget preferences
+        run: python3 tests/preferences_widgets/run.py
   widgets:
     name: Every widget with real ImGui (ASan and UBSan)
     runs-on: ubuntu-latest

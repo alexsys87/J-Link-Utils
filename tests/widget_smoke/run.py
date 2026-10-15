@@ -125,7 +125,8 @@ def main():
                    ROOT / 'include/imgui/imgui.cpp', ROOT / 'include/imgui/imgui_draw.cpp',
                    ROOT / 'include/imgui/imgui_tables.cpp', ROOT / 'include/imgui/imgui_widgets.cpp',
                    ROOT / 'include/implot/implot.cpp', ROOT / 'include/implot/implot_items.cpp']
-        # Compile in parallel, link once
+        # Bound compiler concurrency: sanitizer builds can otherwise exhaust RAM.
+        max_jobs = max(1, int(os.environ.get('WIDGET_SMOKE_JOBS', '2')))
         objects, jobs = [], []
         for source in sources:
             obj = build / (source.stem + '.o')
@@ -134,6 +135,8 @@ def main():
                 continue
             jobs.append(subprocess.Popen([compiler, *flags, *includes, *(['-w'] if 'include' in source.parts else ['-Wall', '-Wno-format-truncation']),
                                           '-c', str(source), '-o', str(obj)]))
+            if len(jobs) >= max_jobs and jobs.pop(0).wait():
+                raise SystemExit('compilation failed')
         if any(job.wait() for job in jobs):
             raise SystemExit('compilation failed')
         binary = build / 'widget_smoke'

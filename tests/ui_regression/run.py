@@ -30,6 +30,7 @@ def function(source, signature):
 with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     build = Path(directory)
     shutil.copyfile(HERE / 'ui_stubs.h', build / 'ui_stubs.h')
+    shutil.copyfile(SRC / 'Preferences.h', build / 'Preferences.h')
     shutil.copyfile(SRC / 'Widget/ScalarFormat.h', build / 'ScalarFormat.h')
     shutil.copyfile(SRC / 'Widget/MemoryBounds.h', build / 'MemoryBounds.h')
     shutil.copyfile(SRC / 'Editor/XMLSafety.h', build / 'XMLSafety.h')

@@ -2,6 +2,7 @@
 #pragma once
 #include "widget_common.h"
 #include <cstdint>
+#include <string>
 
 // Additional data types
 #define S64_DEC  9
@@ -22,6 +23,8 @@ private:
         bool bitMode;
         bool littleEndian;
         bool hexMode; // show integers in hex
+        // Optional, backward-compatible XML attribute; never derived from a row index/value.
+        std::string preferenceId;
     };
 
     static std::vector<WatchRow> s_rows;
@@ -37,6 +40,9 @@ private:
     static void LoadFromXML(const char* path);
     static void SaveToXML(const char* path);
     static void DrawRowContextMenu();
+    static std::string RowPreferenceIdentity(const WatchRow& row);
+    static void LoadRowPreferences(WatchRow& row);
+    static void SaveRowPreferences(const WatchRow& row);
     static bool IsIntegerType(int dt);
     static int GetDataTypeBits(int dt);
 

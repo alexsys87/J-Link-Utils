@@ -14,6 +14,7 @@
 #include "XMLEditor.h"
 #include "XMLSafety.h"
 #include "WidgetTemplateFactory.h"
+#include "Preferences.h"
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -1160,13 +1161,16 @@ void Toolbar(MainContext* ctx) {
     if (ImGui::GetTime() - S.statusTime < 3.0) ImGui::TextUnformatted(S.status.c_str());
     else if (ctx->xml_modified) ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "unsaved");
 
-    ImGui::Checkbox("Snap to grid", &S.snap);
+    if (ImGui::Checkbox("Snap to grid", &S.snap)) prefs::WriteBool("Design.Snap", S.snap);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hold Alt while dragging to place freely");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(90.0f);
-    if (ImGui::InputInt("##grid", &S.grid)) S.grid = std::clamp(S.grid, 1, 200);
+    if (ImGui::InputInt("##grid", &S.grid)) {
+        S.grid = std::clamp(S.grid, 1, 200);
+        prefs::WriteInt("Design.Grid", S.grid);
+    }
     ImGui::SameLine();
-    ImGui::Checkbox("Outlines", &S.outlines);
+    if (ImGui::Checkbox("Outlines", &S.outlines)) prefs::WriteBool("Design.Outlines", S.outlines);
 }
 
 void WidgetPanel(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
@@ -1293,6 +1297,13 @@ void Reset() {
 }
 
 void BeginFrame(bool active) {
+    static bool preferencesLoaded = false;
+    if (!preferencesLoaded) {
+        S.snap = prefs::ReadBool("Design.Snap", true);
+        S.grid = prefs::ReadInt("Design.Grid", 8, 1, 200);
+        S.outlines = prefs::ReadBool("Design.Outlines", true);
+        preferencesLoaded = true;
+    }
     S.active = active;
     S.depth = 0;
     S.blocked = 0;

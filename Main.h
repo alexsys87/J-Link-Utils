@@ -3,6 +3,7 @@
 
 #define main SDL_main
 #include <atomic>
+#include <string>
 #include "WriteProtectionRules.h"
 #include "JLinkConnection.h"
 #include <SDL.h>
@@ -121,6 +122,9 @@ typedef struct MainContext {
     lfqueue_t tx_Queue;                   // writes for the communication thread (reads are polled)
     // Window
     int Win_width, Win_height;
+    int Win_x = 0, Win_y = 0;             // normal (restored) window geometry
+    bool Win_position_saved = false;
+    bool Win_maximized = false;
     int FontSize;
     int Style;
     char File_path[MAX_PATH];
@@ -161,6 +165,8 @@ int Draw_Window(MainContext* ctx);
 
 void LoadIniSettings(void* arg);
 void SaveIniSettings(void* arg);
+std::string getDirectoryWithCurrentExecutable();
+void SaveDashboardWindowVisibility();
 
 extern "C" {
     void ClearAllWindows(void);

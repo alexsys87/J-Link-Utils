@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdio>
 #include <float.h>
+#include "Preferences.h"
 
 // Ring buffer for the scrolling history (real-time plot)
 struct ScrollingData {
@@ -87,6 +88,7 @@ class PlotLinesWidget : public UIWidget {
 
     std::vector<DataSample> m_samples;             // scratch buffer for DataReadSamples
     double m_timeOrigin = -1.0;                    // DataTimeNow() at the first draw
+    std::string m_preferenceKey;
 
     static int SampleSize(int dataType) {
         return typed_value::Size(dataType);
@@ -117,6 +119,18 @@ class PlotLinesWidget : public UIWidget {
     }
 
 public:
+    // Assigned by the XML loader, which knows the document and ancestor identity.
+    // An unscoped standalone plot deliberately does not share global settings.
+    void SetPreferenceKey(const std::string& key) {
+        m_preferenceKey = key;
+        if (key.empty()) return;
+        freq = (float)prefs::ReadDouble(key + ".Frequency", freq, 0.1, kMaxFreq);
+        state.timeWindow = (float)prefs::ReadDouble(key + ".TimeWindow", state.timeWindow, 0.1, 100.0);
+        state.pause_check = prefs::ReadBool(key + ".Realtime", true);
+        state.paused = !state.pause_check;
+        ResizeHistory();
+    }
+
     // Constructor for one line (old single-line format)
     PlotLinesWidget(
         const char* txt, const char* fmt, float minV, float maxV,
@@ -198,21 +212,27 @@ public:
         // Options panel
         if (ImGui::CollapsingHeader("Options")) {
             ImGui::PushItemWidth(80);
-            ImGui::Checkbox("Real Time Update", &state.pause_check);
+            if (ImGui::Checkbox("Real Time Update", &state.pause_check) && !m_preferenceKey.empty())
+                prefs::WriteBool(m_preferenceKey + ".Realtime", state.pause_check);
             ImGui::SameLine();
             // Sampling frequency
             float minFreq = 0.1f, maxFreq = kMaxFreq;
             ImGui::SetNextItemWidth(100);
             if (ImGui::InputFloat("Freq (Hz)", &freq, 0.1f, 1.0f, "%.1f")) {
+                if (!std::isfinite(freq)) freq = 1.0f;
                 if (freq < minFreq) freq = minFreq;
                 if (freq > maxFreq) freq = maxFreq;
                 ResizeHistory();
+                if (!m_preferenceKey.empty()) prefs::WriteDouble(m_preferenceKey + ".Frequency", freq);
             }
             ImGui::SameLine();
             // Width of the time window
             ImGui::SetNextItemWidth(500);
-            if (ImGui::DragFloat("Time Window (s)", &state.timeWindow, 0.1f, 0.1f, 100.0f, "%.1f"))
+            if (ImGui::DragFloat("Time Window (s)", &state.timeWindow, 0.1f, 0.1f, 100.0f, "%.1f")) {
+                state.timeWindow = std::isfinite(state.timeWindow) ? std::clamp(state.timeWindow, 0.1f, 100.0f) : 10.0f;
                 ResizeHistory();
+                if (!m_preferenceKey.empty()) prefs::WriteDouble(m_preferenceKey + ".TimeWindow", state.timeWindow);
+            }
             ImGui::PopItemWidth();
         }
 

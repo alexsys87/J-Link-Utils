@@ -10,6 +10,8 @@
 #include <time.h>
 #include <new>
 #include <chrono>
+#include <algorithm>
+#include <filesystem>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -40,8 +42,48 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #include "res/app_icon.h"
 #include "MainWindowChrome.h"
 #include "UserGuide.h"
+#include "Preferences.h"
 
 static MainWindowChrome g_MainWindowChrome;
+
+static std::string ApplicationFile(const char* name)
+{
+    return (std::filesystem::u8path(getDirectoryWithCurrentExecutable()) / name).u8string();
+}
+
+// Only capture restored geometry. Minimize/maximize must not replace the normal
+// rectangle that will be used on the next startup or when restoring the window.
+static void CaptureMainWindowSettings(MainContext* ctx)
+{
+    if (!ctx->Wimdow) return;
+    const Uint32 flags = SDL_GetWindowFlags(ctx->Wimdow);
+    if (flags & SDL_WINDOW_MINIMIZED) return;
+    ctx->Win_maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+    if (!ctx->Win_maximized) {
+        SDL_GetWindowPosition(ctx->Wimdow, &ctx->Win_x, &ctx->Win_y);
+        SDL_GetWindowSize(ctx->Wimdow, &ctx->Win_width, &ctx->Win_height);
+        ctx->Win_position_saved = true;
+    }
+}
+
+static void FitMainWindowToDisplay(MainContext* ctx)
+{
+    SDL_Rect bounds{};
+    int displayIndex = 0;
+    if (ctx->Win_position_saved) {
+        SDL_Rect saved{ctx->Win_x, ctx->Win_y, ctx->Win_width, ctx->Win_height};
+        displayIndex = SDL_GetRectDisplayIndex(&saved);
+        if (displayIndex < 0) displayIndex = 0;
+    }
+    if (SDL_GetDisplayUsableBounds(displayIndex, &bounds) != 0) return;
+    ctx->Win_width = std::min(ctx->Win_width, std::max(bounds.w, 1));
+    ctx->Win_height = std::min(ctx->Win_height, std::max(bounds.h, 1));
+    if (ctx->Win_position_saved) {
+        // A monitor may have been disconnected since the last run.
+        ctx->Win_x = std::clamp(ctx->Win_x, bounds.x, bounds.x + std::max(0, bounds.w - ctx->Win_width));
+        ctx->Win_y = std::clamp(ctx->Win_y, bounds.y, bounds.y + std::max(0, bounds.h - ctx->Win_height));
+    }
+}
 
 #ifdef _WIN32
 // The supplied JLink.lib/JLink_x64.lib expose a cdecl, explicit DLL loader.
@@ -391,9 +433,13 @@ void LoadFonts(MainContext* ctx) {
     }
 
     int fontIndex = ctx->FontSize;
-    if (fontIndex >= 0 && fontIndex < io.Fonts->Fonts.Size) {
-        io.FontDefault = io.Fonts->Fonts[fontIndex];
+    if (fontIndex < 0 || fontIndex >= io.Fonts->Fonts.Size) {
+        // The installed font list may differ from the machine that saved INI.
+        fontIndex = std::min(2, io.Fonts->Fonts.Size - 1);
+        ctx->FontSize = fontIndex;
+        prefs::WriteInt("WINDOW.FontSize", fontIndex);
     }
+    io.FontDefault = io.Fonts->Fonts[fontIndex];
 }
 
 // ------------------------------------------------------------------
@@ -644,7 +690,7 @@ void ShowStyleEditor(bool* p_open)
             }
             if (ImGui::MenuItem("Save as Custom"))
             {
-                if (!SaveStyleToXML("custom.style.xml", ImGui::GetStyle()))
+                if (!SaveStyleToXML(ApplicationFile("custom.style.xml").c_str(), ImGui::GetStyle()))
                     ImGui::OpenPopup("Error##SaveStyle");
             }
             ImGui::Separator();
@@ -766,12 +812,16 @@ void ShowMenuWindow(MainContext* ctx)
     // Use the global window list
     for (size_t i = 0; i < g_Windows.size(); i++)
     {
-        ImGui::MenuItem(g_Windows[i].name.c_str(), "", &g_Windows[i].show);
+        if (ImGui::MenuItem(g_Windows[i].name.c_str(), "", &g_Windows[i].show))
+            SaveDashboardWindowVisibility();
     }
 
     ImGui::Separator();
 
-    if (ImGui::MenuItem("Top Most", "", &ctx->TopMost)) { SaveIniSettings(ctx); }
+    if (ImGui::MenuItem("Top Most", "", &ctx->TopMost)) {
+        SDL_SetWindowAlwaysOnTop(ctx->Wimdow, ctx->TopMost ? SDL_TRUE : SDL_FALSE);
+        SaveIniSettings(ctx);
+    }
 
     int font = FontSelector("Fonts##Selector");
     if (font != -1)
@@ -816,7 +866,7 @@ void ShowMenuWindow(MainContext* ctx)
         case 23: // Custom style
         {
             ImGuiStyle& style = ImGui::GetStyle();
-            if (!LoadStyleFromXML("custom.style.xml", style))
+            if (!LoadStyleFromXML(ApplicationFile("custom.style.xml").c_str(), style))
             {
                 // if the file is missing, nothing changes
             }
@@ -1268,6 +1318,15 @@ static void MenuWindow(MainContext* ctx)
 
         ShowWriteUnlockDialog(ctx);
 
+        if (!prefs::Error().empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.25f, 1.0f), "Settings could not be saved or loaded");
+            ImGui::TextWrapped("%s", prefs::Error().c_str());
+            if (ImGui::Button("Retry saving settings")) {
+                SaveIniSettings(ctx);
+                prefs::Flush();
+            }
+        }
+
         if (g_Windows.empty()) {
             ImGui::TextDisabled("%s", ctx->File_path[0] != '\0'
                 ? "No windows loaded. Check the XML file."
@@ -1376,6 +1435,8 @@ int main(int argc, char* argv[])
     if (!ctx) return 1;
 
     LoadIniSettings(ctx);
+    const bool restoreDesignMode = ctx->design_mode;
+    ctx->design_mode = false; // SetEnabled must initialize editor state normally.
 
     // Was an XML path passed on the command line?
     if (argc >= 2 && argv[1] && argv[1][0] != '\0') {
@@ -1404,17 +1465,15 @@ int main(int argc, char* argv[])
 
     // GetSystemMetrics would mix physical desktop pixels with logical UI sizes.
     // SDL display bounds use the same coordinate system as SDL_CreateWindow.
-    SDL_Rect usableBounds;
-    if (SDL_GetDisplayUsableBounds(0, &usableBounds) == 0) {
-        if (ctx->Win_width > usableBounds.w) ctx->Win_width = usableBounds.w;
-        if (ctx->Win_height > usableBounds.h) ctx->Win_height = usableBounds.h;
-    }
+    FitMainWindowToDisplay(ctx);
 
     if (ctx->TopMost)
         window_flag = SDL_WINDOW_ALWAYS_ON_TOP;
 
     ConfigureMainWindowChrome();
-    ctx->Wimdow = SDL_CreateWindow("J-Link Utils", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, ctx->Win_width, ctx->Win_height, SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | window_flag);
+    const int initialX = ctx->Win_position_saved ? ctx->Win_x : SDL_WINDOWPOS_CENTERED;
+    const int initialY = ctx->Win_position_saved ? ctx->Win_y : SDL_WINDOWPOS_CENTERED;
+    ctx->Wimdow = SDL_CreateWindow("J-Link Utils", initialX, initialY, ctx->Win_width, ctx->Win_height, SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | window_flag);
 
     if (ctx->Wimdow == NULL)
     {
@@ -1461,13 +1520,15 @@ int main(int argc, char* argv[])
         SDL_Log("Renderer Initialized successfully");
 
     SDL_SetWindowMinimumSize(ctx->Wimdow, 240, 120);
+    if (ctx->Win_maximized) SDL_MaximizeWindow(ctx->Wimdow);
 
     g_AppIconTexture = CreateAppIconTexture(ctx->Renderer);
 
     ImGui::CreateContext();
     ImPlot::CreateContext();
 
-    ImGui::GetIO().IniFilename = "window.ini";
+    static const std::string imguiIniPath = ApplicationFile("window.ini");
+    ImGui::GetIO().IniFilename = imguiIniPath.c_str();
 
     ImGui_ImplSDLRenderer2_Init(ctx->Renderer);
     ImGui_ImplSDL2_InitForSDLRenderer(ctx->Wimdow, ctx->Renderer);
@@ -1505,7 +1566,7 @@ int main(int argc, char* argv[])
     case 23: // Custom style
     {
         ImGuiStyle& style = ImGui::GetStyle();
-        LoadStyleFromXML("custom.style.xml", style);
+        LoadStyleFromXML(ApplicationFile("custom.style.xml").c_str(), style);
     }
     break;
     default: ImGui::StyleColorsNord(); break;
@@ -1514,9 +1575,12 @@ int main(int argc, char* argv[])
     if (SDL_SetWindowHitTest(ctx->Wimdow, MainWindowHitTest, &g_MainWindowChrome) != 0)
         SDL_Log("Native title-bar dragging/resizing is unavailable: %s", SDL_GetError());
 
+    DesignMode::SetEnabled(ctx, restoreDesignMode);
+
     // Frame rate limiting
     auto last_time = std::chrono::steady_clock::now();
     const double target_frame_time = 1.0 / 60.0;
+    auto lastSettingsSave = std::chrono::steady_clock::now();
 
     if (ctx->File_path[0] != 0)
     {
@@ -1581,6 +1645,13 @@ int main(int argc, char* argv[])
 
         }
 
+        CaptureMainWindowSettings(ctx);
+        const auto settingsNow = std::chrono::steady_clock::now();
+        if (settingsNow - lastSettingsSave >= std::chrono::seconds(1)) {
+            SaveIniSettings(ctx); // Store only touches disk when values changed.
+            prefs::Flush();
+            lastSettingsSave = settingsNow;
+        }
         if (ctx->IsClosing) break;
         const Uint32 flags = SDL_GetWindowFlags(ctx->Wimdow);
         ctx->StateMinimized = (flags & SDL_WINDOW_MINIMIZED) != 0;
@@ -1590,9 +1661,6 @@ int main(int argc, char* argv[])
             last_time = std::chrono::steady_clock::now();
             continue;
         }
-        // Preserve normal logical dimensions, not a maximized monitor's size.
-        if (!(flags & SDL_WINDOW_MAXIMIZED))
-            SDL_GetWindowSize(ctx->Wimdow, &ctx->Win_width, &ctx->Win_height);
         PrepareUiFrame(ctx->Renderer);
 
         Draw_Window(ctx);
@@ -1637,6 +1705,11 @@ int main(int argc, char* argv[])
     // Stop the communication thread before cleanup
     StopCommunication(ctx);
     SaveIniSettings(ctx);
+    prefs::Flush();
+    if (!prefs::Error().empty()) {
+        const std::string message = "Your latest settings could not be saved.\n\n" + prefs::Error();
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "J-Link Utils - settings error", message.c_str(), ctx->Wimdow);
+    }
 
     // Widgets own SDL textures: destroy them before their renderer and ImGui.
     ClearAllWindows();
