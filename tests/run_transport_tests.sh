@@ -8,7 +8,7 @@ cxx=${CXX:-c++}
 flags='-g -O1 -fno-omit-frame-pointer -fno-pie -fsanitize=address,undefined'
 "$cc" -std=gnu11 $flags -I"$root/include/ifqueue" \
     -c "$root/include/ifqueue/lfqueue.c" -o "$build/queue.o"
-"$cxx" -std=c++17 $flags -no-pie -pthread -Wall -Wextra \
+"$cxx" -std=c++17 $flags -no-pie -pthread -Wall -Wextra -DJLINK_RETRY_BASE_MS=10 \
     -I"$root/tests/transport_stubs" -I"$root/include" \
     -I"$root/include/ifqueue" \
     "$root/tests/transport_test.cpp" "$root/DataHelper.cpp" \

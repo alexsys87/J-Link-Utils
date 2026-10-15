@@ -39,6 +39,9 @@
     <ClInclude Include="Main.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="JLinkConnection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Widget\AlignTextWidget.h">
       <Filter>Source Files\Widget</Filter>
     </ClInclude>
