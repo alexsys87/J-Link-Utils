@@ -139,6 +139,56 @@ static void TestPlotHistory() {
     graph.Draw(&ctx,nullptr);
 }
 
+// Plot points come from timestamped samples, thinned out to the plot frequency.
+static void TestPlotSampling() {
+    MainContext ctx;
+    PlotLineConfig line;
+    line.address=0x20000010; line.dataType=S16_DEC; line.littleEndian=true;
+    line.color=IM_COL32(255,0,0,255);
+    PlotLinesWidget graph("test",0,0,100,100,100,8,0,false,0,{line});
+    timeNow=10.0;
+    graph.Draw(&ctx,nullptr);
+    for(int i=0;i<1000;++i) {            // one second at 1 kHz
+        DataSample s{};
+        s.time=10.0+i*0.001;
+        const int16_t v=static_cast<int16_t>(-i);
+        std::memcpy(s.bytes,&v,sizeof(v));
+        pendingSamples.push_back(s);
+    }
+    timeNow=11.0;
+    graph.Draw(&ctx,nullptr);
+    assert(lastAddress==0x20000010);
+    assert(ImPlot::lines.size()>=99 && ImPlot::lines.size()<=101);
+    assert(ImPlot::lines.front().x==0.0f && ImPlot::lines.front().y==0.0f);
+    for(std::size_t i=1;i<ImPlot::lines.size();++i) {
+        assert(ImPlot::lines[i].x-ImPlot::lines[i-1].x>0.0099f);
+        assert(ImPlot::lines[i].y<ImPlot::lines[i-1].y);
+    }
+    // IM_COL32 keeps red in the low byte: a red line must stay red.
+    assert(ImPlot::lineColor.x==1.0f && ImPlot::lineColor.z==0.0f);
+}
+
+// DoneAddr: the flag is cleared only after a complete read of the arrays.
+static void TestCaptureHandshake() {
+    MainContext ctx;
+    DataLogWidget::LineConfig logLine;
+    logLine.baseAddr=0x100; logLine.dataType=U08_DEC;
+    DataLogWidget log("log","%n",0,10,100,100,1,4,0,0x200,true,{logLine});
+    for(int i=0;i<4;++i) ctx.IOMAP_Data[0x100+i]=static_cast<uint8_t>(i+1);
+    rawValue=0; writes32=0; completedCycles=5;
+    log.Draw(&ctx,nullptr);                    // flag clear: nothing taken
+    assert(ImPlot::lines.size()==4 && ImPlot::lines[3].y==0.0f && writes32==0);
+    rawValue=1;
+    log.Draw(&ctx,nullptr);                    // flag seen: arrays requested
+    completedCycles=6;
+    log.Draw(&ctx,nullptr);                    // the cycle in progress may miss them
+    assert(ImPlot::lines[3].y==0.0f && writes32==0);
+    completedCycles=7;
+    log.Draw(&ctx,nullptr);
+    assert(ImPlot::lines[3].y==4.0f && writes32==1 && lastWrite32==0 && lastAddress==0x200);
+    rawValue=0;
+}
+
 static void TestGlossyDisplay() {
     MainContext ctx;
     struct Case {int type;uint64_t value;bool hex;const char* expected;};
@@ -204,7 +254,7 @@ static void TestMappedMemoryBounds() {
 
 int main() {
     TestFormats(); TestXML(); TestParsing(); TestTooltipBounds();
-    TestPlotHistory(); TestGlossyDisplay();
+    TestPlotHistory(); TestPlotSampling(); TestCaptureHandshake(); TestGlossyDisplay();
     TestMappedMemoryBounds();
     std::puts("UI regression tests passed");
 }

@@ -231,6 +231,9 @@
     <ClInclude Include="Widget\widget_common.h">
       <Filter>Исходные файлы\Widget</Filter>
     </ClInclude>
+    <ClInclude Include="Widget\CaptureHandshake.h">
+      <Filter>Исходные файлы\Widget</Filter>
+    </ClInclude>
     <ClInclude Include="Widget\GlossyButtonWidget.h">
       <Filter>Исходные файлы\Widget</Filter>
     </ClInclude>

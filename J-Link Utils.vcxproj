@@ -87,6 +87,7 @@
     <ClInclude Include="Widget\VUMeterWidget.h" />
     <ClInclude Include="Widget\WatchWidget.h" />
     <ClInclude Include="Widget\widget_common.h" />
+    <ClInclude Include="Widget\CaptureHandshake.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DataHelper.cpp" />

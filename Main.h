@@ -104,6 +104,12 @@ typedef struct {
     uint8_t* value;  // указатель на данные (для записи) или NULL для чтения
 } iodata_t;
 
+// One value captured by the communication thread for the plots.
+typedef struct {
+    double  time;      // seconds, same clock as DataTimeNow()
+    uint8_t bytes[8];  // raw target bytes in memory order
+} DataSample;
+
 typedef struct MainContext {
     SDL_Window* Wimdow;
     SDL_Renderer* Renderer;
