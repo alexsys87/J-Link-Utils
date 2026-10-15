@@ -52,9 +52,21 @@ if (-not (Test-Path $toolSource)) {
     catch { Remove-Item -Recurse -Force $toolSource; throw }
 }
 $toolBuild = Join-Path $state 'tool-build'
-Invoke-Native cmake @('-S', $toolSource, '-B', $toolBuild, '-G', $Generator, '-A', 'x64',
+$toolConfigureArguments = @('-S', $toolSource, '-B', $toolBuild, '-G', $Generator, '-A', 'x64',
     '-DBUILD_TESTING=OFF', '-DVCPKG_DEVELOPMENT_WARNINGS=OFF', '-DVCPKG_MSVC_ANALYZE=OFF',
     "-DVCPKG_BASE_VERSION=$($lock.toolVersion)", "-DVCPKG_VERSION=$($lock.toolCommit)")
+# The pinned vcpkg-tool embeds CMakeRC with a pre-3.5 policy baseline.
+# CMake 4 rejects that baseline. Apply the supported compatibility override only
+# to this bootstrap configure (including its FetchContent subdirectories), not
+# globally to vcpkg ports or the application. 3.10 also avoids CMake 4's warning
+# about policy compatibility older than 3.10. Keep the hash-pinned sources intact.
+$cmakeCapabilitiesJson = & cmake -E capabilities
+if ($LASTEXITCODE -ne 0) { throw "cmake -E capabilities failed with exit code $LASTEXITCODE" }
+$cmakeCapabilities = ($cmakeCapabilitiesJson -join "`n") | ConvertFrom-Json
+if ([int]$cmakeCapabilities.version.major -ge 4) {
+    $toolConfigureArguments += '-DCMAKE_POLICY_VERSION_MINIMUM=3.10'
+}
+Invoke-Native cmake $toolConfigureArguments
 Invoke-Native cmake @('--build', $toolBuild, '--config', 'Release', '--target', 'vcpkg', '--parallel')
 Copy-Item -Force "$toolBuild/Release/vcpkg.exe" "$vcpkg/vcpkg.exe"
 New-Item -ItemType File -Force "$vcpkg/vcpkg.disable_metrics" | Out-Null
