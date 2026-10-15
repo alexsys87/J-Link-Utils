@@ -60,13 +60,6 @@ private:
         };
 
         // Style colors with small adjustments
-        ImU32 col_bg_dark = ImGui::GetColorU32(ImGuiCol_FrameBg);          // dark background
-        ImU32 col_bg_light = ImGui::ColorConvertFloat4ToU32(ImVec4(
-            style.Colors[ImGuiCol_FrameBg].x * 1.2f,
-            style.Colors[ImGuiCol_FrameBg].y * 1.2f,
-            style.Colors[ImGuiCol_FrameBg].z * 1.2f,
-            style.Colors[ImGuiCol_FrameBg].w
-        ));
         ImU32 col_border = ImGui::GetColorU32(ImGuiCol_Border);
         ImU32 col_text = ImGui::GetColorU32(ImGuiCol_Text);
         ImU32 col_text_dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);

@@ -10,7 +10,7 @@ class TextFormattedFWidget : public LeafWidget {
     bool littleEndian;
 public:
     TextFormattedFWidget(const char* fmt, uint32_t addr, bool le, int hexColor = 0, bool useColor = false)
-        : format(fmt ? fmt : ""), address(addr), littleEndian(le), hasColor(useColor) {
+        : format(fmt ? fmt : ""), address(addr), hasColor(useColor), littleEndian(le) {
         if (hasColor) {
             ColorRGBA c = ColorConverter(hexColor);
             color = ImVec4(c.R, c.G, c.B, c.A);

@@ -38,7 +38,6 @@ public:
         uint32_t value = (uint32_t)ReadTypedValue(ctx, addr, ModeType(currentMode), littleEndian);
 
         uint32_t oldValue = value;
-        BitMode oldMode = currentMode;
 
         ImGui::PushID(addr);
         DrawBitControl(text.c_str(), &value, &currentMode, allowModeSwitch);

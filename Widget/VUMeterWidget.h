@@ -57,11 +57,8 @@ private:
         ImGui::ItemSize(bb);
         if (!ImGui::ItemAdd(bb, ImGui::GetID(label))) return;
 
-        bool disabled = (ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) != 0;
-
         ImU32 col_border = ImGui::GetColorU32(ImGuiCol_Border);
         ImU32 col_text = ImGui::GetColorU32(ImGuiCol_Text);
-        ImU32 col_text_dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
 
         // Shadow under the meter
         draw->AddRectFilled(ImVec2(pos.x + 2, pos.y + 2), ImVec2(pos.x + width + 2, pos.y + height + 2), IM_COL32(0, 0, 0, 60), style.FrameRounding);
@@ -72,11 +69,6 @@ private:
 
         float t = (value - min_val) / (max_val - min_val);
         t = ImClamp(t, 0.0f, 1.0f);
-
-        // Gradient colors
-        ImU32 col_start = IM_COL32(100, 255, 100, 255); // green
-        ImU32 col_mid = IM_COL32(255, 255, 100, 255);  // yellow
-        ImU32 col_end = IM_COL32(255, 100, 100, 255);  // red
 
         // Filled part, colored according to t
         if (t > 0.0f) {
