@@ -489,6 +489,24 @@ void ShowMenuFile(MainContext* ctx) {
 // ------------------------------------------------------------------
 // Helpers to save/load the style as XML
 // ------------------------------------------------------------------
+// tinyxml2's filename overload uses the Windows ANSI code page, whereas
+// ApplicationFile returns UTF-8. Open explicitly so non-ASCII EXE folders work.
+static FILE* OpenStyleFile(const char* filename, const char* mode)
+{
+    try {
+#ifdef _WIN32
+        const auto path = std::filesystem::u8path(filename).native();
+        const std::wstring wideMode(mode, mode + strlen(mode));
+        FILE* file = nullptr;
+        return _wfopen_s(&file, path.c_str(), wideMode.c_str()) == 0 ? file : nullptr;
+#else
+        return fopen(filename, mode);
+#endif
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+}
+
 bool SaveStyleToXML(const char* filename, const ImGuiStyle& style)
 {
     tinyxml2::XMLDocument doc;
@@ -554,13 +572,21 @@ bool SaveStyleToXML(const char* filename, const ImGuiStyle& style)
         colorsElem->InsertEndChild(colorElem);
     }
 
-    return doc.SaveFile(filename) == tinyxml2::XML_SUCCESS;
+    FILE* file = OpenStyleFile(filename, "wb");
+    if (!file) return false;
+    const bool saved = doc.SaveFile(file) == tinyxml2::XML_SUCCESS;
+    const bool closed = fclose(file) == 0;
+    return saved && closed;
 }
 
 bool LoadStyleFromXML(const char* filename, ImGuiStyle& style)
 {
     tinyxml2::XMLDocument doc;
-    if (doc.LoadFile(filename) != tinyxml2::XML_SUCCESS)
+    FILE* file = OpenStyleFile(filename, "rb");
+    if (!file) return false;
+    const auto result = doc.LoadFile(file);
+    const bool closed = fclose(file) == 0;
+    if (result != tinyxml2::XML_SUCCESS || !closed)
         return false;
 
     tinyxml2::XMLElement* root = doc.FirstChildElement("Style");

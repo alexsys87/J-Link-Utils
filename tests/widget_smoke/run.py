@@ -12,6 +12,8 @@ the Windows-only includes, and SDL/J-Link/data-exchange functions are test doubl
 A static check also verifies that the editor's widget table lists every property
 the loader reads.
 Run: python3 tests/widget_smoke/run.py
+Optional: run each SMOKE_SHARD=0..N-1 with SMOKE_SHARDS=N to cover all cases in
+shorter processes (the default remains the complete, unsharded suite).
 """
 from pathlib import Path
 import os

@@ -47,8 +47,11 @@ void LoadIniSettings(void* arg)
     assert(arg != nullptr);
     auto* ctx = static_cast<MainContext*>(arg);
     const auto directory = getDirectoryWithCurrentExecutable();
-    if (directory.empty()) return; // Never fall back to the working directory.
-    prefs::Load((std::filesystem::u8path(directory) / "settings.ini").u8string());
+    // Never fall back to the working directory or auto-connect with an unreadable config.
+    if (directory.empty() || !prefs::Load((std::filesystem::u8path(directory) / "settings.ini").u8string())) {
+        ctx->auto_connect = false;
+        return; // Preserve the load diagnostic and leave the other context fields untouched.
+    }
     ctx->Style = prefs::ReadInt("WINDOW.Style", ctx->Style, 0, 23);
     ctx->TopMost = prefs::ReadBool("WINDOW.TopMost", ctx->TopMost);
     ctx->FontSize = prefs::ReadInt("WINDOW.FontSize", ctx->FontSize, 0, 4095);

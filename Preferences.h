@@ -34,9 +34,14 @@ inline std::string Trim(const std::string& s) {
     const auto first = s.find_first_not_of(" \t\r\n");
     return first == std::string::npos ? "" : s.substr(first, s.find_last_not_of(" \t\r\n") - first + 1);
 }
+// Only @prefs-v1:"..." uses backslash escaping (\\, \", \n and \r).
+// Ordinary quoted INI values instead have literal contents, including Windows paths.
+// Literal strings beginning with this reserved marker are themselves encoded.
+inline constexpr char ValueEncodingMarker[] = "@prefs-v1:";
 inline std::string EncodeValue(const std::string& s) {
-    if (s.find_first_of("\r\n") == std::string::npos && Trim(s) == s && (s.empty() || s[0] != '"')) return s;
-    std::string out = "\"";
+    if (s.find_first_of("\r\n") == std::string::npos && Trim(s) == s && (s.empty() || s[0] != '"') &&
+        s.compare(0, sizeof(ValueEncodingMarker) - 1, ValueEncodingMarker) != 0) return s;
+    std::string out = std::string(ValueEncodingMarker) + '"';
     for (char c : s) {
         switch (c) {
         case '\\': out += "\\\\"; break;
@@ -49,11 +54,14 @@ inline std::string EncodeValue(const std::string& s) {
     return out + '"';
 }
 inline bool DecodeValue(const std::string& s, std::string& out) {
-    if (s.empty() || s.front() != '"') { out = s; return true; }
-    // Only our complete quoted representation is decoded; legacy bare values stay bare.
-    if (s.size() < 2 || s.back() != '"') { out = s; return true; }
+    constexpr size_t prefix = sizeof(ValueEncodingMarker) - 1;
+    if (s.compare(0, prefix, ValueEncodingMarker) != 0) {
+        out = s.size() >= 2 && s.front() == '"' && s.back() == '"' ? s.substr(1, s.size() - 2) : s;
+        return true;
+    }
+    if (s.size() < prefix + 2 || s[prefix] != '"' || s.back() != '"') return false;
     out.clear();
-    for (size_t i = 1; i + 1 < s.size(); ++i) {
+    for (size_t i = prefix + 1; i + 1 < s.size(); ++i) {
         char c = s[i];
         if (c == '\\') {
             if (++i + 1 >= s.size()) return false;
@@ -62,9 +70,9 @@ inline bool DecodeValue(const std::string& s, std::string& out) {
             case 'r': c = '\r'; break;
             case '\\': c = '\\'; break;
             case '"': c = '"'; break;
-            default: out = s; return true; // legacy quoted Windows path
+            default: return false;
             }
-        }
+        } else if (c == '"') return false;
         out += c;
     }
     return true;
@@ -104,9 +112,21 @@ struct Store {
             }
             std::ifstream file(filename, std::ios::binary);
             if (!file) { Fail("Cannot read settings file: " + path); return false; }
+            // Validate the complete byte stream before parsing any entries. In particular,
+            // UTF-16/binary input must not become writable defaults and destroy the original.
+            std::string contents;
+            char buffer[4096];
+            while (file.read(buffer, sizeof(buffer)) || file.gcount() != 0)
+                contents.append(buffer, static_cast<size_t>(file.gcount()));
+            if (file.bad() || !file.eof()) { Fail("Failed reading settings file: " + path); return false; }
+            if (contents.compare(0, 2, "\xFF\xFE") == 0 || contents.compare(0, 2, "\xFE\xFF") == 0 ||
+                contents.find('\0') != std::string::npos) {
+                Fail("Unsupported settings encoding (UTF-16 or NUL bytes): " + path); return false;
+            }
+            std::istringstream input(contents);
             std::string line, section;
             size_t lineNumber = 0;
-            while (std::getline(file, line)) {
+            while (std::getline(input, line)) {
                 if (++lineNumber == 1 && line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);
                 line = Trim(line);
                 if (line.empty() || line[0] == ';' || line[0] == '#') continue;
@@ -125,7 +145,7 @@ struct Store {
                 values[key] = value;
                 rawValues[key] = Trim(line.substr(eq + 1));
             }
-            if (file.bad() || (!file.eof() && file.fail())) {
+            if (input.bad() || (!input.eof() && input.fail())) {
                 values.clear(); rawValues.clear(); Fail("Failed reading settings file: " + path); return false;
             }
             writable = true; return true;

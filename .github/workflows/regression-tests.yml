@@ -35,6 +35,8 @@ jobs:
         run: sh tests/settings/run.sh
       - name: Check restored window geometry
         run: python3 tests/settings_window/run.py
+      - name: Check custom style persistence through Unicode paths
+        run: python3 tests/style_persistence/run.py
       - name: Check editor and widget preferences
         run: python3 tests/preferences_widgets/run.py
   widgets:

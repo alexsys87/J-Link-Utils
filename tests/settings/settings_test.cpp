@@ -13,6 +13,14 @@ static std::string Get(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(file), {});
 }
+static std::string Utf16(const std::string& ascii, bool littleEndian) {
+    std::string bytes = littleEndian ? "\xFF\xFE" : "\xFE\xFF";
+    for (char c : ascii) {
+        bytes += littleEndian ? c : '\0';
+        bytes += littleEndian ? '\0' : c;
+    }
+    return bytes;
+}
 int main() {
     const auto root = fs::u8path(getDirectoryWithCurrentExecutable());
     const auto path = root / "settings.ini";
@@ -21,24 +29,37 @@ int main() {
     assert(!prefs::Dirty() && prefs::Error().empty());
     assert(prefs::ReadInt("absent", 12, 0, 100) == 12);
     assert(!fs::exists(path));
+    MainContext firstLaunch; LoadIniSettings(&firstLaunch);
+    assert(firstLaunch.auto_connect && firstLaunch.Style == 3 && prefs::Error().empty());
+    assert(!prefs::Dirty() && !fs::exists(path));
     prefs::WriteString("unknown.a.b", "preserved");
     prefs::WriteString("paths.unicode", u8"C:\\данные\\dashboard.xml");
     const std::string escaped = "  quoted\"\n\\text\r  ";
     prefs::WriteString("strings.escaped", escaped);
     prefs::WriteString("strings.equal", "a=b;#c");
     prefs::WriteString("strings.quote", "\"leading quote");
+    const std::string markerValues[] = {"@prefs-v1:", "@prefs-v1:literal", "@prefs-v1:\"looks\\nencoded\""};
+    for (size_t i = 0; i < sizeof(markerValues) / sizeof(markerValues[0]); ++i)
+        prefs::WriteString("strings.marker" + std::to_string(i), markerValues[i]);
+    prefs::WriteString("strings.empty", "");
     prefs::WriteInt("test.int", -12);
     prefs::WriteDouble("test.double", 0.12345678901234567);
     prefs::WriteBool("test.bool", true);
     WriteFromOtherTranslationUnit();
     assert(prefs::ReadString("shared.key") == "one process-wide store");
     assert(prefs::Dirty() && prefs::Flush() && !prefs::Dirty());
+    assert(Get(path).find("escaped=@prefs-v1:\"") != std::string::npos);
+    assert(Get(path).find("marker1=@prefs-v1:\"@prefs-v1:literal\"") != std::string::npos);
+    assert(Get(path).find("unicode=C:\\") != std::string::npos);
     prefs::WriteBool("test.bool", true);
     assert(!prefs::Dirty());
     assert(prefs::Load(path.u8string()));
     assert(prefs::ReadString("strings.escaped") == escaped);
     assert(prefs::ReadString("strings.equal") == "a=b;#c");
     assert(prefs::ReadString("strings.quote") == "\"leading quote");
+    for (size_t i = 0; i < sizeof(markerValues) / sizeof(markerValues[0]); ++i)
+        assert(prefs::ReadString("strings.marker" + std::to_string(i)) == markerValues[i]);
+    assert(prefs::ReadString("strings.empty", "missing").empty());
     assert(prefs::ReadString("paths.unicode") == u8"C:\\данные\\dashboard.xml");
     assert(prefs::ReadString("unknown.a.b") == "preserved");
     assert(prefs::ReadDouble("test.double", 0, -1, 1) == 0.12345678901234567);
@@ -92,9 +113,12 @@ int main() {
     assert(Get(original) == "[Keep]\nvalue=original\n");
     assert(prefs::Dirty() && !prefs::Error().empty());
     fs::permissions(blocked, fs::perms::owner_all, fs::perm_options::replace);
+#endif
+    // Both platforms must persist the new value before the later replacement/backup test.
     assert(prefs::Flush() && !prefs::Dirty() && prefs::Error().empty());
     assert(prefs::Load(original.u8string()));
     assert(prefs::ReadString("Keep.value") == "changed");
+#ifndef _WIN32
     // An unreadable file is not treated as empty and may not be overwritten, even after chmod.
     fs::permissions(original, fs::perms::none, fs::perm_options::replace);
     assert(!prefs::Load(original.u8string()));
@@ -168,6 +192,74 @@ int main() {
     Put(path, "not an ini entry\n[Good]\nkey=value\n");
     assert(prefs::Load(path.u8string()) && !prefs::Error().empty());
     assert(prefs::ReadString("Good.key") == "value");
+
+    // Legacy quotes do not opt into escaping: backslashes in Windows paths are literal.
+    Put(path, "[File]\nLastFile=\"C:\\new\\release.xml\"\n[Legacy]\n"
+        "temp=\"C:\\temp\\dash.xml\"\nbare=C:\\new\\release.xml\n"
+        "quoted=\"keep \\\"literal\\\" quotes\"\nspaces=\"  keep spaces  \"\n");
+    MainContext legacy; LoadIniSettings(&legacy);
+    assert(prefs::Error().empty());
+    assert(std::string(legacy.File_path) == "C:\\new\\release.xml");
+    assert(prefs::ReadString("Legacy.temp") == "C:\\temp\\dash.xml");
+    assert(prefs::ReadString("Legacy.bare") == "C:\\new\\release.xml");
+    assert(prefs::ReadString("Legacy.quoted") == "keep \\\"literal\\\" quotes");
+    assert(prefs::ReadString("Legacy.spaces") == "  keep spaces  ");
+    SaveIniSettings(&legacy);
+    assert(prefs::Flush());
+    assert(Get(path).find("LastFile=\"C:\\new\\release.xml\"\n") != std::string::npos);
+    assert(Get(path).find("temp=\"C:\\temp\\dash.xml\"\n") != std::string::npos);
+    assert(Get(path).find("quoted=\"keep \\\"literal\\\" quotes\"\n") != std::string::npos);
+    assert(prefs::Load(path.u8string()) && prefs::Error().empty());
+    assert(prefs::ReadString("Legacy.temp") == "C:\\temp\\dash.xml");
+
+    // Marked values are strict; ordinary quoted values never interpret even valid escapes.
+    for (const auto& malformed : {"@prefs-v1:", "@prefs-v1:bare", "@prefs-v1:\"bad\\t\"",
+                                  "@prefs-v1:\"trailing\\\"", "@prefs-v1:\"unescaped\"quote\""}) {
+        Put(path, std::string("[Bad]\nvalue=") + malformed + "\n[Good]\nkey=value\n");
+        assert(prefs::Load(path.u8string()) && !prefs::Error().empty());
+        assert(prefs::ReadString("Bad.value", "missing") == "missing");
+        assert(prefs::ReadString("Good.key") == "value");
+    }
+
+#ifndef _WIN32
+    // An unreadable existing configuration must not auto-connect using fallback defaults.
+    const std::string unreadableBytes = "[WINDOW]\nStyle=17\n[SETTINGS]\nAutoConnect=0\n";
+    Put(path, unreadableBytes);
+    fs::permissions(path, fs::perms::none, fs::perm_options::replace);
+    assert(!prefs::Load(path.u8string()));
+    const auto unreadableError = prefs::Error();
+    MainContext unreadable; unreadable.Style = 99; // Sentinel: no fallback clamping on failure.
+    LoadIniSettings(&unreadable);
+    assert(!unreadable.auto_connect && unreadable.Style == 99 && prefs::Error() == unreadableError);
+    fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
+    SaveIniSettings(&unreadable);
+    assert(!prefs::Flush() && prefs::Error() == unreadableError && Get(path) == unreadableBytes);
+#endif
+
+    // Reject unsupported encodings before parsing, and refuse every save without touching bytes.
+    const std::string unsupported[] = {
+        Utf16("[WINDOW]\nStyle=17\n[SETTINGS]\nAutoConnect=0\n", true),
+        Utf16("[WINDOW]\nStyle=17\n[SETTINGS]\nAutoConnect=0\n", false),
+        Utf16("", true), Utf16("", false),
+        std::string("[Good]\nkey=value\n[Bad]\nvalue=") + '\0' + "hidden\n",
+        std::string("[Good]\nkey=value\n; comment ") + '\0' + "hidden\n",
+        std::string(1, '\0') + "[WINDOW]\nStyle=17\n"
+    };
+    for (const auto& bytes : unsupported) {
+        Put(path, bytes);
+        assert(!prefs::Load(path.u8string()));
+        assert(!prefs::detail::GetStore().writable && !prefs::Dirty() && !prefs::Error().empty());
+        assert(prefs::ReadString("Good.key", "missing") == "missing");
+        assert(prefs::ReadInt("WINDOW.Style", 3, 0, 23) == 3);
+        assert(!prefs::Flush() && Get(path) == bytes);
+        const auto loadError = prefs::Error();
+        MainContext unsafe; unsafe.Style = 99; // Must return before processing any fallback values.
+        LoadIniSettings(&unsafe);
+        assert(!unsafe.auto_connect && unsafe.Style == 99 && prefs::Error() == loadError);
+        SaveIniSettings(&unsafe);
+        assert(prefs::Dirty() && !prefs::Flush() && prefs::Error() == loadError && Get(path) == bytes);
+        assert(!prefs::Flush() && Get(path) == bytes);
+    }
     fs::remove_all(blocked);
     fs::remove(path);
     std::cout << "Settings persistence tests passed\n";

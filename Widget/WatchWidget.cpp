@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib> // strtoull
 #include "Preferences.h"
+#include <map>
 #include <random>
 
 using namespace tinyxml2;
@@ -123,22 +124,32 @@ void WatchWidget::LoadFromXML(const char* path) {
     for (auto& row : s_rows) LoadRowPreferences(row);
 }
 
-void WatchWidget::SaveToXML(const char* path) {
+void WatchWidget::SaveToXML(const char* path, bool exportOnly) {
+    // Export is a snapshot, not a save of the active watch.xml. In particular it
+    // must not switch live preference identities to IDs absent from watch.xml.
+    // Stage normal-save migrations too, so a failed XML write cannot orphan prefs.
+    std::vector<WatchRow> rowsToSave = s_rows;
+    if (!exportOnly) {
+        std::map<std::string, int> idCounts;
+        for (const auto& row : rowsToSave) if (!row.preferenceId.empty()) ++idCounts[row.preferenceId];
+        for (auto& row : rowsToSave) {
+            if (row.preferenceId.empty() || idCounts[row.preferenceId] > 1) {
+                std::string id;
+                do { id = NewWatchPreferenceId(); } while (idCounts.count(id));
+                row.preferenceId = id;
+                idCounts[id] = 1;
+            }
+        }
+    }
     XMLDocument doc;
     XMLElement* watch = doc.NewElement("Watch");
     doc.InsertEndChild(watch);
     XMLElement* items = doc.NewElement("Items");
     watch->InsertEndChild(items);
 
-    for (auto& row : s_rows) {
-        // Only existing XML-save actions migrate identities. UI view toggles never
-        // trigger an XML rewrite (and thus never cause a target-value snapshot).
-        if (row.preferenceId.empty()) {
-            row.preferenceId = NewWatchPreferenceId();
-            SaveRowPreferences(row);
-        }
+    for (const auto& row : rowsToSave) {
         XMLElement* line = doc.NewElement("WatchLine");
-        line->SetAttribute("PreferenceId", row.preferenceId.c_str());
+        if (!row.preferenceId.empty()) line->SetAttribute("PreferenceId", row.preferenceId.c_str());
         items->InsertEndChild(line);
 
         XMLElement* en = doc.NewElement("Enabled");
@@ -171,7 +182,16 @@ void WatchWidget::SaveToXML(const char* path) {
         le->SetText(row.littleEndian);
         line->InsertEndChild(le);
     }
-    doc.SaveFile(path);
+    if (doc.SaveFile(path) == XML_SUCCESS && !exportOnly) {
+        // Only successful saves of the active configuration migrate live IDs.
+        // UI view toggles never rewrite XML or snapshot current target values.
+        for (size_t i = 0; i < s_rows.size(); ++i) {
+            if (s_rows[i].preferenceId != rowsToSave[i].preferenceId) {
+                s_rows[i].preferenceId = rowsToSave[i].preferenceId;
+                SaveRowPreferences(s_rows[i]);
+            }
+        }
+    }
 }
 
 WatchWidget::WatchWidget() {
@@ -563,7 +583,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
 
                 EnsureXmlExtension(path, MAX_PATH); // append .xml if missing
 
-                SaveToXML(path); // save
+                SaveToXML(path, true); // export without changing the active identities
                 // no SDL_free(path): the array is on the stack
             }
         }

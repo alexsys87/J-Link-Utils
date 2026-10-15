@@ -43,12 +43,14 @@ using namespace tinyxml2;
 using ui_safety::XmlChildText;
 constexpr int MAX_PATH = 4096;
 constexpr int BOOLEAN = 0;
+std::string g_PreferenceDocument;
 template<size_t N> void strncpy_s(char (&to)[N], const char* from, size_t count) {
     std::strncpy(to, from, std::min(count, N - 1)); to[N - 1] = 0;
 }
 ''']
     for signature in ('static const char* ReadText(', 'static std::string PreferenceIdentityPart(',
-                      'static std::string PreferenceElementSignature(', 'static std::string PreferenceElementIdentity('):
+                      'static std::string PreferenceElementSignature(', 'static std::string PreferenceElementCandidateIdentity(',
+                      'static int CountPreferenceIdentityMatches(', 'static std::string PreferenceElementIdentity('):
         fragments.append(function(xml, signature))
     fragments.append('''
 class WatchWidget {
@@ -58,7 +60,7 @@ public:
     static std::vector<WatchRow> s_rows;
     static char s_xmlPath[MAX_PATH];
     static void LoadFromXML(const char*);
-    static void SaveToXML(const char*);
+    static void SaveToXML(const char*, bool exportOnly = false);
     static std::string RowPreferenceIdentity(const WatchRow&);
     static void LoadRowPreferences(WatchRow&);
     static void SaveRowPreferences(const WatchRow&);

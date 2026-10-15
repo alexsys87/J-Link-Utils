@@ -38,7 +38,7 @@ private:
     static char s_xmlPath[MAX_PATH];
 
     static void LoadFromXML(const char* path);
-    static void SaveToXML(const char* path);
+    static void SaveToXML(const char* path, bool exportOnly = false);
     static void DrawRowContextMenu();
     static std::string RowPreferenceIdentity(const WatchRow& row);
     static void LoadRowPreferences(WatchRow& row);

@@ -178,8 +178,9 @@ static const char* ReadText(XMLElement* e, const char* tag, const char* def = ""
 
 // Preference identity is semantic, not the widget's index or a pointer into the
 // document. Reordering unrelated siblings and changing layout/options preserves it.
-// Matching sibling occurrences distinguish even identical copies. Length framing
-// avoids collisions when user-controlled labels contain delimiters.
+// No sibling occurrence is included: deleting/reordering another widget must not
+// transfer its settings to a survivor. Ambiguous semantic paths are not persisted.
+// Length framing avoids collisions in user-controlled labels.
 static std::string PreferenceIdentityPart(const std::string& value) {
     return std::to_string(value.size()) + ":" + value;
 }
@@ -198,15 +199,41 @@ static std::string PreferenceElementSignature(XMLElement* elem) {
     return signature;
 }
 
+static std::string PreferenceElementCandidateIdentity(XMLElement* elem) {
+    if (!elem) return "";
+    XMLElement* parent = elem->Parent() ? elem->Parent()->ToElement() : nullptr;
+    // <Items> is a list, not a widget. Its first legacy <Text> widget must not
+    // become an apparent title/address property of every other item in the list.
+    if (strcmp(elem->Name(), "Items") == 0) return PreferenceElementCandidateIdentity(parent);
+    const std::string signature = PreferenceElementSignature(elem);
+    return PreferenceElementCandidateIdentity(parent) + PreferenceIdentityPart(signature);
+}
+
+static int CountPreferenceIdentityMatches(XMLElement* first, const char* tag, const std::string& candidate) {
+    int matches = 0;
+    for (XMLElement* elem = first; elem; elem = elem->NextSiblingElement()) {
+        if (strcmp(elem->Name(), tag) == 0 && PreferenceElementCandidateIdentity(elem) == candidate) ++matches;
+        if (matches > 1) return matches;
+        matches += CountPreferenceIdentityMatches(elem->FirstChildElement(), tag, candidate);
+        if (matches > 1) return matches;
+    }
+    return matches;
+}
+
 static std::string PreferenceElementIdentity(XMLElement* elem) {
     if (!elem) return "";
-    const std::string signature = PreferenceElementSignature(elem);
-    int occurrence = 0;
-    for (XMLElement* sibling = elem->PreviousSiblingElement(); sibling; sibling = sibling->PreviousSiblingElement())
-        if (PreferenceElementSignature(sibling) == signature) ++occurrence;
-    XMLElement* parent = elem->Parent() ? elem->Parent()->ToElement() : nullptr;
-    return PreferenceElementIdentity(parent) + PreferenceIdentityPart(signature) +
-        PreferenceIdentityPart(std::to_string(occurrence));
+    const std::string candidate = PreferenceElementCandidateIdentity(elem);
+    // Even distinct widgets can have indistinguishable semantic paths (for
+    // example matching plots in anonymous Groups). Do not guess by list index.
+    const std::string ambiguousKey = prefs::ScopedKey(g_PreferenceDocument, "Identity", candidate) + ".Ambiguous";
+    if (CountPreferenceIdentityMatches(elem->GetDocument()->FirstChildElement(), elem->Name(), candidate) != 1) {
+        // Remember ambiguity across rebuilds and restarts: if A had saved prefs,
+        // then matching B was added and A deleted, B must not inherit A's key.
+        // This only stages a UI-store tombstone; reading never changes the XML.
+        prefs::WriteBool(ambiguousKey, true);
+        return "";
+    }
+    return prefs::ReadBool(ambiguousKey, false) ? "" : candidate;
 }
 
 // "#RRGGBB" or "#AARRGGBB" as an IM_COL32 color
@@ -340,7 +367,8 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             lines.push_back(readLine(elem, txt, defaultType));
         }
         auto plot = std::make_unique<PlotLinesWidget>(txt, minV, maxV, w, h, f, sz, sm, autosize, maxSize, lines);
-        plot->SetPreferenceKey(prefs::ScopedKey(g_PreferenceDocument, "PlotLines", PreferenceElementIdentity(elem)));
+        const std::string identity = PreferenceElementIdentity(elem);
+        plot->SetPreferenceKey(identity.empty() ? "" : prefs::ScopedKey(g_PreferenceDocument, "PlotLines", identity));
         return plot;
     }
     else if (name == "TextFormatted") {
@@ -740,9 +768,10 @@ static void BuildWindows(MainContext* ctx, XMLDocument& doc, bool keepSources) {
         WindowData wd;
         const char* name = XmlChildText(win, "Text", "Unnamed");
         wd.name = name;
-        const std::string visibilityKey = prefs::ScopedKey(g_PreferenceDocument, "Windows", PreferenceElementIdentity(win));
+        const std::string identity = PreferenceElementIdentity(win);
+        const std::string visibilityKey = identity.empty() ? "" : prefs::ScopedKey(g_PreferenceDocument, "Windows", identity);
         g_WindowPreferenceKeys.push_back(visibilityKey);
-        wd.show = prefs::ReadBool(visibilityKey, true);
+        wd.show = visibilityKey.empty() ? true : prefs::ReadBool(visibilityKey, true);
         wd.source = keepSources ? win : nullptr;
 
         // Geometry, applied once; without it the window keeps the position ImGui remembers
@@ -900,6 +929,7 @@ int Draw_Window(MainContext* ctx) {
 void SaveDashboardWindowVisibility() {
     for (size_t i = 0; i < g_Windows.size() && i < g_WindowPreferenceKeys.size(); ++i) {
         const std::string& key = g_WindowPreferenceKeys[i];
+        if (key.empty()) continue; // ambiguous windows deliberately have no persisted identity
         if (prefs::ReadBool(key, true) != g_Windows[i].show)
             prefs::WriteBool(key, g_Windows[i].show);
     }
