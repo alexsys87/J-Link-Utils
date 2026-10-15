@@ -39,6 +39,9 @@ assert 'SDL_MaximizeWindow(window)' in chrome and 'SDL_RestoreWindow(window)' in
 assert 'SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2")' in configuration
 assert 'SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1")' in configuration
 entry = function(source, 'int main(int argc, char* argv[])')
+assert entry.index('ConfigureMainWindowChrome();') < entry.index('SDL_CreateWindow(')
+assert 'SDL_SetHint("SDL_BORDERLESS_RESIZABLE_STYLE", "1")' in chrome
+assert 'SDL_SetHint("SDL_BORDERLESS_WINDOWED_STYLE", "1")' in chrome
 assert entry.index('ConfigureDpiAwareness();') < entry.index('SDL_ShowSimpleMessageBox(')
 assert entry.index('ConfigureDpiAwareness();') < entry.index('if (SDL_Init(')
 assert 'FontScaleDpi = 1.0f' in frame
