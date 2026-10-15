@@ -42,7 +42,7 @@ jobs:
       # Cache only content-addressed package archives, never stale generated props
       # or an installation from a different manifest/toolchain. vcpkg ABI hashes
       # additionally account for compiler, SDK, triplets and port inputs.
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         id: restore-cache
         with:
           path: .dependencies/binary-cache
@@ -61,7 +61,7 @@ jobs:
           cmake --version | Out-File .dependencies/tool-versions.txt
           ./.dependencies/vcpkg/vcpkg.exe version | Out-File -Append .dependencies/tool-versions.txt
           Copy-Item .dependencies/probe-${{ matrix.arch }}/CMakeCache.txt .dependencies/CMakeCache-${{ matrix.arch }}.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: windows-dependencies-${{ matrix.arch }}-static-debug-release
           if-no-files-found: error
@@ -76,7 +76,7 @@ jobs:
           retention-days: 14
       # Preserve completed package builds even if a later export/probe fails.
       # Only ABI-addressed archives are saved; never partial installed trees.
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v5
         if: ${{ always() && steps.restore-cache.outcome == 'success' && steps.restore-cache.outputs.cache-hit != 'true' }}
         with:
           path: .dependencies/binary-cache
