@@ -58,10 +58,6 @@ private:
         ImGui::ItemSize(bb);
         if (!ImGui::ItemAdd(bb, ImGui::GetID(label))) return;
 
-        // Is the widget disabled (e.g. with BeginDisabled)?
-        bool disabled = (ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) != 0;
-
-        ImU32 col_bg = ImGui::GetColorU32(ImGuiCol_FrameBg);
         ImU32 col_border = ImGui::GetColorU32(ImGuiCol_Border);
         ImU32 col_text = ImGui::GetColorU32(ImGuiCol_Text);
         ImU32 col_text_dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);

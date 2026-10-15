@@ -60,7 +60,6 @@ private:
         }
         else {
             ImGuiCol main_col = (*v) ? ImGuiCol_SliderGrab : ImGuiCol_Button;
-            ImGuiCol hover_col = (*v) ? ImGuiCol_SliderGrabActive : ImGuiCol_ButtonHovered;
             ImGuiCol active_col = (*v) ? ImGuiCol_SliderGrabActive : ImGuiCol_ButtonActive;
 
             ImU32 col_main;

@@ -25,7 +25,7 @@ public:
         float oldValue = value;
 
         ImGui::PushID(addr);
-        bool held = DrawKnob(text.c_str(), &value, minVal, maxVal, radius);
+        DrawKnob(text.c_str(), &value, minVal, maxVal, radius);
         ImGui::PopID();
 
         // NaN in memory compares unequal to itself: do not write it back every frame.

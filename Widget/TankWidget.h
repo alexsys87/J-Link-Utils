@@ -71,8 +71,6 @@ private:
         ImGui::ItemSize(bb);
         if (!ImGui::ItemAdd(bb, ImGui::GetID(label))) return;
 
-        bool disabled = (ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) != 0;
-
         ImU32 col_border = ImGui::GetColorU32(ImGuiCol_Border);
         ImU32 col_text = ImGui::GetColorU32(ImGuiCol_Text);
         ImU32 col_text_dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);

@@ -45,9 +45,6 @@ private:
         ImGuiWindow* window = ImGui::GetCurrentWindow();
         if (window->SkipItems) return;
 
-        ImGuiContext& g = *GImGui;
-        const ImGuiStyle& style = g.Style;
-
         ImVec2 pos = window->DC.CursorPos;
         float center_x = pos.x + size.x * 0.5f;
 
