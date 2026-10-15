@@ -39,6 +39,9 @@
     <ClInclude Include="Main.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UserGuide.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="JLinkConnection.h">
       <Filter>Header Files</Filter>
     </ClInclude>

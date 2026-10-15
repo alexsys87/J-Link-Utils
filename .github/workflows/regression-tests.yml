@@ -29,6 +29,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Compile and run headless UI regression tests
         run: python3 tests/ui_regression/run.py
+      - name: Check searchable User Guide with real ImGui
+        run: python3 tests/user_guide/run.py
   widgets:
     name: Every widget with real ImGui (ASan and UBSan)
     runs-on: ubuntu-latest

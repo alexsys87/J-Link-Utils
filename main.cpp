@@ -39,6 +39,7 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #include "widget_common.h"
 #include "res/app_icon.h"
 #include "MainWindowChrome.h"
+#include "UserGuide.h"
 
 static MainWindowChrome g_MainWindowChrome;
 
@@ -1132,31 +1133,7 @@ void ShowMenuSettings(MainContext* ctx)
 
 void ShowUserGuide(bool* p_open)
 {
-    if (!ImGui::Begin("User Guide", p_open, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        ImGui::End();
-        return;
-    }
-    ImGuiIO& io = ImGui::GetIO();
-    ImGui::BulletText("Double-click on title bar to collapse window.");
-    ImGui::BulletText("Click and drag on lower right corner to resize window.");
-    ImGui::BulletText("Click and drag on any empty space to move window.");
-    ImGui::BulletText("TAB/SHIFT+TAB to cycle through keyboard editable fields.");
-    ImGui::BulletText("CTRL+Click on a slider or drag box to input value as text.");
-    if (io.FontAllowUserScaling)
-        ImGui::BulletText("CTRL+Mouse Wheel to zoom window contents.");
-    ImGui::BulletText("Mouse Wheel to scroll.");
-    ImGui::BulletText("While editing text:");
-    ImGui::Indent();
-    ImGui::BulletText("Hold SHIFT or use mouse to select text.");
-    ImGui::BulletText("CTRL+Left/Right to word jump.");
-    ImGui::BulletText("CTRL+A or double-click to select all.");
-    ImGui::BulletText("CTRL+X,CTRL+C,CTRL+V to use clipboard.");
-    ImGui::BulletText("CTRL+Z,CTRL+Y to undo/redo.");
-    ImGui::BulletText("ESCAPE to revert.");
-    ImGui::BulletText("You can apply arithmetic operators +,*,/ on numerical values.");
-    ImGui::Unindent();
-    ImGui::End();
+    user_guide::Show(p_open);
 }
 
 void ShowAbout(bool* p_open)
