@@ -93,8 +93,13 @@ static void TestFullDpiRendering()
 {
     ConfigureDpiAwareness();
     assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) == 0);
+    ConfigureMainWindowChrome();
+    assert(SDL_GetHintBoolean("SDL_BORDERLESS_RESIZABLE_STYLE", SDL_FALSE) == SDL_TRUE);
+    assert(SDL_GetHintBoolean("SDL_BORDERLESS_WINDOWED_STYLE", SDL_FALSE) == SDL_TRUE);
     SDL_Window* window = SDL_CreateWindow("DPI test", 0, 0, 640, 480, SDL_WINDOW_HIDDEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE);
     assert(window);
+    assert(SDL_GetWindowFlags(window) & SDL_WINDOW_RESIZABLE);
+    assert(SDL_GetWindowFlags(window) & SDL_WINDOW_BORDERLESS);
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;

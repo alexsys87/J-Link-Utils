@@ -13,6 +13,18 @@ struct MainWindowChrome {
 
 enum class MainWindowAction { None, Minimize, ToggleMaximize, Close };
 
+// Must run before SDL_CreateWindow. SDL2 otherwise omits WS_THICKFRAME and
+// WS_MAXIMIZEBOX for BORDERLESS windows, despite SDL_WINDOW_RESIZABLE. Its
+// Win32 backend can then consider the window non-resizable and ignore maximize.
+// WINDOWED_STYLE also keeps maximization within the monitor's work area rather
+// than treating a desktop-sized borderless window as fullscreen. SDL continues
+// to remove the native non-client frame; ImGui still draws the entire title bar.
+inline void ConfigureMainWindowChrome()
+{
+    SDL_SetHint("SDL_BORDERLESS_RESIZABLE_STYLE", "1");
+    SDL_SetHint("SDL_BORDERLESS_WINDOWED_STYLE", "1");
+}
+
 inline SDL_HitTestResult SDLCALL MainWindowHitTest(SDL_Window* window, const SDL_Point* point, void* data)
 {
     const auto* chrome = static_cast<const MainWindowChrome*>(data);

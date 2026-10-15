@@ -1321,6 +1321,7 @@ int main(int argc, char* argv[])
     if (ctx->TopMost)
         window_flag = SDL_WINDOW_ALWAYS_ON_TOP;
 
+    ConfigureMainWindowChrome();
     ctx->Wimdow = SDL_CreateWindow("J-Link Utils", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, ctx->Win_width, ctx->Win_height, SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | window_flag);
 
     if (ctx->Wimdow == NULL)
