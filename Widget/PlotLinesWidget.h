@@ -2,6 +2,7 @@
 // Real-time line plot with per-line settings and a GUI options panel
 
 #pragma once
+#include "../Localization.h"
 #include "widget_common.h"
 #include "implot.h"
 #include <vector>
@@ -210,15 +211,15 @@ public:
         if (live) state.time = DataTimeNow() - m_timeOrigin;
 
         // Options panel
-        if (ImGui::CollapsingHeader("Options")) {
+        if (ImGui::CollapsingHeader(app_language::Label("Options", "Параметры"))) {
             ImGui::PushItemWidth(80);
-            if (ImGui::Checkbox("Real Time Update", &state.pause_check) && !m_preferenceKey.empty())
+            if (ImGui::Checkbox(app_language::Label("Real Time Update", "Обновление в реальном времени"), &state.pause_check) && !m_preferenceKey.empty())
                 prefs::WriteBool(m_preferenceKey + ".Realtime", state.pause_check);
             ImGui::SameLine();
             // Sampling frequency
             float minFreq = 0.1f, maxFreq = kMaxFreq;
             ImGui::SetNextItemWidth(100);
-            if (ImGui::InputFloat("Freq (Hz)", &freq, 0.1f, 1.0f, "%.1f")) {
+            if (ImGui::InputFloat(app_language::Label("Freq (Hz)", "Частота (Гц)"), &freq, 0.1f, 1.0f, "%.1f")) {
                 if (!std::isfinite(freq)) freq = 1.0f;
                 if (freq < minFreq) freq = minFreq;
                 if (freq > maxFreq) freq = maxFreq;
@@ -228,7 +229,7 @@ public:
             ImGui::SameLine();
             // Width of the time window
             ImGui::SetNextItemWidth(500);
-            if (ImGui::DragFloat("Time Window (s)", &state.timeWindow, 0.1f, 0.1f, 100.0f, "%.1f")) {
+            if (ImGui::DragFloat(app_language::Label("Time Window (s)", "Окно времени (с)"), &state.timeWindow, 0.1f, 0.1f, 100.0f, "%.1f")) {
                 state.timeWindow = std::isfinite(state.timeWindow) ? std::clamp(state.timeWindow, 0.1f, 100.0f) : 10.0f;
                 ResizeHistory();
                 if (!m_preferenceKey.empty()) prefs::WriteDouble(m_preferenceKey + ".TimeWindow", state.timeWindow);
@@ -276,7 +277,7 @@ public:
                 spec.LineWeight = std::isfinite(line.weight)
                     ? std::clamp(line.weight, 0.0f, (float)IM_DRAWLIST_TEX_LINES_WIDTH_MAX) : 1.0f;
 
-                const char* label = line.name.empty() ? "Line" : line.name.c_str();
+                const char* label = line.name.empty() ? app_language::Label("Line", "Линия") : line.name.c_str();
                 ImPlot::PlotLine(label,
                     &line.history.Data[0].x,
                     &line.history.Data[0].y,

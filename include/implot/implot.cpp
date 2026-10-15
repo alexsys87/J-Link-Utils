@@ -192,6 +192,7 @@ You can read releases logs https://github.com/epezent/implot/releases for more d
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
 #include "implot.h"
+#include "../../Localization.h"
 #ifndef IMGUI_DISABLE
 #include "implot_internal.h"
 
@@ -1399,7 +1400,7 @@ void ShowAxisContextMenu(ImPlotAxis& axis, ImPlotAxis* equal_axis, bool /*time_a
         EndDisabledControls(always_locked);
         ImGui::SameLine();
         BeginDisabledControls(axis.IsLockedMin() || always_locked);
-        if (ImGui::BeginMenu("Min Time")) {
+        if (ImGui::BeginMenu(app_language::Label("Min Time", "Начальное время"))) {
             if (ShowTimePicker("mintime", &tmin)) {
                 if (tmin >= tmax)
                     tmax = AddTime(tmin, ImPlotTimeUnit_S, 1);
@@ -1421,7 +1422,7 @@ void ShowAxisContextMenu(ImPlotAxis& axis, ImPlotAxis* equal_axis, bool /*time_a
         EndDisabledControls(always_locked);
         ImGui::SameLine();
         BeginDisabledControls(axis.IsLockedMax() || always_locked);
-        if (ImGui::BeginMenu("Max Time")) {
+        if (ImGui::BeginMenu(app_language::Label("Max Time", "Конечное время"))) {
             if (ShowTimePicker("maxtime", &tmax)) {
                 if (tmax <= tmin)
                     tmin = AddTime(tmax, ImPlotTimeUnit_S, -1);
@@ -1445,7 +1446,7 @@ void ShowAxisContextMenu(ImPlotAxis& axis, ImPlotAxis* equal_axis, bool /*time_a
         ImGui::SameLine();
         BeginDisabledControls(axis.IsLockedMin() || always_locked);
         double temp_min = axis.Range.Min;
-        if (DragFloat("Min", &temp_min, (float)drag_speed, -HUGE_VAL, axis.Range.Max - DBL_EPSILON)) {
+        if (DragFloat(app_language::Label("Min", "Мин."), &temp_min, (float)drag_speed, -HUGE_VAL, axis.Range.Max - DBL_EPSILON)) {
             axis.SetMin(temp_min,true);
             if (equal_axis != nullptr)
                 equal_axis->SetAspect(axis.GetAspect());
@@ -1458,7 +1459,7 @@ void ShowAxisContextMenu(ImPlotAxis& axis, ImPlotAxis* equal_axis, bool /*time_a
         ImGui::SameLine();
         BeginDisabledControls(axis.IsLockedMax() || always_locked);
         double temp_max = axis.Range.Max;
-        if (DragFloat("Max", &temp_max, (float)drag_speed, axis.Range.Min + DBL_EPSILON, HUGE_VAL)) {
+        if (DragFloat(app_language::Label("Max", "Макс."), &temp_max, (float)drag_speed, axis.Range.Min + DBL_EPSILON, HUGE_VAL)) {
             axis.SetMax(temp_max,true);
             if (equal_axis != nullptr)
                 equal_axis->SetAspect(axis.GetAspect());
@@ -1468,7 +1469,7 @@ void ShowAxisContextMenu(ImPlotAxis& axis, ImPlotAxis* equal_axis, bool /*time_a
 
     ImGui::Separator();
 
-    ImGui::CheckboxFlags("Auto-Fit",(unsigned int*)&axis.Flags, ImPlotAxisFlags_AutoFit);
+    ImGui::CheckboxFlags(app_language::Label("Auto-Fit", "Автоподбор"),(unsigned int*)&axis.Flags, ImPlotAxisFlags_AutoFit);
     // TODO
     // BeginDisabledControls(axis.IsTime() && time_allowed);
     // ImGui::CheckboxFlags("Log Scale",(unsigned int*)&axis.Flags, ImPlotAxisFlags_LogScale);
@@ -1479,18 +1480,18 @@ void ShowAxisContextMenu(ImPlotAxis& axis, ImPlotAxis* equal_axis, bool /*time_a
     //     EndDisabledControls(axis.IsLog() || axis.IsSymLog());
     // }
     ImGui::Separator();
-    ImGui::CheckboxFlags("Invert",(unsigned int*)&axis.Flags, ImPlotAxisFlags_Invert);
-    ImGui::CheckboxFlags("Opposite",(unsigned int*)&axis.Flags, ImPlotAxisFlags_Opposite);
+    ImGui::CheckboxFlags(app_language::Label("Invert", "Инвертировать"),(unsigned int*)&axis.Flags, ImPlotAxisFlags_Invert);
+    ImGui::CheckboxFlags(app_language::Label("Opposite", "На другой стороне"),(unsigned int*)&axis.Flags, ImPlotAxisFlags_Opposite);
     ImGui::Separator();
     BeginDisabledControls(axis.LabelOffset == -1);
-    if (ImGui::Checkbox("Label", &label))
+    if (ImGui::Checkbox(app_language::Label("Label", "Название"), &label))
         ImFlipFlag(axis.Flags, ImPlotAxisFlags_NoLabel);
     EndDisabledControls(axis.LabelOffset == -1);
-    if (ImGui::Checkbox("Grid Lines", &grid))
+    if (ImGui::Checkbox(app_language::Label("Grid Lines", "Линии сетки"), &grid))
         ImFlipFlag(axis.Flags, ImPlotAxisFlags_NoGridLines);
-    if (ImGui::Checkbox("Tick Marks", &ticks))
+    if (ImGui::Checkbox(app_language::Label("Tick Marks", "Деления"), &ticks))
         ImFlipFlag(axis.Flags, ImPlotAxisFlags_NoTickMarks);
-    if (ImGui::Checkbox("Tick Labels", &labels))
+    if (ImGui::Checkbox(app_language::Label("Tick Labels", "Подписи делений"), &labels))
         ImFlipFlag(axis.Flags, ImPlotAxisFlags_NoTickLabels);
 
 }
@@ -1498,51 +1499,51 @@ void ShowAxisContextMenu(ImPlotAxis& axis, ImPlotAxis* equal_axis, bool /*time_a
 bool ShowLegendContextMenu(ImPlotLegend& legend, bool visible) {
     const float s = ImGui::GetFrameHeight();
     bool ret = false;
-    if (ImGui::Checkbox("Show",&visible))
+    if (ImGui::Checkbox(app_language::Label("Show", "Показать"),&visible))
         ret = true;
     if (legend.CanGoInside)
-        ImGui::CheckboxFlags("Outside",(unsigned int*)&legend.Flags, ImPlotLegendFlags_Outside);
-    if (ImGui::RadioButton("H", ImHasFlag(legend.Flags, ImPlotLegendFlags_Horizontal)))
+        ImGui::CheckboxFlags(app_language::Label("Outside", "Снаружи"),(unsigned int*)&legend.Flags, ImPlotLegendFlags_Outside);
+    if (ImGui::RadioButton(app_language::Label("H", "Гор."), ImHasFlag(legend.Flags, ImPlotLegendFlags_Horizontal)))
         legend.Flags |= ImPlotLegendFlags_Horizontal;
     ImGui::SameLine();
-    if (ImGui::RadioButton("V", !ImHasFlag(legend.Flags, ImPlotLegendFlags_Horizontal)))
+    if (ImGui::RadioButton(app_language::Label("V", "Верт."), !ImHasFlag(legend.Flags, ImPlotLegendFlags_Horizontal)))
         legend.Flags &= ~ImPlotLegendFlags_Horizontal;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2,2));
-    if (ImGui::Button("NW",ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_NorthWest; } ImGui::SameLine();
-    if (ImGui::Button("N", ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_North;     } ImGui::SameLine();
-    if (ImGui::Button("NE",ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_NorthEast; }
-    if (ImGui::Button("W", ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_West;      } ImGui::SameLine();
+    if (ImGui::Button(app_language::Label("NW", "СЗ"),ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_NorthWest; } ImGui::SameLine();
+    if (ImGui::Button(app_language::Label("N", "С"), ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_North;     } ImGui::SameLine();
+    if (ImGui::Button(app_language::Label("NE", "СВ"),ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_NorthEast; }
+    if (ImGui::Button(app_language::Label("W", "З"), ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_West;      } ImGui::SameLine();
     if (ImGui::InvisibleButton("C", ImVec2(1.5f*s,s))) {     } ImGui::SameLine();
-    if (ImGui::Button("E", ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_East;      }
-    if (ImGui::Button("SW",ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_SouthWest; } ImGui::SameLine();
-    if (ImGui::Button("S", ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_South;     } ImGui::SameLine();
-    if (ImGui::Button("SE",ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_SouthEast; }
+    if (ImGui::Button(app_language::Label("E", "В"), ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_East;      }
+    if (ImGui::Button(app_language::Label("SW", "ЮЗ"),ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_SouthWest; } ImGui::SameLine();
+    if (ImGui::Button(app_language::Label("S", "Ю"), ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_South;     } ImGui::SameLine();
+    if (ImGui::Button(app_language::Label("SE", "ЮВ"),ImVec2(1.5f*s,s))) { legend.Location = ImPlotLocation_SouthEast; }
     ImGui::PopStyleVar();
     return ret;
 }
 
 void ShowSubplotsContextMenu(ImPlotSubplot& subplot) {
-    if ((ImGui::BeginMenu("Linking"))) {
-        if (ImGui::MenuItem("Link Rows",nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkRows)))
+    if ((ImGui::BeginMenu(app_language::Label("Linking", "Связи")))) {
+        if (ImGui::MenuItem(app_language::Label("Link Rows", "Связать строки"),nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkRows)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_LinkRows);
-        if (ImGui::MenuItem("Link Cols",nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkCols)))
+        if (ImGui::MenuItem(app_language::Label("Link Cols", "Связать столбцы"),nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkCols)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_LinkCols);
-        if (ImGui::MenuItem("Link All X",nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkAllX)))
+        if (ImGui::MenuItem(app_language::Label("Link All X", "Связать все оси X"),nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkAllX)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_LinkAllX);
-        if (ImGui::MenuItem("Link All Y",nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkAllY)))
+        if (ImGui::MenuItem(app_language::Label("Link All Y", "Связать все оси Y"),nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_LinkAllY)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_LinkAllY);
         ImGui::EndMenu();
     }
-    if ((ImGui::BeginMenu("Settings"))) {
+    if ((ImGui::BeginMenu(app_language::Label("Settings", "Настройки")))) {
         BeginDisabledControls(!subplot.HasTitle);
-        if (ImGui::MenuItem("Title",nullptr,subplot.HasTitle && !ImHasFlag(subplot.Flags, ImPlotSubplotFlags_NoTitle)))
+        if (ImGui::MenuItem(app_language::Label("Title", "Заголовок"),nullptr,subplot.HasTitle && !ImHasFlag(subplot.Flags, ImPlotSubplotFlags_NoTitle)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_NoTitle);
         EndDisabledControls(!subplot.HasTitle);
-        if (ImGui::MenuItem("Resizable",nullptr,!ImHasFlag(subplot.Flags, ImPlotSubplotFlags_NoResize)))
+        if (ImGui::MenuItem(app_language::Label("Resizable", "Изменять размер"),nullptr,!ImHasFlag(subplot.Flags, ImPlotSubplotFlags_NoResize)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_NoResize);
-        if (ImGui::MenuItem("Align",nullptr,!ImHasFlag(subplot.Flags, ImPlotSubplotFlags_NoAlign)))
+        if (ImGui::MenuItem(app_language::Label("Align", "Выравнивать"),nullptr,!ImHasFlag(subplot.Flags, ImPlotSubplotFlags_NoAlign)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_NoAlign);
-        if (ImGui::MenuItem("Share Items",nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_ShareItems)))
+        if (ImGui::MenuItem(app_language::Label("Share Items", "Общие серии"),nullptr,ImHasFlag(subplot.Flags, ImPlotSubplotFlags_ShareItems)))
             ImFlipFlag(subplot.Flags, ImPlotSubplotFlags_ShareItems);
         ImGui::EndMenu();
     }
@@ -1554,6 +1555,7 @@ void ShowPlotContextMenu(ImPlotPlot& plot) {
     const bool equal = ImHasFlag(plot.Flags, ImPlotFlags_Equal);
 
     char buf[16] = {};
+    char localized_buf[64] = {};
 
     for (int i = 0; i < IMPLOT_NUM_X_AXES; i++) {
         ImPlotAxis& x_axis = plot.XAxis(i);
@@ -1561,7 +1563,8 @@ void ShowPlotContextMenu(ImPlotPlot& plot) {
             continue;
         ImGui::PushID(i);
         ImFormatString(buf, sizeof(buf) - 1, i == 0 ? "X-Axis" : "X-Axis %d", i + 1);
-        if (ImGui::BeginMenu(x_axis.HasLabel() ? plot.GetAxisLabel(x_axis) : buf)) {
+        ImFormatString(localized_buf, sizeof(localized_buf), i == 0 ? app_language::Tr("X-Axis", "Ось X") : app_language::Tr("X-Axis %d", "Ось X %d"), i + 1);
+        if (ImGui::BeginMenu(x_axis.HasLabel() ? plot.GetAxisLabel(x_axis) : app_language::Label(buf, localized_buf))) {
             ShowAxisContextMenu(x_axis, equal ? x_axis.OrthoAxis : nullptr, false);
             ImGui::EndMenu();
         }
@@ -1574,7 +1577,8 @@ void ShowPlotContextMenu(ImPlotPlot& plot) {
             continue;
         ImGui::PushID(i);
         ImFormatString(buf, sizeof(buf) - 1, i == 0 ? "Y-Axis" : "Y-Axis %d", i + 1);
-        if (ImGui::BeginMenu(y_axis.HasLabel() ? plot.GetAxisLabel(y_axis) : buf)) {
+        ImFormatString(localized_buf, sizeof(localized_buf), i == 0 ? app_language::Tr("Y-Axis", "Ось Y") : app_language::Tr("Y-Axis %d", "Ось Y %d"), i + 1);
+        if (ImGui::BeginMenu(y_axis.HasLabel() ? plot.GetAxisLabel(y_axis) : app_language::Label(buf, localized_buf))) {
             ShowAxisContextMenu(y_axis, equal ? y_axis.OrthoAxis : nullptr, false);
             ImGui::EndMenu();
         }
@@ -1583,7 +1587,7 @@ void ShowPlotContextMenu(ImPlotPlot& plot) {
 
     ImGui::Separator();
     if (!ImHasFlag(gp.CurrentItems->Legend.Flags, ImPlotLegendFlags_NoMenus)) {
-        if ((ImGui::BeginMenu("Legend"))) {
+        if ((ImGui::BeginMenu(app_language::Label("Legend", "Легенда")))) {
             if (owns_legend) {
                 if (ShowLegendContextMenu(plot.Items.Legend, !ImHasFlag(plot.Flags, ImPlotFlags_NoLegend)))
                     ImFlipFlag(plot.Flags, ImPlotFlags_NoLegend);
@@ -1595,24 +1599,24 @@ void ShowPlotContextMenu(ImPlotPlot& plot) {
             ImGui::EndMenu();
         }
     }
-    if ((ImGui::BeginMenu("Settings"))) {
-        if (ImGui::MenuItem("Equal", nullptr, ImHasFlag(plot.Flags, ImPlotFlags_Equal)))
+    if ((ImGui::BeginMenu(app_language::Label("Settings", "Настройки")))) {
+        if (ImGui::MenuItem(app_language::Label("Equal", "Равный масштаб"), nullptr, ImHasFlag(plot.Flags, ImPlotFlags_Equal)))
             ImFlipFlag(plot.Flags, ImPlotFlags_Equal);
-        if (ImGui::MenuItem("Box Select",nullptr,!ImHasFlag(plot.Flags, ImPlotFlags_NoBoxSelect)))
+        if (ImGui::MenuItem(app_language::Label("Box Select", "Выделение рамкой"),nullptr,!ImHasFlag(plot.Flags, ImPlotFlags_NoBoxSelect)))
             ImFlipFlag(plot.Flags, ImPlotFlags_NoBoxSelect);
         BeginDisabledControls(plot.TitleOffset == -1);
-        if (ImGui::MenuItem("Title",nullptr,plot.HasTitle()))
+        if (ImGui::MenuItem(app_language::Label("Title", "Заголовок"),nullptr,plot.HasTitle()))
             ImFlipFlag(plot.Flags, ImPlotFlags_NoTitle);
         EndDisabledControls(plot.TitleOffset == -1);
-        if (ImGui::MenuItem("Mouse Position",nullptr,!ImHasFlag(plot.Flags, ImPlotFlags_NoMouseText)))
+        if (ImGui::MenuItem(app_language::Label("Mouse Position", "Позиция мыши"),nullptr,!ImHasFlag(plot.Flags, ImPlotFlags_NoMouseText)))
             ImFlipFlag(plot.Flags, ImPlotFlags_NoMouseText);
-        if (ImGui::MenuItem("Crosshairs",nullptr,ImHasFlag(plot.Flags, ImPlotFlags_Crosshairs)))
+        if (ImGui::MenuItem(app_language::Label("Crosshairs", "Перекрестие"),nullptr,ImHasFlag(plot.Flags, ImPlotFlags_Crosshairs)))
             ImFlipFlag(plot.Flags, ImPlotFlags_Crosshairs);
         ImGui::EndMenu();
     }
     if (gp.CurrentSubplot != nullptr && !ImHasFlag(gp.CurrentSubplot->Flags, ImPlotSubplotFlags_NoMenus)) {
         ImGui::Separator();
-        if ((ImGui::BeginMenu("Subplots"))) {
+        if ((ImGui::BeginMenu(app_language::Label("Subplots", "Области графика")))) {
             ShowSubplotsContextMenu(*gp.CurrentSubplot);
             ImGui::EndMenu();
         }
@@ -3158,7 +3162,7 @@ void EndPlot() {
             ImGui::OpenPopup("##LegendContext");
 
         if (ImGui::BeginPopup("##LegendContext")) {
-            ImGui::Text("Legend"); ImGui::Separator();
+            ImGui::TextUnformatted(app_language::Tr("Legend", "Легенда")); ImGui::Separator();
             if (ShowLegendContextMenu(legend, !ImHasFlag(plot.Flags, ImPlotFlags_NoLegend)))
                 ImFlipFlag(plot.Flags, ImPlotFlags_NoLegend);
             ImGui::EndPopup();
@@ -3679,7 +3683,7 @@ void EndSubplots() {
         if (legend_contextable && !ImHasFlag(subplot.Flags, ImPlotSubplotFlags_NoMenus) && ImGui::GetIO().MouseReleased[gp.InputMap.Menu])
             ImGui::OpenPopup("##LegendContext");
         if (ImGui::BeginPopup("##LegendContext")) {
-            ImGui::Text("Legend"); ImGui::Separator();
+            ImGui::TextUnformatted(app_language::Tr("Legend", "Легенда")); ImGui::Separator();
             if (ShowLegendContextMenu(legend, !ImHasFlag(subplot.Flags, ImPlotFlags_NoLegend)))
                 ImFlipFlag(subplot.Flags, ImPlotFlags_NoLegend);
             ImGui::EndPopup();

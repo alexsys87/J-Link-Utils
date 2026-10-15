@@ -1,5 +1,6 @@
 // GifWidget.h
 #pragma once
+#include "../Localization.h"
 #include "widget_common.h"
 #include <vector>
 #include <cstdint>
@@ -65,7 +66,7 @@ public:
         }
 
         if (!loaded || frames.empty()) {
-            ImGui::TextColored(ImVec4(1, 0, 0, 1), "GIF not loaded: %s", filePath.c_str());
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), app_language::Tr("GIF not loaded: %s", "GIF не загружен: %s"), filePath.c_str());
             return;
         }
 

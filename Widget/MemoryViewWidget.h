@@ -1,5 +1,6 @@
 // MemoryViewWidget.h
 #pragma once
+#include "../Localization.h"
 #include "widget_common.h"
 #include <vector>
 #include <cctype>
@@ -24,7 +25,7 @@ public:
 
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         if (!ctx || !ctx->IOMAP_Data) {
-            ImGui::TextColored(ImVec4(1, 0, 0, 1), "IOMAP_Data not available");
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), app_language::Tr("IOMAP_Data not available", "IOMAP_Data недоступны"));
             return;
         }
 
@@ -68,7 +69,7 @@ private:
         float cellSpacing = style.ItemSpacing.x;
 
         // Header
-        ImGui::Text(" Address    ");
+        ImGui::Text(app_language::Tr(" Address    ", " Адрес    "));
         ImGui::SameLine(addrWidth);
         for (int i = 0; i < bytesPerLine; ++i) {
             ImGui::SetCursorPosX(addrWidth + i * (cellWidth + cellSpacing));

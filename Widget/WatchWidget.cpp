@@ -1,4 +1,5 @@
 // WatchWidget.cpp
+#include "../Localization.h"
 #include "WatchWidget.h"
 #include <Main.h>
 #include <string>
@@ -212,17 +213,17 @@ WatchWidget::WatchWidget() {
 }
 
 void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
-    if (ImGui::CollapsingHeader("Options")) {
+    if (ImGui::CollapsingHeader(app_language::Label("Options", "Параметры"))) {
         ImGui::PushItemWidth(250);
         float oldInterval = s_updateInterval;
-        ImGui::DragFloat("Update Interval(ms)", &s_updateInterval, 1.0f, 1.0f, 10000.0f);
+        ImGui::DragFloat(app_language::Label("Update Interval(ms)", "Интервал обновления (мс)"), &s_updateInterval, 1.0f, 1.0f, 10000.0f);
         if (oldInterval != s_updateInterval) {
             prefs::WriteDouble("Watch.UpdateInterval", s_updateInterval);
             // Reset the timer so that the new interval applies at once
             s_refreshTime = 0.0;
         }
         ImGui::SameLine();
-        if (ImGui::DragFloat("Opacity(%)", &s_opacity, 0.1f, 1.0f, 100.0f))
+        if (ImGui::DragFloat(app_language::Label("Opacity(%)", "Непрозрачность (%)"), &s_opacity, 0.1f, 1.0f, 100.0f))
             prefs::WriteDouble("Watch.Opacity", s_opacity);
         ImGui::PopItemWidth();
     }
@@ -242,15 +243,19 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         ImGui::BeginTooltip();
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
         ImGui::TextUnformatted(
-            "Right-click on any field (Address, Name, Value, Description) "
-            "to open row context menu (Delete, Show As, Bit View, Hex View).\n"
-            "Right-click on empty area to open global menu (New Row, Export, Import)."
+            app_language::Tr(
+                "Right-click on any field (Address, Name, Value, Description) "
+                "to open row context menu (Delete, Show As, Bit View, Hex View).\n"
+                "Right-click on empty area to open global menu (New Row, Export, Import).",
+                "Щёлкните правой кнопкой мыши по полю (адрес, имя, значение, описание), "
+                "чтобы открыть меню строки (удаление, тип данных, побитовое и шестнадцатеричное представления).\n"
+                "Щёлкните правой кнопкой мыши по пустой области, чтобы открыть общее меню (новая строка, экспорт, импорт).")
         );
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
     ImGui::SameLine();
-    ImGui::Text("Watch Table");
+    ImGui::Text(app_language::Tr("Watch Table", "Таблица наблюдения"));
 
     // Column headers
     ImGui::Columns(4, nullptr, true);
@@ -259,13 +264,13 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
     float col2 = ImGui::GetColumnWidth(2);
     float col3 = ImGui::GetColumnWidth(3);
 
-    ImGui::TextColored(ImVec4(1, 1, 0, 1), "Address");
+    ImGui::TextColored(ImVec4(1, 1, 0, 1), app_language::Tr("Address", "Адрес"));
     ImGui::NextColumn();
-    ImGui::TextColored(ImVec4(1, 1, 0, 1), "Name");
+    ImGui::TextColored(ImVec4(1, 1, 0, 1), app_language::Tr("Name", "Имя"));
     ImGui::NextColumn();
-    ImGui::TextColored(ImVec4(1, 1, 0, 1), "Value");
+    ImGui::TextColored(ImVec4(1, 1, 0, 1), app_language::Tr("Value", "Значение"));
     ImGui::NextColumn();
-    ImGui::TextColored(ImVec4(1, 1, 0, 1), "Comment");
+    ImGui::TextColored(ImVec4(1, 1, 0, 1), app_language::Tr("Comment", "Комментарий"));
     ImGui::Columns(1);
 
     ImGui::BeginChild("WatchTable", ImVec2(0, 0), false);
@@ -564,7 +569,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
 
     // --- Window context menu ---
     if (ImGui::BeginPopupContextWindow("WatchMainMenu")) {
-        if (ImGui::MenuItem("New Row")) {
+        if (ImGui::MenuItem(app_language::Label("New Row", "Новая строка"))) {
             WatchRow newRow = {};
             newRow.enabled = true;
             newRow.dataType = BOOLEAN;
@@ -575,7 +580,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
             s_rows.push_back(newRow);
             s_modified = true;
         }
-        if (ImGui::MenuItem("Export...")) {
+        if (ImGui::MenuItem(app_language::Label("Export...", "Экспорт..."))) {
             const char* f = file_save_dialog("XML(*.xml)\0*.XML\0");
             if (f) {
                 char path[MAX_PATH]; // local buffer of the right size
@@ -587,7 +592,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
                 // no SDL_free(path): the array is on the stack
             }
         }
-        if (ImGui::MenuItem("Import...")) {
+        if (ImGui::MenuItem(app_language::Label("Import...", "Импорт..."))) {
             const char* f = file_open_dialog("XML(*.xml)\0*.XML\0");
             if (f) {
                 LoadFromXML(f);
@@ -673,11 +678,11 @@ void WatchWidget::DrawRowContextMenu() {
     if (rowIndex < 0 || rowIndex >= (int)s_rows.size())
         return;
 
-    if (ImGui::MenuItem("Delete Row")) {
+    if (ImGui::MenuItem(app_language::Label("Delete Row", "Удалить строку"))) {
         s_selectedRow = rowIndex;
     }
     ImGui::Separator();
-    if (ImGui::BeginMenu("Show As")) {
+    if (ImGui::BeginMenu(app_language::Label("Show As", "Тип данных"))) {
         bool selected[11] = { false };
         int dt = s_rows[rowIndex].dataType;
         auto setType = [&](int newType) {
@@ -689,37 +694,37 @@ void WatchWidget::DrawRowContextMenu() {
             };
         if (dt >= 0 && dt < 11) selected[dt] = true;
 
-        if (ImGui::MenuItem("Boolean", "", selected[BOOLEAN])) {
+        if (ImGui::MenuItem(app_language::Label("Boolean", "Логический"), "", selected[BOOLEAN])) {
             setType(BOOLEAN);
         }
-        if (ImGui::MenuItem("S08 Dec", "", selected[S08_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("S08 Dec", "S08 дес."), "", selected[S08_DEC])) {
             setType(S08_DEC);
         }
-        if (ImGui::MenuItem("U08 Dec", "", selected[U08_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("U08 Dec", "U08 дес."), "", selected[U08_DEC])) {
             setType(U08_DEC);
         }
-        if (ImGui::MenuItem("S16 Dec", "", selected[S16_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("S16 Dec", "S16 дес."), "", selected[S16_DEC])) {
             setType(S16_DEC);
         }
-        if (ImGui::MenuItem("U16 Dec", "", selected[U16_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("U16 Dec", "U16 дес."), "", selected[U16_DEC])) {
             setType(U16_DEC);
         }
-        if (ImGui::MenuItem("S32 Dec", "", selected[S32_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("S32 Dec", "S32 дес."), "", selected[S32_DEC])) {
             setType(S32_DEC);
         }
-        if (ImGui::MenuItem("U32 Dec", "", selected[U32_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("U32 Dec", "U32 дес."), "", selected[U32_DEC])) {
             setType(U32_DEC);
         }
-        if (ImGui::MenuItem("S64 Dec", "", selected[S64_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("S64 Dec", "S64 дес."), "", selected[S64_DEC])) {
             setType(S64_DEC);
         }
-        if (ImGui::MenuItem("U64 Dec", "", selected[U64_DEC])) {
+        if (ImGui::MenuItem(app_language::Label("U64 Dec", "U64 дес."), "", selected[U64_DEC])) {
             setType(U64_DEC);
         }
-        if (ImGui::MenuItem("Float", "", selected[FLOAT])) {
+        if (ImGui::MenuItem(app_language::Label("Float", "Вещественный"), "", selected[FLOAT])) {
             setType(FLOAT);
         }
-        if (ImGui::MenuItem("Float inverse", "", selected[FLOAT_INV])) {
+        if (ImGui::MenuItem(app_language::Label("Float inverse", "Вещественный (обратный порядок)"), "", selected[FLOAT_INV])) {
             setType(FLOAT_INV);
         }
         ImGui::EndMenu();
@@ -727,17 +732,17 @@ void WatchWidget::DrawRowContextMenu() {
     ImGui::Separator();
     int dt = s_rows[rowIndex].dataType;
     if (IsIntegerType(dt)) {
-        if (ImGui::MenuItem("Bit View", "", &s_rows[rowIndex].bitMode)) {
+        if (ImGui::MenuItem(app_language::Label("Bit View", "Побитовое представление"), "", &s_rows[rowIndex].bitMode)) {
             SaveRowPreferences(s_rows[rowIndex]);
         }
-        if (ImGui::MenuItem("Hex View", "", &s_rows[rowIndex].hexMode)) {
+        if (ImGui::MenuItem(app_language::Label("Hex View", "Шестнадцатеричное представление"), "", &s_rows[rowIndex].hexMode)) {
             if (s_rows[rowIndex].hexMode) s_rows[rowIndex].bitMode = false;
             SaveRowPreferences(s_rows[rowIndex]);
         }
     }
     if (dt == S16_DEC || dt == U16_DEC || dt == S32_DEC || dt == U32_DEC ||
         dt == S64_DEC || dt == U64_DEC || dt == FLOAT || dt == FLOAT_INV) {
-        if (ImGui::MenuItem("little Endian", "", &s_rows[rowIndex].littleEndian)) {
+        if (ImGui::MenuItem(app_language::Label("little Endian", "Младший байт первым"), "", &s_rows[rowIndex].littleEndian)) {
             s_modified = true;
         }
     }

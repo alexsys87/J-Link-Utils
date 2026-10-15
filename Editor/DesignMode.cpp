@@ -12,6 +12,7 @@
 // them; an element is used only after ui_safety::ContainsXMLNode() found it in the document.
 #include "DesignMode.h"
 #include "XMLEditor.h"
+#include "Localization.h"
 #include "XMLSafety.h"
 #include "WidgetTemplateFactory.h"
 #include "Preferences.h"
@@ -686,10 +687,10 @@ void Save(MainContext* ctx) {
     S.statusTime = ImGui::GetTime();
     if (ctx->File_path[0] != '\0' && ctx->CurrentXMLDoc->SaveFile(ctx->File_path) == tinyxml2::XML_SUCCESS) {
         ctx->xml_modified = false;
-        S.status = "Saved";
+        S.status = app_language::Tr("Saved", "Сохранено");
     }
     else {
-        S.status = std::string("Cannot save ") + ctx->File_path;
+        S.status = std::string(app_language::Tr("Cannot save ", "Не удалось сохранить ")) + ctx->File_path;
     }
 }
 
@@ -728,7 +729,7 @@ void HandleMouse(MainContext* ctx, const Box* hovered, const WindowBox* hoveredW
             ImGuiWindow* w = gc.HoveredWindow;
             S.menuPos = ImVec2(std::round(io.MousePos.x - Origin(w).x), std::round(io.MousePos.y - Origin(w).y));
             S.menuPos = ImVec2(Snap(S.menuPos.x), Snap(S.menuPos.y));
-            ImGui::OpenPopup("##DesignContext");
+            ImGui::OpenPopup(app_language::Label("##DesignContext", "##DesignContext"));
         }
         if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && S.selected && (hovered || hoveredWindow) &&
             S.propertiesWindow)
@@ -930,7 +931,7 @@ void DrawOverlay(const Box* hovered) {
 // Context menu (right click)
 // ------------------------------------------------------------------
 void ContextMenu(MainContext* ctx) {
-    if (ImGui::BeginPopup("##DesignContext")) {
+    if (ImGui::BeginPopup(app_language::Label("##DesignContext", "##DesignContext"))) {
         XMLElement* e = S.selected;
         if (!e) {
             ImGui::CloseCurrentPopup();
@@ -939,34 +940,35 @@ void ContextMenu(MainContext* ctx) {
             const wtf::NodeDef* def = WidgetDef(e);
             ImGui::TextDisabled("%s", Describe(e).c_str());
             ImGui::Separator();
-            if (ImGui::MenuItem("Add widget here...")) S.openAddHere = true;
+            if (ImGui::MenuItem(app_language::Label("Add widget here...", "Добавить виджет здесь..."))) S.openAddHere = true;
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", HoldsWidgets(wtf::DefinitionOf(e)) ? "Into this container, at the mouse position"
-                                                                              : "After this widget, at the mouse position");
-            if (ImGui::MenuItem("Properties") && S.propertiesWindow) ImGui::FocusWindow(S.propertiesWindow);
+                ImGui::SetTooltip("%s", HoldsWidgets(wtf::DefinitionOf(e)) ? app_language::Tr("Into this container, at the mouse position", "В этот контейнер, в позицию указателя мыши")
+                                                                              : app_language::Tr("After this widget, at the mouse position", "После этого виджета, в позиции указателя мыши"));
+            if (ImGui::MenuItem(app_language::Label("Properties", "Свойства")) && S.propertiesWindow) ImGui::FocusWindow(S.propertiesWindow);
             ImGui::Separator();
-            if (ImGui::MenuItem("Duplicate", "Ctrl+D")) DuplicateSelected(ctx);
-            if (ImGui::MenuItem("Move earlier", nullptr, false, e->PreviousSiblingElement() != nullptr)) MoveInList(ctx, e, false);
-            if (ImGui::MenuItem("Move later", nullptr, false, e->NextSiblingElement() != nullptr)) MoveInList(ctx, e, true);
+            if (ImGui::MenuItem(app_language::Label("Duplicate", "Дублировать"), "Ctrl+D")) DuplicateSelected(ctx);
+            if (ImGui::MenuItem(app_language::Label("Move earlier", "Переместить выше"), nullptr, false, e->PreviousSiblingElement() != nullptr)) MoveInList(ctx, e, false);
+            if (ImGui::MenuItem(app_language::Label("Move later", "Переместить ниже"), nullptr, false, e->NextSiblingElement() != nullptr)) MoveInList(ctx, e, true);
             if (def && def->placeable) {
-                if (ImGui::MenuItem("Back to flow layout", nullptr, false, HasProp(e, "PosX") || HasProp(e, "PosY")))
+                if (ImGui::MenuItem(app_language::Label("Back to flow layout", "Вернуть в потоковую компоновку"), nullptr, false, HasProp(e, "PosX") || HasProp(e, "PosY")))
                     ResetPosition(ctx, e);
             }
             if (XMLElement* owner = OwnerOf(e)) {
-                const std::string label = "Select " + Describe(owner);
-                if (ImGui::MenuItem(label.c_str())) S.selected = owner;
+                const std::string label = std::string(app_language::Tr("Select ", "Выбрать ")) + Describe(owner);
+                const std::string english = "Select " + Describe(owner);
+                if (ImGui::MenuItem(app_language::Label(english.c_str(), label.c_str()))) S.selected = owner;
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Delete", "Del")) DeleteSelected(ctx);
+            if (ImGui::MenuItem(app_language::Label("Delete", "Удалить"), "Del")) DeleteSelected(ctx);
         }
         ImGui::EndPopup();
     }
 
     if (S.openAddHere) {
-        ImGui::OpenPopup("##DesignAddHere");
+        ImGui::OpenPopup(app_language::Label("##DesignAddHere", "##DesignAddHere"));
         S.openAddHere = false;
     }
-    if (const wtf::NodeDef* chosen = WidgetPickerPopup("##DesignAddHere")) {
+    if (const wtf::NodeDef* chosen = WidgetPickerPopup(app_language::Label("##DesignAddHere", "##DesignAddHere"))) {
         XMLElement* target = Live(ctx, S.menuTarget);
         if (target) AddWidget(ctx, *chosen, target, &S.menuPos);
     }
@@ -980,8 +982,8 @@ void ContextMenu(MainContext* ctx) {
 void PropertyTable(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def, bool skipPosition) {
     if (!ImGui::BeginTable("##props", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp))
         return;
-    ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 110.0f);
-    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn(app_language::Label("Property", "Свойство"), ImGuiTableColumnFlags_WidthFixed, 110.0f);
+    ImGui::TableSetupColumn(app_language::Label("Value", "Значение"), ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupColumn("##remove", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
     for (size_t i = 0; i < def->props.size(); ++i) {
         const wtf::PropDef& p = def->props[i];
@@ -997,7 +999,7 @@ void PropertyTable(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def, boo
         if (present) ImGui::TextUnformatted(p.name);
         else ImGui::TextDisabled("%s", p.name);
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s%s", p.help ? p.help : p.name, present ? "" : "\n(not set: the default is used)");
+            ImGui::SetTooltip("%s%s", p.help ? wtf::EditorText(p.help) : p.name, present ? "" : app_language::Tr("\n(not set: the default is used)", "\n(не задано: используется значение по умолчанию)"));
         }
         ImGui::TableNextColumn();
         // Addresses show their value next to the field
@@ -1016,7 +1018,7 @@ void PropertyTable(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def, boo
                 RemoveProp(e, p);
                 EndEdit(ctx);
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove: use the default");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", app_language::Tr("Remove: use the default", "Удалить: использовать значение по умолчанию"));
         }
         ImGui::PopID();
     }
@@ -1070,8 +1072,9 @@ bool ItemList(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
         }
         ImGui::PopID();
     }
-    const std::string add = std::string("Add ") + def->itemTag;
-    if (ImGui::Button(add.c_str())) {
+    const std::string add = std::string(app_language::Tr("Add ", "Добавить ")) + def->itemTag;
+    const std::string englishAdd = std::string("Add ") + def->itemTag;
+    if (ImGui::Button(app_language::Label(englishAdd.c_str(), add.c_str()))) {
         BeginEdit(ctx);
         XMLElement* item = wtf::CreateItem(ctx->CurrentXMLDoc, *def);
         if (item) wtf::EnsureList(e, *def)->InsertEndChild(item);
@@ -1087,7 +1090,7 @@ bool ChildList(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
     int count = 0;
     for (XMLElement* c = list ? list->FirstChildElement() : nullptr; c; c = c->NextSiblingElement()) ++count;
     char header[64];
-    std::snprintf(header, sizeof(header), "Widgets (%d)###children", count);
+    std::snprintf(header, sizeof(header), app_language::Tr("Widgets (%d)###children", "Виджеты (%d)###children"), count);
     if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) return false;
     for (XMLElement* c = list ? list->FirstChildElement() : nullptr; c; c = c->NextSiblingElement()) {
         ImGui::PushID(c);
@@ -1103,7 +1106,7 @@ bool ChildList(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
         }
         if (!known) {
             ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Not a widget here; the loader ignores it.");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", app_language::Tr("Not a widget here; the loader ignores it.", "Здесь не может быть виджета; загрузчик его игнорирует."));
         }
         if (ListButtons(ctx, c)) {
             ImGui::PopID();
@@ -1112,8 +1115,9 @@ bool ChildList(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
         ImGui::PopID();
     }
     if (def->itemTag) {
-        const std::string add = std::string("Add ") + def->itemTag;
-        if (ImGui::Button(add.c_str())) {
+        const std::string add = std::string(app_language::Tr("Add ", "Добавить ")) + def->itemTag;
+        const std::string englishAdd = std::string("Add ") + def->itemTag;
+        if (ImGui::Button(app_language::Label(englishAdd.c_str(), add.c_str()))) {
             BeginEdit(ctx);
             XMLElement* item = wtf::CreateItem(ctx->CurrentXMLDoc, *def);
             if (item) wtf::EnsureList(e, *def)->InsertEndChild(item);
@@ -1123,8 +1127,8 @@ bool ChildList(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
         }
     }
     else {
-        if (ImGui::Button("Add widget##child")) ImGui::OpenPopup("##DesignAddChild");
-        if (const wtf::NodeDef* chosen = WidgetPickerPopup("##DesignAddChild")) {
+        if (ImGui::Button(app_language::Label("Add widget##child", "Добавить виджет##child"))) ImGui::OpenPopup(app_language::Label("##DesignAddChild", "##DesignAddChild"));
+        if (const wtf::NodeDef* chosen = WidgetPickerPopup(app_language::Label("##DesignAddChild", "##DesignAddChild"))) {
             AddWidget(ctx, *chosen, e, nullptr);
             return true;
         }
@@ -1133,36 +1137,36 @@ bool ChildList(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
 }
 
 void Toolbar(MainContext* ctx) {
-    if (ImGui::Button("Add widget")) ImGui::OpenPopup("##DesignAddWidget");
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Into the selected container or window, or after the selected widget");
-    if (const wtf::NodeDef* chosen = WidgetPickerPopup("##DesignAddWidget")) AddWidget(ctx, *chosen, S.selected, nullptr);
+    if (ImGui::Button(app_language::Label("Add widget", "Добавить виджет"))) ImGui::OpenPopup(app_language::Label("##DesignAddWidget", "##DesignAddWidget"));
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", app_language::Tr("Into the selected container or window, or after the selected widget", "В выбранный контейнер или окно либо после выбранного виджета"));
+    if (const wtf::NodeDef* chosen = WidgetPickerPopup(app_language::Label("##DesignAddWidget", "##DesignAddWidget"))) AddWidget(ctx, *chosen, S.selected, nullptr);
     ImGui::SameLine();
-    if (ImGui::Button("Add window")) AddWindow(ctx);
+    if (ImGui::Button(app_language::Label("Add window", "Добавить окно"))) AddWindow(ctx);
     ImGui::SameLine();
     ImGui::BeginDisabled(!S.selected);
-    if (ImGui::Button("Duplicate")) DuplicateSelected(ctx);
+    if (ImGui::Button(app_language::Label("Duplicate", "Дублировать"))) DuplicateSelected(ctx);
     ImGui::SameLine();
-    if (ImGui::Button("Delete")) DeleteSelected(ctx);
+    if (ImGui::Button(app_language::Label("Delete", "Удалить"))) DeleteSelected(ctx);
     ImGui::EndDisabled();
 
     ImGui::BeginDisabled(!CanUndo(ctx));
-    if (ImGui::Button("Undo")) Undo(ctx);
+    if (ImGui::Button(app_language::Label("Undo", "Отменить"))) Undo(ctx);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Ctrl+Z");
     ImGui::SameLine();
     ImGui::BeginDisabled(!CanRedo(ctx));
-    if (ImGui::Button("Redo")) Redo(ctx);
+    if (ImGui::Button(app_language::Label("Redo", "Повторить"))) Redo(ctx);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Ctrl+Y");
     ImGui::SameLine();
-    if (ImGui::Button("Save")) Save(ctx);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ctrl+S: write %s", ctx->File_path);
+    if (ImGui::Button(app_language::Label("Save", "Сохранить"))) Save(ctx);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip(app_language::Tr("Ctrl+S: write %s", "Ctrl+S: сохранить %s"), ctx->File_path);
     ImGui::SameLine();
     if (ImGui::GetTime() - S.statusTime < 3.0) ImGui::TextUnformatted(S.status.c_str());
-    else if (ctx->xml_modified) ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "unsaved");
+    else if (ctx->xml_modified) ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), app_language::Tr("unsaved", "не сохранено"));
 
-    if (ImGui::Checkbox("Snap to grid", &S.snap)) prefs::WriteBool("Design.Snap", S.snap);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hold Alt while dragging to place freely");
+    if (ImGui::Checkbox(app_language::Label("Snap to grid", "Привязка к сетке"), &S.snap)) prefs::WriteBool("Design.Snap", S.snap);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", app_language::Tr("Hold Alt while dragging to place freely", "Удерживайте Alt при перетаскивании для свободного размещения"));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(90.0f);
     if (ImGui::InputInt("##grid", &S.grid)) {
@@ -1170,34 +1174,35 @@ void Toolbar(MainContext* ctx) {
         prefs::WriteInt("Design.Grid", S.grid);
     }
     ImGui::SameLine();
-    if (ImGui::Checkbox("Outlines", &S.outlines)) prefs::WriteBool("Design.Outlines", S.outlines);
+    if (ImGui::Checkbox(app_language::Label("Outlines", "Контуры"), &S.outlines)) prefs::WriteBool("Design.Outlines", S.outlines);
 }
 
 void WidgetPanel(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
     ImGui::Text("%s", Describe(e).c_str());
     if (XMLElement* owner = OwnerOf(e)) {
         ImGui::SameLine();
-        const std::string label = "in " + Describe(owner);
-        if (ImGui::SmallButton(label.c_str())) {
+        const std::string label = std::string(app_language::Tr("in ", "в ")) + Describe(owner);
+        const std::string english = "in " + Describe(owner);
+        if (ImGui::SmallButton(app_language::Label(english.c_str(), label.c_str()))) {
             S.selected = owner;
             return;
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select the parent");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", app_language::Tr("Select the parent", "Выбрать родительский элемент"));
     }
 
-    if (def->placeable && ImGui::CollapsingHeader("Layout", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (def->placeable && ImGui::CollapsingHeader(app_language::Label("Layout", "Компоновка"), ImGuiTreeNodeFlags_DefaultOpen)) {
         const Box* box = FirstBox(e);
         const bool repeated = box && !box->movable;
         bool absolute = HasProp(e, "PosX") || HasProp(e, "PosY");
         if (repeated) {
-            ImGui::TextDisabled("Placed by the Grid around it");
+            ImGui::TextDisabled("%s", app_language::Tr("Placed by the Grid around it", "Размещается окружающей сеткой Grid"));
         }
-        else if (ImGui::Checkbox("Own position", &absolute)) {
+        else if (ImGui::Checkbox(app_language::Label("Own position", "Собственная позиция"), &absolute)) {
             if (absolute) SetPosition(ctx, e, CurrentPos(e, def), nullptr);
             else ResetPosition(ctx, e);
         }
         if (!repeated && ImGui::IsItemHovered())
-            ImGui::SetTooltip("Placed at PosX/PosY in the window instead of after the previous widget.\nDragging a widget sets it.");
+            ImGui::SetTooltip("%s", app_language::Tr("Placed at PosX/PosY in the window instead of after the previous widget.\nDragging a widget sets it.", "Размещается в окне по PosX/PosY, а не после предыдущего виджета.\nПозиция задаётся при перетаскивании виджета."));
         if (!repeated && absolute) {
             int xy[2] = { (int)PropFloat(e, def, "PosX"), (int)PropFloat(e, def, "PosY") };
             ImGui::SetNextItemWidth(-FLT_MIN);
@@ -1208,15 +1213,15 @@ void WidgetPanel(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
         }
         if (box) {
             const ImVec2 o = Origin(box->window);
-            ImGui::TextDisabled("On screen: %.0f x %.0f at %.0f, %.0f", box->rect.GetWidth(), box->rect.GetHeight(),
+            ImGui::TextDisabled(app_language::Tr("On screen: %.0f x %.0f at %.0f, %.0f", "На экране: %.0f x %.0f в позиции %.0f, %.0f"), box->rect.GetWidth(), box->rect.GetHeight(),
                 box->rect.Min.x - o.x, box->rect.Min.y - o.y);
         }
         else {
-            ImGui::TextDisabled("Not visible now");
+            ImGui::TextDisabled("%s", app_language::Tr("Not visible now", "Сейчас не виден"));
         }
     }
 
-    if (ImGui::CollapsingHeader("Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(app_language::Label("Properties", "Свойства"), ImGuiTreeNodeFlags_DefaultOpen)) {
         PropertyTable(ctx, e, def, def->placeable);
     }
     if (!Live(ctx, e)) return;
@@ -1230,9 +1235,9 @@ void WidgetPanel(MainContext* ctx, XMLElement* e, const wtf::NodeDef* def) {
 
 void WindowPanel(MainContext* ctx, XMLElement* e) {
     const wtf::NodeDef* def = &wtf::WindowDef();
-    ImGui::Text("Window %s", Caption(e));
-    ImGui::TextDisabled("Move and resize it with the mouse to store its geometry.");
-    if (ImGui::CollapsingHeader("Properties", ImGuiTreeNodeFlags_DefaultOpen)) PropertyTable(ctx, e, def, false);
+    ImGui::Text(app_language::Tr("Window %s", "Окно %s"), Caption(e));
+    ImGui::TextDisabled("%s", app_language::Tr("Move and resize it with the mouse to store its geometry.", "Переместите окно и измените его размер мышью, чтобы сохранить геометрию."));
+    if (ImGui::CollapsingHeader(app_language::Label("Properties", "Свойства"), ImGuiTreeNodeFlags_DefaultOpen)) PropertyTable(ctx, e, def, false);
     if (!Live(ctx, e)) return;
     ChildList(ctx, e, def);
 }
@@ -1242,16 +1247,15 @@ void ShowProperties(MainContext* ctx) {
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 440.0f, vp->WorkPos.y + 60.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(420.0f, 600.0f), ImGuiCond_FirstUseEver);
     bool open = true;
-    if (ImGui::Begin("Properties - design mode###DesignProperties", &open)) {
+    if (ImGui::Begin(app_language::Label("Properties - design mode###DesignProperties", "Свойства — режим дизайна###DesignProperties"), &open)) {
         S.propertiesWindow = ImGui::GetCurrentWindow();
         Toolbar(ctx);
         ImGui::Separator();
         XMLElement* e = S.selected;
         if (!e) {
-            ImGui::TextWrapped("Click a widget to select it. Drag it to move it, drag the orange handles to resize it, "
-                "right-click for more. Arrows move the selection by a pixel (Shift: a grid step), Del deletes it.");
+            ImGui::TextWrapped("%s", app_language::Tr("Click a widget to select it. Drag it to move it, drag the orange handles to resize it, right-click for more. Arrows move the selection by a pixel (Shift: a grid step), Del deletes it.", "Щёлкните виджет, чтобы выбрать его. Перетаскивайте его для перемещения, оранжевые маркеры — для изменения размера. Правая кнопка открывает меню. Стрелки перемещают выделение на пиксель (Shift: шаг сетки), Del удаляет его."));
             ImGui::Spacing();
-            ImGui::TextDisabled("Buttons, sliders and inputs do not react in design mode.");
+            ImGui::TextDisabled("%s", app_language::Tr("Buttons, sliders and inputs do not react in design mode.", "Кнопки, ползунки и поля ввода не реагируют в режиме дизайна."));
         }
         else if (IsWindow(e)) {
             WindowPanel(ctx, e);

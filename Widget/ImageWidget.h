@@ -1,5 +1,6 @@
 ﻿// ImageWidget.h
 #pragma once
+#include "../Localization.h"
 #include "widget_common.h"
 
 #ifdef __cplusplus
@@ -51,7 +52,7 @@ public:
         }
 
         if (!texLoaded) {
-            ImGui::TextColored(ImVec4(1, 0, 0, 1), "Image not loaded: %s", filePath.c_str());
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), app_language::Tr("Image not loaded: %s", "Изображение не загружено: %s"), filePath.c_str());
             return;
         }
 

@@ -5,6 +5,7 @@
 #include "widget_common.h"
 #include "WidgetTemplateFactory.h"
 #include "DesignMode.h"
+#include "Localization.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -442,6 +443,7 @@ static int CountUnknown(tinyxml2::XMLElement* e, const wtf::NodeDef* ownerDef) {
 }
 
 int main(int argc, char** argv) {
+    app_language::SetFromCode(std::getenv("SMOKE_LANGUAGE") ? std::getenv("SMOKE_LANGUAGE") : "en");
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc > 1 && std::strcmp(argv[1], "--dump-schema") == 0) {
         auto dump = [](const char* tag, const wtf::NodeDef& def) {

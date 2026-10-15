@@ -32,6 +32,7 @@ def main():
     row = function(header, 'struct WatchRow {').rstrip() + ';'
     fragments = ['''
 #include "Preferences.h"
+#include "Localization.h"
 #include "Editor/XMLSafety.h"
 #include <cassert>
 #include <cstring>
@@ -99,8 +100,12 @@ std::vector<std::string> g_WindowPreferenceKeys;
                         '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
                         '-I', str(ROOT), '-I', str(ROOT / 'include'), str(source),
                         str(ROOT / 'include/tinyxml2/tinyxml2.cpp'), '-o', str(binary)], check=True)
-        subprocess.run([str(binary), str(build)], check=True,
-                       env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=1'})
+        for language in ('en', 'ru'):
+            data = build / language
+            data.mkdir()
+            subprocess.run([str(binary), str(data)], check=True,
+                           env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=1',
+                                'TEST_LANGUAGE': language})
 
 
 if __name__ == '__main__':

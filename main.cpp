@@ -43,6 +43,8 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #include "MainWindowChrome.h"
 #include "UserGuide.h"
 #include "Preferences.h"
+#include "Localization.h"
+#include "LocalizedDiagnostics.h"
 
 static MainWindowChrome g_MainWindowChrome;
 
@@ -471,17 +473,17 @@ int FontSelector(const char* label)
 
 void ShowMenuFile(MainContext* ctx) {
 
-    if (ImGui::MenuItem("New", "Ctrl+N")) {
+    if (ImGui::MenuItem(app_language::Label("New", "Создать"), "Ctrl+N")) {
         NewFile(ctx);
     }
-    if (ImGui::MenuItem("Open", "Ctrl+O")) {
+    if (ImGui::MenuItem(app_language::Label("Open", "Открыть"), "Ctrl+O")) {
         OpenFile(ctx);
     }
-    if (ImGui::MenuItem("Close", "Ctrl+Q")) {
+    if (ImGui::MenuItem(app_language::Label("Close", "Закрыть"), "Ctrl+Q")) {
         CloseFile(ctx);
     }
     ImGui::Separator();
-    if (ImGui::MenuItem("Quit", "Alt+F4")) {
+    if (ImGui::MenuItem(app_language::Label("Quit", "Выход"), "Alt+F4")) {
         ctx->IsClosing = true;
     }
 }
@@ -678,31 +680,141 @@ bool LoadStyleFromXML(const char* filename, ImGuiStyle& style)
 // ------------------------------------------------------------------
 // Style editor
 // ------------------------------------------------------------------
+// Style paths are UTF-8 (OpenStyleFile converts them back to UTF-16 on Windows).
+// The legacy noc dialog uses GetOpenFileNameA: passing translated UTF-8 filters
+// to it corrupts Russian captions on ANSI code pages. Keep document/widget
+// dialogs and their existing path encoding untouched; use Unicode for styles.
+static const char* OpenStyleFileDialog(int flags, const char* filters, const char* defaultName)
+{
+#ifdef _WIN32
+    static std::string result;
+    result.clear();
+    const char* end = filters;
+    while (*end) end += strlen(end) + 1;
+    const int length = static_cast<int>(end - filters + 1); // Includes the double NUL.
+    const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filters, length, nullptr, 0);
+    if (!count) return nullptr;
+    std::wstring wideFilters(count, L'\0');
+    if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filters, length, &wideFilters[0], count))
+        return nullptr;
+    wchar_t filename[32768] = {};
+    if (defaultName && !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, defaultName, -1,
+        filename, static_cast<int>(sizeof(filename) / sizeof(filename[0]))))
+        return nullptr;
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = GetActiveWindow();
+    dialog.lpstrFile = filename;
+    dialog.nMaxFile = static_cast<DWORD>(sizeof(filename) / sizeof(filename[0]));
+    dialog.lpstrFilter = wideFilters.c_str();
+    dialog.nFilterIndex = 1;
+    dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR |
+        ((flags & NOC_FILE_DIALOG_OPEN) ? OFN_FILEMUSTEXIST : OFN_OVERWRITEPROMPT);
+    const BOOL accepted = (flags & NOC_FILE_DIALOG_OPEN)
+        ? GetOpenFileNameW(&dialog) : GetSaveFileNameW(&dialog);
+    if (!accepted) return nullptr;
+    result = std::filesystem::path(filename).u8string();
+    return result.c_str();
+#else
+    return noc_file_dialog_open(flags, filters, nullptr, defaultName);
+#endif
+}
+
+// Localized display names only: XML serialization continues to use ImGui's keys.
+static const char* StyleColorDisplayName(int color)
+{
+    switch (color) {
+    case ImGuiCol_Text: return app_language::Tr("Text", "Текст");
+    case ImGuiCol_TextDisabled: return app_language::Tr("TextDisabled", "Неактивный текст");
+    case ImGuiCol_WindowBg: return app_language::Tr("WindowBg", "Фон окна");
+    case ImGuiCol_ChildBg: return app_language::Tr("ChildBg", "Фон дочернего окна");
+    case ImGuiCol_PopupBg: return app_language::Tr("PopupBg", "Фон всплывающего окна");
+    case ImGuiCol_Border: return app_language::Tr("Border", "Граница");
+    case ImGuiCol_BorderShadow: return app_language::Tr("BorderShadow", "Тень границы");
+    case ImGuiCol_FrameBg: return app_language::Tr("FrameBg", "Фон рамки");
+    case ImGuiCol_FrameBgHovered: return app_language::Tr("FrameBgHovered", "Фон рамки при наведении");
+    case ImGuiCol_FrameBgActive: return app_language::Tr("FrameBgActive", "Фон активной рамки");
+    case ImGuiCol_TitleBg: return app_language::Tr("TitleBg", "Фон заголовка");
+    case ImGuiCol_TitleBgActive: return app_language::Tr("TitleBgActive", "Фон активного заголовка");
+    case ImGuiCol_TitleBgCollapsed: return app_language::Tr("TitleBgCollapsed", "Фон свёрнутого заголовка");
+    case ImGuiCol_MenuBarBg: return app_language::Tr("MenuBarBg", "Фон строки меню");
+    case ImGuiCol_ScrollbarBg: return app_language::Tr("ScrollbarBg", "Фон полосы прокрутки");
+    case ImGuiCol_ScrollbarGrab: return app_language::Tr("ScrollbarGrab", "Ползунок прокрутки");
+    case ImGuiCol_ScrollbarGrabHovered: return app_language::Tr("ScrollbarGrabHovered", "Ползунок прокрутки при наведении");
+    case ImGuiCol_ScrollbarGrabActive: return app_language::Tr("ScrollbarGrabActive", "Активный ползунок прокрутки");
+    case ImGuiCol_CheckMark: return app_language::Tr("CheckMark", "Отметка флажка");
+    case ImGuiCol_SliderGrab: return app_language::Tr("SliderGrab", "Ползунок регулятора");
+    case ImGuiCol_SliderGrabActive: return app_language::Tr("SliderGrabActive", "Активный ползунок регулятора");
+    case ImGuiCol_Button: return app_language::Tr("Button", "Кнопка");
+    case ImGuiCol_ButtonHovered: return app_language::Tr("ButtonHovered", "Кнопка при наведении");
+    case ImGuiCol_ButtonActive: return app_language::Tr("ButtonActive", "Активная кнопка");
+    case ImGuiCol_Header: return app_language::Tr("Header", "Заголовок элемента");
+    case ImGuiCol_HeaderHovered: return app_language::Tr("HeaderHovered", "Заголовок элемента при наведении");
+    case ImGuiCol_HeaderActive: return app_language::Tr("HeaderActive", "Активный заголовок элемента");
+    case ImGuiCol_Separator: return app_language::Tr("Separator", "Разделитель");
+    case ImGuiCol_SeparatorHovered: return app_language::Tr("SeparatorHovered", "Разделитель при наведении");
+    case ImGuiCol_SeparatorActive: return app_language::Tr("SeparatorActive", "Активный разделитель");
+    case ImGuiCol_ResizeGrip: return app_language::Tr("ResizeGrip", "Маркер изменения размера");
+    case ImGuiCol_ResizeGripHovered: return app_language::Tr("ResizeGripHovered", "Маркер размера при наведении");
+    case ImGuiCol_ResizeGripActive: return app_language::Tr("ResizeGripActive", "Активный маркер размера");
+    case ImGuiCol_InputTextCursor: return app_language::Tr("InputTextCursor", "Курсор текстового ввода");
+    case ImGuiCol_TabHovered: return app_language::Tr("TabHovered", "Вкладка при наведении");
+    case ImGuiCol_Tab: return app_language::Tr("Tab", "Вкладка");
+    case ImGuiCol_TabSelected: return app_language::Tr("TabSelected", "Выбранная вкладка");
+    case ImGuiCol_TabSelectedOverline: return app_language::Tr("TabSelectedOverline", "Верхняя линия выбранной вкладки");
+    case ImGuiCol_TabDimmed: return app_language::Tr("TabDimmed", "Вкладка без фокуса");
+    case ImGuiCol_TabDimmedSelected: return app_language::Tr("TabDimmedSelected", "Выбранная вкладка без фокуса");
+    case ImGuiCol_TabDimmedSelectedOverline: return app_language::Tr("TabDimmedSelectedOverline", "Верхняя линия выбранной вкладки без фокуса");
+    case ImGuiCol_PlotLines: return app_language::Tr("PlotLines", "Линии графика");
+    case ImGuiCol_PlotLinesHovered: return app_language::Tr("PlotLinesHovered", "Линии графика при наведении");
+    case ImGuiCol_PlotHistogram: return app_language::Tr("PlotHistogram", "Гистограмма");
+    case ImGuiCol_PlotHistogramHovered: return app_language::Tr("PlotHistogramHovered", "Гистограмма при наведении");
+    case ImGuiCol_TableHeaderBg: return app_language::Tr("TableHeaderBg", "Фон заголовка таблицы");
+    case ImGuiCol_TableBorderStrong: return app_language::Tr("TableBorderStrong", "Основные границы таблицы");
+    case ImGuiCol_TableBorderLight: return app_language::Tr("TableBorderLight", "Внутренние границы таблицы");
+    case ImGuiCol_TableRowBg: return app_language::Tr("TableRowBg", "Фон строки таблицы");
+    case ImGuiCol_TableRowBgAlt: return app_language::Tr("TableRowBgAlt", "Фон чередующихся строк таблицы");
+    case ImGuiCol_TextLink: return app_language::Tr("TextLink", "Текст ссылки");
+    case ImGuiCol_TextSelectedBg: return app_language::Tr("TextSelectedBg", "Фон выделенного текста");
+    case ImGuiCol_TreeLines: return app_language::Tr("TreeLines", "Линии дерева");
+    case ImGuiCol_DragDropTarget: return app_language::Tr("DragDropTarget", "Граница области перетаскивания");
+    case ImGuiCol_DragDropTargetBg: return app_language::Tr("DragDropTargetBg", "Фон области перетаскивания");
+    case ImGuiCol_UnsavedMarker: return app_language::Tr("UnsavedMarker", "Метка несохранённых изменений");
+    case ImGuiCol_NavCursor: return app_language::Tr("NavCursor", "Курсор навигации");
+    case ImGuiCol_NavWindowingHighlight: return app_language::Tr("NavWindowingHighlight", "Выделение окна при переключении");
+    case ImGuiCol_NavWindowingDimBg: return app_language::Tr("NavWindowingDimBg", "Затемнение фона при переключении окон");
+    case ImGuiCol_ModalWindowDimBg: return app_language::Tr("ModalWindowDimBg", "Затемнение фона модального окна");
+    default: return ImGui::GetStyleColorName(color);
+    }
+}
+
 void ShowStyleEditor(bool* p_open)
 {
     // Reference style for the per-color Save/Revert buttons; the menu actions below update it too.
     static ImGuiStyle ref_saved_style = ImGui::GetStyle();
 
-    ImGui::Begin("Style Editor", p_open, ImGuiWindowFlags_MenuBar);
+    ImGui::Begin(app_language::Label("Style Editor", "Редактор стиля"), p_open, ImGuiWindowFlags_MenuBar);
 
+    const std::string xmlFilters = std::string(app_language::Tr("XML files", "Файлы XML")) + '\0' + "*.xml" + '\0' +
+        app_language::Tr("All files", "Все файлы") + '\0' + "*.*" + '\0';
     if (ImGui::BeginMenuBar())
     {
-        if (ImGui::BeginMenu("File"))
+        if (ImGui::BeginMenu(app_language::Label("File", "Файл")))
         {
-            if (ImGui::MenuItem("Save to XML..."))
+            if (ImGui::MenuItem(app_language::Label("Save to XML...", "Сохранить в XML...")))
             {
-                const char* filename = noc_file_dialog_open(NOC_FILE_DIALOG_SAVE,
-                    "XML files\0*.xml\0All files\0*.*\0", NULL, "style.xml");
+                const char* filename = OpenStyleFileDialog(NOC_FILE_DIALOG_SAVE,
+                    xmlFilters.c_str(), "style.xml");
                 if (filename)
                 {
                     if (!SaveStyleToXML(filename, ImGui::GetStyle()))
-                        ImGui::OpenPopup("Error##SaveStyle");
+                        ImGui::OpenPopup(app_language::Label("Error##SaveStyle", "Ошибка##SaveStyle"));
                 }
             }
-            if (ImGui::MenuItem("Load from XML..."))
+            if (ImGui::MenuItem(app_language::Label("Load from XML...", "Загрузить из XML...")))
             {
-                const char* filename = noc_file_dialog_open(NOC_FILE_DIALOG_OPEN,
-                    "XML files\0*.xml\0All files\0*.*\0", NULL, NULL);
+                const char* filename = OpenStyleFileDialog(NOC_FILE_DIALOG_OPEN,
+                    xmlFilters.c_str(), nullptr);
                 if (filename)
                 {
                     if (LoadStyleFromXML(filename, ImGui::GetStyle()))
@@ -711,16 +823,16 @@ void ShowStyleEditor(bool* p_open)
                         ref_saved_style = ImGui::GetStyle();
                     }
                     else
-                        ImGui::OpenPopup("Error##LoadStyle");
+                        ImGui::OpenPopup(app_language::Label("Error##LoadStyle", "Ошибка##LoadStyle"));
                 }
             }
-            if (ImGui::MenuItem("Save as Custom"))
+            if (ImGui::MenuItem(app_language::Label("Save as Custom", "Сохранить как пользовательский")))
             {
                 if (!SaveStyleToXML(ApplicationFile("custom.style.xml").c_str(), ImGui::GetStyle()))
-                    ImGui::OpenPopup("Error##SaveStyle");
+                    ImGui::OpenPopup(app_language::Label("Error##SaveStyle", "Ошибка##SaveStyle"));
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Reset to Default"))
+            if (ImGui::MenuItem(app_language::Label("Reset to Default", "Сбросить по умолчанию")))
             {
                 ImGui::GetStyle() = ImGuiStyle();
                 ref_saved_style = ImGui::GetStyle();
@@ -731,16 +843,16 @@ void ShowStyleEditor(bool* p_open)
     }
 
     // Error popups
-    if (ImGui::BeginPopupModal("Error##SaveStyle", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    if (ImGui::BeginPopupModal(app_language::Label("Error##SaveStyle", "Ошибка##SaveStyle"), NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::Text("Failed to save style to XML file.");
-        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+        ImGui::Text(app_language::Tr("Failed to save style to XML file.", "Не удалось сохранить стиль в файл XML."));
+        if (ImGui::Button(app_language::Label("OK", "ОК"))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    if (ImGui::BeginPopupModal("Error##LoadStyle", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    if (ImGui::BeginPopupModal(app_language::Label("Error##LoadStyle", "Ошибка##LoadStyle"), NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::Text("Failed to load style from XML file.");
-        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+        ImGui::Text(app_language::Tr("Failed to load style from XML file.", "Не удалось загрузить стиль из файла XML."));
+        if (ImGui::Button(app_language::Label("OK", "ОК"))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 
@@ -751,58 +863,59 @@ void ShowStyleEditor(bool* p_open)
 
         ImGui::Spacing();
 
-        if (ImGui::BeginTabItem("Sizes"))
+        if (ImGui::BeginTabItem(app_language::Label("Sizes", "Размеры")))
         {
-            ImGui::Text("Main");
-            ImGui::SliderFloat2("WindowPadding", (float*)&style.WindowPadding, 0.0f, 20.0f, "%.0f");
-            ImGui::SliderFloat2("FramePadding", (float*)&style.FramePadding, 0.0f, 20.0f, "%.0f");
-            ImGui::SliderFloat2("CellPadding", (float*)&style.CellPadding, 0.0f, 20.0f, "%.0f");
-            ImGui::SliderFloat2("ItemSpacing", (float*)&style.ItemSpacing, 0.0f, 20.0f, "%.0f");
-            ImGui::SliderFloat2("ItemInnerSpacing", (float*)&style.ItemInnerSpacing, 0.0f, 20.0f, "%.0f");
-            ImGui::SliderFloat2("TouchExtraPadding", (float*)&style.TouchExtraPadding, 0.0f, 10.0f, "%.0f");
-            ImGui::SliderFloat("IndentSpacing", &style.IndentSpacing, 0.0f, 30.0f, "%.0f");
-            ImGui::SliderFloat("ScrollbarSize", &style.ScrollbarSize, 1.0f, 20.0f, "%.0f");
-            ImGui::SliderFloat("GrabMinSize", &style.GrabMinSize, 1.0f, 20.0f, "%.0f");
-            ImGui::Text("Borders");
-            ImGui::SliderFloat("WindowBorderSize", &style.WindowBorderSize, 0.0f, 1.0f, "%.0f");
-            ImGui::SliderFloat("ChildBorderSize", &style.ChildBorderSize, 0.0f, 1.0f, "%.0f");
-            ImGui::SliderFloat("PopupBorderSize", &style.PopupBorderSize, 0.0f, 1.0f, "%.0f");
-            ImGui::SliderFloat("FrameBorderSize", &style.FrameBorderSize, 0.0f, 1.0f, "%.0f");
-            ImGui::SliderFloat("TabBorderSize", &style.TabBorderSize, 0.0f, 1.0f, "%.0f");
-            ImGui::Text("Rounding");
-            ImGui::SliderFloat("WindowRounding", &style.WindowRounding, 0.0f, 12.0f, "%.0f");
-            ImGui::SliderFloat("ChildRounding", &style.ChildRounding, 0.0f, 12.0f, "%.0f");
-            ImGui::SliderFloat("FrameRounding", &style.FrameRounding, 0.0f, 12.0f, "%.0f");
-            ImGui::SliderFloat("PopupRounding", &style.PopupRounding, 0.0f, 12.0f, "%.0f");
-            ImGui::SliderFloat("ScrollbarRounding", &style.ScrollbarRounding, 0.0f, 12.0f, "%.0f");
-            ImGui::SliderFloat("GrabRounding", &style.GrabRounding, 0.0f, 12.0f, "%.0f");
-            ImGui::SliderFloat("TabRounding", &style.TabRounding, 0.0f, 12.0f, "%.0f");
-            ImGui::Text("Alignment");
-            ImGui::SliderFloat2("WindowTitleAlign", (float*)&style.WindowTitleAlign, 0.0f, 1.0f, "%.2f");
-            ImGui::Combo("WindowMenuButtonPosition", (int*)&style.WindowMenuButtonPosition, "Left\0Right\0");
-            ImGui::SliderFloat2("ButtonTextAlign", (float*)&style.ButtonTextAlign, 0.0f, 1.0f, "%.2f");
-            ImGui::SliderFloat2("SelectableTextAlign", (float*)&style.SelectableTextAlign, 0.0f, 1.0f, "%.2f");
-            ImGui::Text("Safe Area Padding");
-            ImGui::SliderFloat2("DisplaySafeAreaPadding", (float*)&style.DisplaySafeAreaPadding, 0.0f, 30.0f, "%.0f");
+            ImGui::Text(app_language::Tr("Main", "Основные"));
+            ImGui::SliderFloat2(app_language::Label("WindowPadding", "Отступы окна"), (float*)&style.WindowPadding, 0.0f, 20.0f, "%.0f");
+            ImGui::SliderFloat2(app_language::Label("FramePadding", "Отступы рамки"), (float*)&style.FramePadding, 0.0f, 20.0f, "%.0f");
+            ImGui::SliderFloat2(app_language::Label("CellPadding", "Отступы ячейки"), (float*)&style.CellPadding, 0.0f, 20.0f, "%.0f");
+            ImGui::SliderFloat2(app_language::Label("ItemSpacing", "Интервал между элементами"), (float*)&style.ItemSpacing, 0.0f, 20.0f, "%.0f");
+            ImGui::SliderFloat2(app_language::Label("ItemInnerSpacing", "Внутренний интервал элемента"), (float*)&style.ItemInnerSpacing, 0.0f, 20.0f, "%.0f");
+            ImGui::SliderFloat2(app_language::Label("TouchExtraPadding", "Дополнительная сенсорная область"), (float*)&style.TouchExtraPadding, 0.0f, 10.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("IndentSpacing", "Ширина отступа"), &style.IndentSpacing, 0.0f, 30.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("ScrollbarSize", "Ширина полосы прокрутки"), &style.ScrollbarSize, 1.0f, 20.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("GrabMinSize", "Минимальный размер ползунка"), &style.GrabMinSize, 1.0f, 20.0f, "%.0f");
+            ImGui::Text(app_language::Tr("Borders", "Границы"));
+            ImGui::SliderFloat(app_language::Label("WindowBorderSize", "Толщина границы окна"), &style.WindowBorderSize, 0.0f, 1.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("ChildBorderSize", "Толщина границы дочернего окна"), &style.ChildBorderSize, 0.0f, 1.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("PopupBorderSize", "Толщина границы всплывающего окна"), &style.PopupBorderSize, 0.0f, 1.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("FrameBorderSize", "Толщина границы рамки"), &style.FrameBorderSize, 0.0f, 1.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("TabBorderSize", "Толщина границы вкладки"), &style.TabBorderSize, 0.0f, 1.0f, "%.0f");
+            ImGui::Text(app_language::Tr("Rounding", "Скругление"));
+            ImGui::SliderFloat(app_language::Label("WindowRounding", "Скругление окна"), &style.WindowRounding, 0.0f, 12.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("ChildRounding", "Скругление дочернего окна"), &style.ChildRounding, 0.0f, 12.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("FrameRounding", "Скругление рамки"), &style.FrameRounding, 0.0f, 12.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("PopupRounding", "Скругление всплывающего окна"), &style.PopupRounding, 0.0f, 12.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("ScrollbarRounding", "Скругление полосы прокрутки"), &style.ScrollbarRounding, 0.0f, 12.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("GrabRounding", "Скругление ползунка"), &style.GrabRounding, 0.0f, 12.0f, "%.0f");
+            ImGui::SliderFloat(app_language::Label("TabRounding", "Скругление вкладки"), &style.TabRounding, 0.0f, 12.0f, "%.0f");
+            ImGui::Text(app_language::Tr("Alignment", "Выравнивание"));
+            ImGui::SliderFloat2(app_language::Label("WindowTitleAlign", "Выравнивание заголовка окна"), (float*)&style.WindowTitleAlign, 0.0f, 1.0f, "%.2f");
+            const char* menuPositions[] = { app_language::Tr("Left", "Слева"), app_language::Tr("Right", "Справа") };
+            ImGui::Combo(app_language::Label("WindowMenuButtonPosition", "Положение кнопки меню окна"), (int*)&style.WindowMenuButtonPosition, menuPositions, IM_ARRAYSIZE(menuPositions));
+            ImGui::SliderFloat2(app_language::Label("ButtonTextAlign", "Выравнивание текста кнопки"), (float*)&style.ButtonTextAlign, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat2(app_language::Label("SelectableTextAlign", "Выравнивание текста выбора"), (float*)&style.SelectableTextAlign, 0.0f, 1.0f, "%.2f");
+            ImGui::Text(app_language::Tr("Safe Area Padding", "Отступы безопасной области"));
+            ImGui::SliderFloat2(app_language::Label("DisplaySafeAreaPadding", "Отступы безопасной области экрана"), (float*)&style.DisplaySafeAreaPadding, 0.0f, 30.0f, "%.0f");
 
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Colors"))
+        if (ImGui::BeginTabItem(app_language::Label("Colors", "Цвета")))
         {
             static ImGuiTextFilter filter;
-            filter.Draw("Filter colors", ImGui::GetFontSize() * 16);
+            filter.Draw(app_language::Label("Filter colors", "Фильтр цветов"), ImGui::GetFontSize() * 16);
 
             static int alpha_mode = 0; // 0=Opaque, 1=Alpha, 2=Both
-            ImGui::RadioButton("Opaque", &alpha_mode, 0); ImGui::SameLine();
-            ImGui::RadioButton("Alpha", &alpha_mode, 1); ImGui::SameLine();
-            ImGui::RadioButton("Both", &alpha_mode, 2); ImGui::SameLine();
+            ImGui::RadioButton(app_language::Label("Opaque", "Без прозрачности"), &alpha_mode, 0); ImGui::SameLine();
+            ImGui::RadioButton(app_language::Label("Alpha", "Прозрачность"), &alpha_mode, 1); ImGui::SameLine();
+            ImGui::RadioButton(app_language::Label("Both", "Оба режима"), &alpha_mode, 2); ImGui::SameLine();
 
             ImGui::BeginChild("##colors", ImVec2(0, 0), true, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar);
             ImGui::PushItemWidth(-160);
             for (int i = 0; i < ImGuiCol_COUNT; i++)
             {
-                const char* name = ImGui::GetStyleColorName(i);
+                const char* name = StyleColorDisplayName(i);
                 if (!filter.PassFilter(name))
                     continue;
                 ImGui::PushID(i);
@@ -813,9 +926,9 @@ void ShowStyleEditor(bool* p_open)
                 if (memcmp(&style.Colors[i], &ref->Colors[i], sizeof(ImVec4)) != 0)
                 {
                     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-                    if (ImGui::Button("Save")) ref->Colors[i] = style.Colors[i];
+                    if (ImGui::Button(app_language::Label("Save", "Сохранить"))) ref->Colors[i] = style.Colors[i];
                     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-                    if (ImGui::Button("Revert")) style.Colors[i] = ref->Colors[i];
+                    if (ImGui::Button(app_language::Label("Revert", "Отменить"))) style.Colors[i] = ref->Colors[i];
                 }
                 ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
                 ImGui::TextUnformatted(name);
@@ -844,12 +957,12 @@ void ShowMenuWindow(MainContext* ctx)
 
     ImGui::Separator();
 
-    if (ImGui::MenuItem("Top Most", "", &ctx->TopMost)) {
+    if (ImGui::MenuItem(app_language::Label("Top Most", "Поверх всех окон"), "", &ctx->TopMost)) {
         SDL_SetWindowAlwaysOnTop(ctx->Wimdow, ctx->TopMost ? SDL_TRUE : SDL_FALSE);
         SaveIniSettings(ctx);
     }
 
-    int font = FontSelector("Fonts##Selector");
+    int font = FontSelector(app_language::Label("Fonts##Selector", "Шрифты##Selector"));
     if (font != -1)
     {
         ctx->FontSize = font;
@@ -858,11 +971,22 @@ void ShowMenuWindow(MainContext* ctx)
 
     ImGui::Separator();
 
-    // Style list (includes Adobe Spectrum, Doug Binks Dark, Enemy Mouse, LED Synth Master)
-    if (ImGui::Combo("Style", &ctx->Style,
-        "Classic\0Blue\0Light\0Soft\0Blender\0Cyberpunk\0Nord\0Black\0Green\0Red\0Embrace\0Dracula\0"
-        "Visual Studio\0One Dark\0Light Classic\0Cherry\0Nord Light\0Matrix\0High Contrast\0"
-        "Adobe Spectrum\0Doug Binks Dark\0Enemy Mouse\0LED Synth Master\0Custom\0"))
+    // Preserve the serialized style indices; names are localized only for display.
+    const char* styleNames[] = {
+        app_language::Tr("Classic", "Классический"), app_language::Tr("Blue", "Синий"),
+        app_language::Tr("Light", "Светлый"), app_language::Tr("Soft", "Мягкий"),
+        app_language::Tr("Blender", "Blender"), app_language::Tr("Cyberpunk", "Киберпанк"),
+        app_language::Tr("Nord", "Nord"), app_language::Tr("Black", "Чёрный"),
+        app_language::Tr("Green", "Зелёный"), app_language::Tr("Red", "Красный"),
+        app_language::Tr("Embrace", "Embrace"), app_language::Tr("Dracula", "Дракула"),
+        app_language::Tr("Visual Studio", "Visual Studio"), app_language::Tr("One Dark", "One Dark"),
+        app_language::Tr("Light Classic", "Светлый классический"), app_language::Tr("Cherry", "Вишнёвый"),
+        app_language::Tr("Nord Light", "Nord светлый"), app_language::Tr("Matrix", "Матрица"),
+        app_language::Tr("High Contrast", "Высокая контрастность"), app_language::Tr("Adobe Spectrum", "Adobe Spectrum"),
+        app_language::Tr("Doug Binks Dark", "Doug Binks тёмный"), app_language::Tr("Enemy Mouse", "Enemy Mouse"),
+        app_language::Tr("LED Synth Master", "LED Synth Master"), app_language::Tr("Custom", "Пользовательский")
+    };
+    if (ImGui::Combo(app_language::Label("Style", "Стиль"), &ctx->Style, styleNames, IM_ARRAYSIZE(styleNames)))
     {
         switch (ctx->Style)
         {
@@ -902,32 +1026,32 @@ void ShowMenuWindow(MainContext* ctx)
         }
         SaveIniSettings(ctx);
     }
-    ImGui::MenuItem("Style Editor", NULL, &ctx->show_style_editor);
+    ImGui::MenuItem(app_language::Label("Style Editor", "Редактор стиля"), NULL, &ctx->show_style_editor);
 
     ImGui::Separator();
-    if (ImGui::MenuItem("XML Editor", NULL, &ctx->show_xml_editor)) {
+    if (ImGui::MenuItem(app_language::Label("XML Editor", "Редактор XML"), NULL, &ctx->show_xml_editor)) {
         // nothing to do
     }
     bool design = ctx->design_mode;
-    if (ImGui::MenuItem("Design Mode", "Ctrl+E", &design, DesignMode::CanEnable(ctx))) {
+    if (ImGui::MenuItem(app_language::Label("Design Mode", "Режим дизайна"), "Ctrl+E", &design, DesignMode::CanEnable(ctx))) {
         DesignMode::SetEnabled(ctx, design);
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("%s", DesignMode::CanEnable(ctx)
-            ? "Edit the widgets with the mouse: select, move, resize, and change their properties"
-            : "Open or create an XML file first");
+            ? app_language::Tr("Edit the widgets with the mouse: select, move, resize, and change their properties", "Редактируйте виджеты мышью: выбирайте, перемещайте, меняйте размер и свойства")
+            : app_language::Tr("Open or create an XML file first", "Сначала откройте или создайте файл XML"));
     }
 }
 
 static const char* ConnectionStateText(JLinkConnectionState state)
 {
     switch (state) {
-    case JLinkConnectionState::Connecting: return "Connecting";
-    case JLinkConnectionState::Connected: return "Connected";
-    case JLinkConnectionState::Reconnecting: return "Reconnecting";
-    case JLinkConnectionState::Failed: return "Connection failed";
-    case JLinkConnectionState::Stopping: return "Disconnecting";
-    default: return "Disconnected";
+    case JLinkConnectionState::Connecting: return app_language::Tr("Connecting", "Подключение");
+    case JLinkConnectionState::Connected: return app_language::Tr("Connected", "Подключено");
+    case JLinkConnectionState::Reconnecting: return app_language::Tr("Reconnecting", "Повторное подключение");
+    case JLinkConnectionState::Failed: return app_language::Tr("Connection failed", "Ошибка подключения");
+    case JLinkConnectionState::Stopping: return app_language::Tr("Disconnecting", "Отключение");
+    default: return app_language::Tr("Disconnected", "Отключено");
     }
 }
 
@@ -936,23 +1060,23 @@ static void ShowConnectionStatus(bool details)
     const auto status = GetJLinkConnectionStatus();
     const ImVec4 color = status.state == JLinkConnectionState::Connected ? ImVec4(0, 1, 0, 1) :
         status.state == JLinkConnectionState::Failed ? ImVec4(1, 0.35f, 0.25f, 1) : ImVec4(1, 0.75f, 0.2f, 1);
-    ImGui::TextColored(color, "J-Link: %s%s", ConnectionStateText(status.state),
+    ImGui::TextColored(color, app_language::Tr("J-Link: %s%s", "J-Link: %s%s"), ConnectionStateText(status.state),
         status.lastError.empty() && !status.writeMayHaveCompleted ? "" : " (!)");
     if (ImGui::IsItemHovered() && (!status.lastError.empty() || status.writeMayHaveCompleted))
-        ImGui::SetTooltip("Last error: %s%s", status.lastError.c_str(), status.writeMayHaveCompleted ?
-            "\nA write may have partially completed. Check the target; pending writes were discarded." : "");
+        ImGui::SetTooltip(app_language::Tr("Last error: %s%s", "Последняя ошибка: %s%s"), app_language::Diagnostic(status.lastError).c_str(), status.writeMayHaveCompleted ?
+            app_language::Tr("\nA write may have partially completed. Check the target; pending writes were discarded.", "\nЗапись могла выполниться частично. Проверьте целевое устройство; ожидающие записи отменены.") : "");
     if (details) {
-        if (status.attempt) ImGui::Text("Attempt %u of 5", status.attempt);
-        if (status.retryInMs) ImGui::Text("Next attempt in %.1f s", status.retryInMs / 1000.0);
+        if (status.attempt) ImGui::Text(app_language::Tr("Attempt %u of 5", "Попытка %u из 5"), status.attempt);
+        if (status.retryInMs) ImGui::Text(app_language::Tr("Next attempt in %.1f s", "Следующая попытка через %.1f с"), status.retryInMs / 1000.0);
         if (!status.lastError.empty()) {
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 500.0f);
-            ImGui::TextWrapped("Last error: %s", status.lastError.c_str());
+            ImGui::TextWrapped(app_language::Tr("Last error: %s", "Последняя ошибка: %s"), app_language::Diagnostic(status.lastError).c_str());
             ImGui::PopTextWrapPos();
         }
         if (status.writeMayHaveCompleted)
-            ImGui::TextWrapped("A write may have partially completed. Check the target before writing again; pending writes were discarded.");
+            ImGui::TextWrapped(app_language::Tr("A write may have partially completed. Check the target before writing again; pending writes were discarded.", "Запись могла выполниться частично. Проверьте целевое устройство перед повторной записью; ожидающие записи отменены."));
         if (status.state == JLinkConnectionState::Failed)
-            ImGui::TextDisabled("Automatic attempts stopped. Fix the cause and press Connect to retry.");
+            ImGui::TextDisabled(app_language::Tr("Automatic attempts stopped. Fix the cause and press Connect to retry.", "Автоматические попытки прекращены. Устраните причину и нажмите «Подключить» для повтора."));
     }
 }
 
@@ -964,30 +1088,30 @@ static const char* g_WriteValueTypes[] = {"U8", "U16", "U32", "U64", "I8", "I16"
 static void ShowWriteProtectionSettings(MainContext* ctx)
 {
     const auto status = GetWriteProtectionStatus();
-    ImGui::SeparatorText("Target write protection");
+    ImGui::SeparatorText(app_language::Tr("Target write protection", "Защита целевого устройства от записи"));
     ImGui::TextColored(status.readOnly ? ImVec4(0.3f, 1, 0.4f, 1) : ImVec4(1, 0.4f, 0.2f, 1),
-        "%s", status.readOnly ? "READ ONLY - target writes blocked" : "WRITES ENABLED for this connection");
+        "%s", status.readOnly ? app_language::Tr("READ ONLY - target writes blocked", "ТОЛЬКО ЧТЕНИЕ — запись в устройство заблокирована") : app_language::Tr("WRITES ENABLED for this connection", "ЗАПИСЬ РАЗРЕШЕНА для этого подключения"));
     if (status.readOnly) {
         ImGui::BeginDisabled(!ctx->StartComunication);
-        if (ImGui::Button("Enable writes...")) {
+        if (ImGui::Button(app_language::Label("Enable writes...", "Разрешить запись..."))) {
             g_WriteUnlockEpoch = status.epoch;
             g_WriteUnlockAcknowledged = false;
             g_RequestWriteUnlock = true;
         }
         ImGui::EndDisabled();
-    } else if (ImGui::Button("Lock target writes now")) {
+    } else if (ImGui::Button(app_language::Label("Lock target writes now", "Заблокировать запись сейчас"))) {
         LockTargetWrites(ctx);
     }
-    ImGui::TextDisabled("Writes lock again after disconnect, I/O failure or protection changes.");
-    ImGui::Text("Blocked requests: %llu", static_cast<unsigned long long>(status.blockedWrites));
+    ImGui::TextDisabled(app_language::Tr("Writes lock again after disconnect, I/O failure or protection changes.", "Запись снова блокируется при отключении, ошибке ввода-вывода или изменении защиты."));
+    ImGui::Text(app_language::Tr("Blocked requests: %llu", "Заблокировано запросов: %llu"), static_cast<unsigned long long>(status.blockedWrites));
     if (!status.lastError.empty()) {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 500);
-        ImGui::TextWrapped("Write protection: %s", status.lastError.c_str());
+        ImGui::TextWrapped(app_language::Tr("Write protection: %s", "Защита от записи: %s"), app_language::Diagnostic(status.lastError).c_str());
         ImGui::PopTextWrapPos();
     }
     if (status.restrictAddresses)
-        ImGui::Text("Active allowed addresses: 0x%08X - 0x%08X (inclusive)", status.firstAddress, status.lastAddress);
-    else ImGui::TextDisabled("No extra address limit; the MCU memory mapping still applies.");
+        ImGui::Text(app_language::Tr("Active allowed addresses: 0x%08X - 0x%08X (inclusive)", "Разрешённые адреса: 0x%08X - 0x%08X (включительно)"), status.firstAddress, status.lastAddress);
+    else ImGui::TextDisabled(app_language::Tr("No extra address limit; the MCU memory mapping still applies.", "Дополнительных ограничений адресов нет; отображение памяти МК по-прежнему действует."));
 
     // Policy editing is available only while locked. Edits are drafts until Apply.
     ImGui::BeginDisabled(!status.readOnly);
@@ -999,26 +1123,26 @@ static void ShowWriteProtectionSettings(MainContext* ctx)
         last = end > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(end);
         initialized = true;
     }
-    ImGui::Checkbox("Limit writable addresses (draft)", &limitAddresses);
+    ImGui::Checkbox(app_language::Label("Limit writable addresses (draft)", "Ограничить адреса для записи (черновик)"), &limitAddresses);
     ImGui::SetNextItemWidth(160);
-    ImGui::InputScalar("First address##write", ImGuiDataType_U32, &first, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+    ImGui::InputScalar(app_language::Label("First address##write", "Первый адрес##write"), ImGuiDataType_U32, &first, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
     ImGui::SetNextItemWidth(160);
-    ImGui::InputScalar("Last address (inclusive)##write", ImGuiDataType_U32, &last, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
-    if (ImGui::Button("Apply address limit")) SetWriteAddressRange(ctx, limitAddresses, first, last);
+    ImGui::InputScalar(app_language::Label("Last address (inclusive)##write", "Последний адрес (включительно)##write"), ImGuiDataType_U32, &last, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+    if (ImGui::Button(app_language::Label("Apply address limit", "Применить ограничение адресов"))) SetWriteAddressRange(ctx, limitAddresses, first, last);
 
-    ImGui::SeparatorText("Optional value limits by address");
+    ImGui::SeparatorText(app_language::Tr("Optional value limits by address", "Дополнительные ограничения значений по адресам"));
     static uint32_t ruleAddress = 0;
     static int ruleType = 1;
     static char minimum[64] = "0", maximum[64] = "65535";
     ImGui::SetNextItemWidth(160);
-    ImGui::InputScalar("Address##rule", ImGuiDataType_U32, &ruleAddress, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+    ImGui::InputScalar(app_language::Label("Address##rule", "Адрес##rule"), ImGuiDataType_U32, &ruleAddress, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
     ImGui::SetNextItemWidth(160);
-    ImGui::Combo("Stored data type", &ruleType, g_WriteValueTypes, 10);
+    ImGui::Combo(app_language::Label("Stored data type", "Тип хранимых данных"), &ruleType, g_WriteValueTypes, 10);
     ImGui::SetNextItemWidth(240);
-    ImGui::InputText("Minimum (decimal)", minimum, sizeof(minimum));
+    ImGui::InputText(app_language::Label("Minimum (decimal)", "Минимум (десятичный)"), minimum, sizeof(minimum));
     ImGui::SetNextItemWidth(240);
-    ImGui::InputText("Maximum (decimal)", maximum, sizeof(maximum));
-    if (ImGui::Button("Add value limit"))
+    ImGui::InputText(app_language::Label("Maximum (decimal)", "Максимум (десятичный)"), maximum, sizeof(maximum));
+    if (ImGui::Button(app_language::Label("Add value limit", "Добавить ограничение значений")))
         AddWriteValueRule(ctx, {ruleAddress, static_cast<WriteValueType>(ruleType), minimum, maximum});
     for (unsigned i = 0; i < status.rules.size(); ++i) {
         const auto& rule = status.rules[i];
@@ -1026,40 +1150,57 @@ static void ShowWriteProtectionSettings(MainContext* ctx)
         ImGui::Text("0x%08X %s: [%s, %s]", rule.address, g_WriteValueTypes[static_cast<int>(rule.type)],
             rule.minimum.c_str(), rule.maximum.c_str());
         ImGui::SameLine();
-        if (ImGui::SmallButton("Remove")) RemoveWriteValueRule(ctx, i);
+        if (ImGui::SmallButton(app_language::Label("Remove", "Удалить"))) RemoveWriteValueRule(ctx, i);
         ImGui::PopID();
     }
-    ImGui::TextDisabled("Partial/overlapping writes to a value rule are rejected, including byte edits.");
+    ImGui::TextDisabled(app_language::Tr("Partial/overlapping writes to a value rule are rejected, including byte edits.", "Частичные и перекрывающиеся записи в область правила отклоняются, включая побайтовые изменения."));
     ImGui::EndDisabled();
+}
+
+static void ShowLanguageMenu()
+{
+    // Keep the submenu bilingual so either locale is easy to find. Changing
+    // language is UI-only and must not affect the current target/write lock.
+    if (ImGui::BeginMenu(app_language::Label("Language / Язык", "Язык / Language"))) {
+        if (ImGui::MenuItem("English", nullptr, !app_language::IsRussian())) {
+            app_language::Set(app_language::Language::English);
+            prefs::WriteString("SETTINGS.Language", app_language::Code());
+        }
+        if (ImGui::MenuItem("Русский", nullptr, app_language::IsRussian())) {
+            app_language::Set(app_language::Language::Russian);
+            prefs::WriteString("SETTINGS.Language", app_language::Code());
+        }
+        ImGui::EndMenu();
+    }
 }
 
 static void ShowWriteUnlockDialog(MainContext* ctx)
 {
     if (g_RequestWriteUnlock) {
-        ImGui::OpenPopup("Enable target writes?");
+        ImGui::OpenPopup(app_language::Label("Enable target writes?", "Разрешить запись в целевое устройство?"));
         g_RequestWriteUnlock = false;
     }
-    if (!ImGui::BeginPopupModal("Enable target writes?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    if (!ImGui::BeginPopupModal(app_language::Label("Enable target writes?", "Разрешить запись в целевое устройство?"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
     const auto status = GetWriteProtectionStatus();
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 520);
-    ImGui::TextWrapped("Writing can change outputs, start machinery or damage the target. This enables ALL permitted writes for the current connection, not just one click.");
-    ImGui::Text("Target device: %s", ctx->jlink_device);
-    ImGui::Text("MCU mapping base: 0x%08X", ctx->mcu_memory_base);
+    ImGui::TextWrapped(app_language::Tr("Writing can change outputs, start machinery or damage the target. This enables ALL permitted writes for the current connection, not just one click.", "Запись может изменить выходные сигналы, запустить оборудование или повредить целевое устройство. Это разрешает ВСЕ допустимые записи для текущего подключения, а не только одно действие."));
+    ImGui::Text(app_language::Tr("Target device: %s", "Целевое устройство: %s"), ctx->jlink_device);
+    ImGui::Text(app_language::Tr("MCU mapping base: 0x%08X", "Базовый адрес отображения памяти МК: 0x%08X"), ctx->mcu_memory_base);
     if (status.restrictAddresses)
-        ImGui::Text("Allowed addresses: 0x%08X - 0x%08X", status.firstAddress, status.lastAddress);
-    else ImGui::TextWrapped("No additional address limit is set. All addresses in the MCU mapping may be written.");
-    ImGui::Text("Additional value limits: %u", static_cast<unsigned>(status.rules.size()));
-    ImGui::TextWrapped("The lock covers widgets, memory editors and automatic DoneAddr acknowledgements. An already submitted SDK write cannot be recalled by locking.");
+        ImGui::Text(app_language::Tr("Allowed addresses: 0x%08X - 0x%08X", "Разрешённые адреса: 0x%08X - 0x%08X"), status.firstAddress, status.lastAddress);
+    else ImGui::TextWrapped(app_language::Tr("No additional address limit is set. All addresses in the MCU mapping may be written.", "Дополнительное ограничение адресов не задано. Запись разрешена по всем адресам отображения памяти МК."));
+    ImGui::Text(app_language::Tr("Additional value limits: %u", "Дополнительных ограничений значений: %u"), static_cast<unsigned>(status.rules.size()));
+    ImGui::TextWrapped(app_language::Tr("The lock covers widgets, memory editors and automatic DoneAddr acknowledgements. An already submitted SDK write cannot be recalled by locking.", "Блокировка распространяется на виджеты, редакторы памяти и автоматические подтверждения DoneAddr. Уже переданную в SDK запись нельзя отменить блокировкой."));
     const bool sameSession = ctx->StartComunication && status.epoch == g_WriteUnlockEpoch;
-    if (!sameSession) ImGui::TextWrapped("Connection or protection changed. Cancel and review the new session before enabling writes.");
-    ImGui::Checkbox("I checked the target and accept enabling writes", &g_WriteUnlockAcknowledged);
+    if (!sameSession) ImGui::TextWrapped(app_language::Tr("Connection or protection changed. Cancel and review the new session before enabling writes.", "Подключение или защита изменились. Отмените действие и проверьте новый сеанс, прежде чем разрешать запись."));
+    ImGui::Checkbox(app_language::Label("I checked the target and accept enabling writes", "Я проверил целевое устройство и согласен разрешить запись"), &g_WriteUnlockAcknowledged);
     ImGui::BeginDisabled(!sameSession || !g_WriteUnlockAcknowledged);
-    if (ImGui::Button("Enable for this connection")) {
+    if (ImGui::Button(app_language::Label("Enable for this connection", "Разрешить для этого подключения"))) {
         if (ArmTargetWrites(ctx, g_WriteUnlockEpoch)) ImGui::CloseCurrentPopup();
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+    if (ImGui::Button(app_language::Label("Cancel", "Отмена"))) ImGui::CloseCurrentPopup();
     ImGui::PopTextWrapPos();
     ImGui::EndPopup();
 }
@@ -1068,7 +1209,7 @@ void ShowMenuSettings(MainContext* ctx)
 {
     // --- MCU base address (hex input) ---
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("MCU Memory address 0x");
+    ImGui::Text(app_language::Tr("MCU Memory address 0x", "Адрес памяти МК 0x"));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(170);
     uint32_t addr = ctx->mcu_memory_base;
@@ -1082,11 +1223,11 @@ void ShowMenuSettings(MainContext* ctx)
         SaveIniSettings(ctx);
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Base address of the MCU memory region (e.g., 0x20000000)");
+        ImGui::SetTooltip(app_language::Tr("Base address of the MCU memory region (e.g., 0x20000000)", "Базовый адрес области памяти МК (например, 0x20000000)"));
 
     // --- Auto Connect checkbox ---
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("Auto Connect");
+    ImGui::Text(app_language::Tr("Auto Connect", "Автоподключение"));
     ImGui::SameLine();
     if (ImGui::Checkbox("##autoconnect", &ctx->auto_connect)) {
         SaveIniSettings(ctx);
@@ -1094,14 +1235,14 @@ void ShowMenuSettings(MainContext* ctx)
     ImGui::SameLine();
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Automatically connect to J-Link on program start.");
+        ImGui::SetTooltip(app_language::Tr("Automatically connect to J-Link on program start.", "Автоматически подключаться к J-Link при запуске программы."));
 
     // Cancel remains available during connection and retry backoff.
     ImGui::SameLine();
     if (IsCommunicationRequested()) {
-        if (ImGui::Button(ctx->StartComunication ? "Disconnect" : "Cancel connection"))
+        if (ImGui::Button(ctx->StartComunication ? app_language::Label("Disconnect", "Отключить") : app_language::Label("Cancel connection", "Отменить подключение")))
             StopCommunication(ctx);
-    } else if (ImGui::Button("Connect")) {
+    } else if (ImGui::Button(app_language::Label("Connect", "Подключить"))) {
         StartCommunication(ctx);
     }
     ShowConnectionStatus(true);
@@ -1109,7 +1250,7 @@ void ShowMenuSettings(MainContext* ctx)
 
     // --- J-Link device selection with filterable list ---
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("J-Link device");
+    ImGui::Text(app_language::Tr("J-Link device", "Устройство J-Link"));
     ImGui::SameLine();
 
     static std::vector<std::string> all_devices;
@@ -1164,19 +1305,19 @@ void ShowMenuSettings(MainContext* ctx)
     // Show the currently selected device
     ImGui::Text("%s", ctx->jlink_device);
     ImGui::SameLine();
-    ImGui::TextDisabled("(current)");
+    ImGui::TextDisabled(app_language::Tr("(current)", "(текущее)"));
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Currently selected device. Select a new one from the list below.");
+        ImGui::SetTooltip(app_language::Tr("Currently selected device. Select a new one from the list below.", "Текущее выбранное устройство. Выберите другое из списка ниже."));
 
     ImGui::Spacing();
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("Filter:");
+    ImGui::Text(app_language::Tr("Filter:", "Фильтр:"));
     ImGui::SameLine();
     ImGui::PushItemWidth(200);
     ImGui::InputText("##filter", filter_buf, sizeof(filter_buf));
     ImGui::PopItemWidth();
     ImGui::SameLine();
-    if (ImGui::Button("Clear")) {
+    if (ImGui::Button(app_language::Label("Clear", "Очистить"))) {
         filter_buf[0] = '\0';
         strcpy(prev_filter, "");
         filtered_indices.clear();
@@ -1184,7 +1325,7 @@ void ShowMenuSettings(MainContext* ctx)
             filtered_indices.push_back((int)i);
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("(%d found)", (int)filtered_indices.size());
+    ImGui::TextDisabled(app_language::Tr("(%d found)", "(найдено: %d)"), (int)filtered_indices.size());
 
     // Device list
     if (ImGui::BeginListBox("##device_list", ImVec2(500, 250))) {
@@ -1204,7 +1345,7 @@ void ShowMenuSettings(MainContext* ctx)
     }
 
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Click to select target device for J-Link");
+        ImGui::SetTooltip(app_language::Tr("Click to select target device for J-Link", "Нажмите, чтобы выбрать целевое устройство для J-Link"));
 }
 
 void ShowUserGuide(bool* p_open)
@@ -1214,7 +1355,7 @@ void ShowUserGuide(bool* p_open)
 
 void ShowAbout(bool* p_open)
 {
-    if (!ImGui::Begin("About J-Link Utils", p_open, ImGuiWindowFlags_AlwaysAutoResize))
+    if (!ImGui::Begin(app_language::Label("About J-Link Utils", "О программе J-Link Utils"), p_open, ImGuiWindowFlags_AlwaysAutoResize))
     {
         ImGui::End();
         return;
@@ -1225,46 +1366,46 @@ void ShowAbout(bool* p_open)
         ImGui::SameLine();
     }
     ImGui::BeginGroup();
-    ImGui::Text("J-Link Utils");
-    ImGui::Text("Version 2.0");
+    ImGui::TextUnformatted(app_language::Tr("J-Link Utils", "J-Link Utils"));
+    ImGui::Text(app_language::Tr("Version 2.0", "Версия 2.0"));
     ImGui::EndGroup();
     ImGui::Separator();
-    ImGui::Text("A utility application for debugging and configuring microcontrollers via J-Link.");
-    ImGui::Text("Built with SDL2, ImGui, and ImPlot.");
+    ImGui::Text(app_language::Tr("A utility application for debugging and configuring microcontrollers via J-Link.", "Приложение для отладки и настройки микроконтроллеров через J-Link."));
+    ImGui::Text(app_language::Tr("Built with SDL2, ImGui, and ImPlot.", "Создано с использованием SDL2, ImGui и ImPlot."));
     ImGui::Text(" ");
-    ImGui::Text("Libraries used:");
-    ImGui::BulletText("SDL %d.%d.%d", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
-    ImGui::BulletText("Dear ImGui %s", ImGui::GetVersion());
-    ImGui::BulletText("ImPlot v0.18 WIP");
-    ImGui::BulletText("tinyxml2 %d.%d.%d", TINYXML2_MAJOR_VERSION, TINYXML2_MINOR_VERSION, TINYXML2_PATCH_VERSION);
-    ImGui::BulletText("lfqueue");
+    ImGui::Text(app_language::Tr("Libraries used:", "Используемые библиотеки:"));
+    ImGui::BulletText(app_language::Tr("SDL %d.%d.%d", "SDL %d.%d.%d"), SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
+    ImGui::BulletText(app_language::Tr("Dear ImGui %s", "Dear ImGui %s"), ImGui::GetVersion());
+    ImGui::BulletText(app_language::Tr("ImPlot v0.18 WIP", "ImPlot v0.18 (в разработке)"));
+    ImGui::BulletText(app_language::Tr("tinyxml2 %d.%d.%d", "tinyxml2 %d.%d.%d"), TINYXML2_MAJOR_VERSION, TINYXML2_MINOR_VERSION, TINYXML2_PATCH_VERSION);
+    ImGui::BulletText(app_language::Tr("lfqueue", "lfqueue"));
     ImGui::Text(" ");
-    ImGui::Text("Build date: %s %s", __DATE__, __TIME__);
+    ImGui::Text(app_language::Tr("Build date: %s %s", "Дата сборки: %s %s"), __DATE__, __TIME__);
 #ifdef _MSC_VER
-    ImGui::Text("Compiler: Microsoft Visual C++ %d", _MSC_VER);
+    ImGui::Text(app_language::Tr("Compiler: Microsoft Visual C++ %d", "Компилятор: Microsoft Visual C++ %d"), _MSC_VER);
 #elif defined(__GNUC__)
-    ImGui::Text("Compiler: GCC %d.%d.%d", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+    ImGui::Text(app_language::Tr("Compiler: GCC %d.%d.%d", "Компилятор: GCC %d.%d.%d"), __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
 #elif defined(__clang__)
-    ImGui::Text("Compiler: Clang %d.%d.%d", __clang_major__, __clang_minor__, __clang_patchlevel__);
+    ImGui::Text(app_language::Tr("Compiler: Clang %d.%d.%d", "Компилятор: Clang %d.%d.%d"), __clang_major__, __clang_minor__, __clang_patchlevel__);
 #else
-    ImGui::Text("Compiler: unknown");
+    ImGui::Text(app_language::Tr("Compiler: unknown", "Компилятор: неизвестен"));
 #endif
-    ImGui::Text("Platform: %s",
+    ImGui::Text(app_language::Tr("Platform: %s", "Платформа: %s"),
 #ifdef _WIN64
-        "Windows 64-bit"
+        app_language::Tr("Windows 64-bit", "Windows 64-разрядная")
 #elif _WIN32
-        "Windows 32-bit"
+        app_language::Tr("Windows 32-bit", "Windows 32-разрядная")
 #elif __linux__
         "Linux"
 #elif __APPLE__
         "macOS"
 #else
-        "Unknown"
+        app_language::Tr("Unknown", "Неизвестно")
 #endif
     );
 
     ImGui::Separator();
-    if (ImGui::Button("Copy to clipboard"))
+    if (ImGui::Button(app_language::Label("Copy to clipboard", "Копировать в буфер обмена")))
     {
         ImGui::LogToClipboard();
         ImGui::LogText("J-Link Utils 2.0\n");
@@ -1304,34 +1445,36 @@ static void MenuWindow(MainContext* ctx)
             if (show_app_about) { ShowAbout(&show_app_about); }
             if (ctx->show_style_editor) { ShowStyleEditor(&ctx->show_style_editor); }
 
-            if (ImGui::BeginMenu("File"))
+            if (ImGui::BeginMenu(app_language::Label("File", "Файл")))
             {
                 ShowMenuFile(ctx);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Windows"))
+            if (ImGui::BeginMenu(app_language::Label("Windows", "Окна")))
             {
                 ShowMenuWindow(ctx);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Settings"))
+            if (ImGui::BeginMenu(app_language::Label("Settings", "Настройки")))
             {
+                ShowLanguageMenu();
+                ImGui::Separator();
                 ShowMenuSettings(ctx);
 
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Help"))
+            if (ImGui::BeginMenu(app_language::Label("Help", "Справка")))
             {
-                ImGui::MenuItem("User Guide..", NULL, &show_app_userguide);
-                ImGui::MenuItem("About..", NULL, &show_app_about);
+                ImGui::MenuItem(app_language::Label("User Guide..", "Руководство пользователя.."), NULL, &show_app_userguide);
+                ImGui::MenuItem(app_language::Label("About..", "О программе.."), NULL, &show_app_about);
                 ImGui::EndMenu();
             }
 
             ShowConnectionStatus(false);
             const auto writeStatus = GetWriteProtectionStatus();
             ImGui::TextColored(writeStatus.readOnly ? ImVec4(0.3f, 1, 0.4f, 1) : ImVec4(1, 0.4f, 0.2f, 1),
-                "%s", writeStatus.readOnly ? "[READ ONLY]" : "[WRITES ENABLED]");
-            if (!writeStatus.readOnly && ImGui::SmallButton("Lock writes")) LockTargetWrites(ctx);
+                "%s", writeStatus.readOnly ? app_language::Tr("[READ ONLY]", "[ТОЛЬКО ЧТЕНИЕ]") : app_language::Tr("[WRITES ENABLED]", "[ЗАПИСЬ РАЗРЕШЕНА]"));
+            if (!writeStatus.readOnly && ImGui::SmallButton(app_language::Label("Lock writes", "Заблокировать запись"))) LockTargetWrites(ctx);
 
             if (ctx->openfile)
                 if (OpenFile(ctx)) ctx->openfile = false;
@@ -1345,9 +1488,9 @@ static void MenuWindow(MainContext* ctx)
         ShowWriteUnlockDialog(ctx);
 
         if (!prefs::Error().empty()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.25f, 1.0f), "Settings could not be saved or loaded");
-            ImGui::TextWrapped("%s", prefs::Error().c_str());
-            if (ImGui::Button("Retry saving settings")) {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.25f, 1.0f), app_language::Tr("Settings could not be saved or loaded", "Не удалось сохранить или загрузить настройки"));
+            ImGui::TextWrapped("%s", app_language::Diagnostic(prefs::Error()).c_str());
+            if (ImGui::Button(app_language::Label("Retry saving settings", "Повторить сохранение настроек"))) {
                 SaveIniSettings(ctx);
                 prefs::Flush();
             }
@@ -1355,8 +1498,8 @@ static void MenuWindow(MainContext* ctx)
 
         if (g_Windows.empty()) {
             ImGui::TextDisabled("%s", ctx->File_path[0] != '\0'
-                ? "No windows loaded. Check the XML file."
-                : "No XML file loaded. Use File > New or File > Open.");
+                ? app_language::Tr("No windows loaded. Check the XML file.", "Окна не загружены. Проверьте файл XML.")
+                : app_language::Tr("No XML file loaded. Use File > New or File > Open.", "Файл XML не загружен. Выберите «Файл > Создать» или «Файл > Открыть»."));
         }
     }
     ImGui::End();
@@ -1442,18 +1585,11 @@ int main(int argc, char* argv[])
     // Load once, before any SDK call or worker thread. Otherwise individual
     // wrapper calls can show repeated dialogs or return unusable fallback data.
     const bool checkRuntimeOnly = argc == 2 && strcmp(argv[1], "--check-jlink-runtime") == 0;
-    if (JLINKARMDLL_LIB_LoadLibrary() != 0) {
-#ifdef _WIN64
-        const char* message = "J-Link runtime could not be loaded. Place a licensed, compatible JLink_x64.dll next to this executable, or install the matching SEGGER J-Link software. No DLL is bundled.";
-#else
-        const char* message = "J-Link runtime could not be loaded. Place a licensed, compatible JLinkARM.dll next to this executable, or install the matching SEGGER J-Link software. No DLL is bundled.";
-#endif
-        fprintf(stderr, "%s\n", message);
-        if (!checkRuntimeOnly)
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "J-Link runtime missing", message, nullptr);
-        return 2;
+    const bool runtimeLoaded = JLINKARMDLL_LIB_LoadLibrary() == 0;
+    if (checkRuntimeOnly) {
+        if (!runtimeLoaded) fprintf(stderr, "J-Link runtime could not be loaded.\n");
+        return runtimeLoaded ? 0 : 2; // No config, UI or hardware access for this check.
     }
-    if (checkRuntimeOnly) return 0; // Loader check only, not a hardware test.
 #endif
     int window_flag = 0;
 
@@ -1461,6 +1597,20 @@ int main(int argc, char* argv[])
     if (!ctx) return 1;
 
     LoadIniSettings(ctx);
+#ifdef _WIN32
+    // Read the saved language before presenting a startup error as well.
+    if (!runtimeLoaded) {
+#ifdef _WIN64
+        const char* message = app_language::Tr("J-Link runtime could not be loaded. Place a licensed, compatible JLink_x64.dll next to this executable, or install the matching SEGGER J-Link software. No DLL is bundled.", "Не удалось загрузить среду выполнения J-Link. Поместите лицензированную совместимую JLink_x64.dll рядом с программой или установите соответствующее ПО SEGGER J-Link. DLL не входит в комплект.");
+#else
+        const char* message = app_language::Tr("J-Link runtime could not be loaded. Place a licensed, compatible JLinkARM.dll next to this executable, or install the matching SEGGER J-Link software. No DLL is bundled.", "Не удалось загрузить среду выполнения J-Link. Поместите лицензированную совместимую JLinkARM.dll рядом с программой или установите соответствующее ПО SEGGER J-Link. DLL не входит в комплект.");
+#endif
+        fprintf(stderr, "%s\n", message);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, app_language::Tr("J-Link runtime missing", "Отсутствует среда выполнения J-Link"), message, nullptr);
+        free_context(ctx);
+        return 2;
+    }
+#endif
     const bool restoreDesignMode = ctx->design_mode;
     ctx->design_mode = false; // SetEnabled must initialize editor state normally.
 
@@ -1700,14 +1850,14 @@ int main(int argc, char* argv[])
         //mem_edit.DrawWindow("Memory Editor", ctx->IOMAP_Data, IOMAP_SIZE);
 
         if (ctx->ErrRengerer)
-            ImGui::OpenPopup("Error Rengerer", 0);
+            ImGui::OpenPopup(app_language::Label("Error Rengerer", "Ошибка рендерера"), 0);
 
-        if (ImGui::BeginPopupModal("Error Rengerer", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+        if (ImGui::BeginPopupModal(app_language::Label("Error Rengerer", "Ошибка рендерера"), NULL, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::Text("Renderer Initialization failed!\nUsing Software mode\n\n");
+            ImGui::Text(app_language::Tr("Renderer Initialization failed!\nUsing Software mode\n\n", "Не удалось инициализировать рендерер!\nИспользуется программный режим\n\n"));
             ImGui::Separator();
             ImGui::Indent(60.0f);
-            if (ImGui::Button("OK", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); ctx->ErrRengerer = false; }
+            if (ImGui::Button(app_language::Label("OK", "ОК"), ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); ctx->ErrRengerer = false; }
             ImGui::SetItemDefaultFocus();
             ImGui::EndPopup();
         }
@@ -1733,8 +1883,8 @@ int main(int argc, char* argv[])
     SaveIniSettings(ctx);
     prefs::Flush();
     if (!prefs::Error().empty()) {
-        const std::string message = "Your latest settings could not be saved.\n\n" + prefs::Error();
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "J-Link Utils - settings error", message.c_str(), ctx->Wimdow);
+        const std::string message = app_language::Tr("Your latest settings could not be saved.\n\n", "Не удалось сохранить последние настройки.\n\n") + app_language::Diagnostic(prefs::Error());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, app_language::Tr("J-Link Utils - settings error", "J-Link Utils — ошибка настроек"), message.c_str(), ctx->Wimdow);
     }
 
     // Widgets own SDL textures: destroy them before their renderer and ImGui.

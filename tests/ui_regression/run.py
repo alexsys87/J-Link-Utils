@@ -31,6 +31,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     build = Path(directory)
     shutil.copyfile(HERE / 'ui_stubs.h', build / 'ui_stubs.h')
     shutil.copyfile(SRC / 'Preferences.h', build / 'Preferences.h')
+    shutil.copyfile(SRC / 'Localization.h', build / 'Localization.h')
     shutil.copyfile(SRC / 'Widget/ScalarFormat.h', build / 'ScalarFormat.h')
     shutil.copyfile(SRC / 'Widget/MemoryBounds.h', build / 'MemoryBounds.h')
     shutil.copyfile(SRC / 'Editor/XMLSafety.h', build / 'XMLSafety.h')
@@ -43,6 +44,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
         name = name.decode('ascii')
         header = (SRC / 'Widget' / name).read_bytes()
         header = header.replace(b'#include "widget_common.h"', b'#include "ui_stubs.h"')
+        header = header.replace(b'#include "../Localization.h"', b'#include "Localization.h"')
         (build / name).write_bytes(header)
     for name in ('imgui_internal.h', 'implot.h'):
         (build / name).write_text('#pragma once\n#include "ui_stubs.h"\n')
@@ -55,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     assert b'g_selectedNode->GetDocument()' not in editor
     assert b'!ui_safety::ContainsXMLNode(ctx->CurrentXMLDoc, g_selectedNode)' in editor
     assert b'DeepClone(doc)' not in editor
-    deletion = editor.index(b'if (ImGui::Button("Delete this node"))')
+    deletion = editor.index(b'if (ImGui::Button(app_language::Label("Delete this node",')
     assert b'return;' in editor[deletion:editor.index(b'else if (textNode)', deletion)]
     xml = (SRC / 'xml_window.cpp').read_bytes()
     assert not re.search(rb'FirstChildElement\("\w+"\) \? \w+->FirstChildElement\("\w+"\)->GetText\(\) : "', xml)
@@ -63,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     compiler = os.environ.get('CXX', 'g++')
     command = [compiler, '-std=c++17', '-g', '-O1', '-fno-omit-frame-pointer',
                '-fsanitize=address,undefined', '-fno-pie', '-no-pie',
-               '-I', str(build), '-I', str(SRC / 'include'),
+               '-I', str(build), '-I', str(SRC), '-I', str(SRC / 'include'),
                str(HERE / 'ui_regression.cpp'),
                str(SRC / 'include/tinyxml2/tinyxml2.cpp'),
                str(SRC / 'Editor/WidgetTemplateFactory.cpp'),
