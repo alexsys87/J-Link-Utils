@@ -6,6 +6,15 @@ endif()
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "" FORCE)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# VS generators can discover MSBuild at build time without putting
+# CMAKE_MAKE_PROGRAM in CMakeCache.txt. Export the documented VS-specific
+# selection instead of depending on that optional cache entry or its type.
+if(NOT CMAKE_VS_MSBUILD_COMMAND)
+  message(FATAL_ERROR "Visual Studio generator did not locate MSBuild")
+endif()
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/selected-msbuild.txt"
+  CONTENT "${CMAKE_VS_MSBUILD_COMMAND}\n")
+
 # Let the installed packages, not a second hand-maintained list of .lib names,
 # resolve Debug/Release and all Windows system/transitive libraries.
 find_package(SDL2 CONFIG REQUIRED)

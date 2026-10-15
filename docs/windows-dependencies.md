@@ -128,6 +128,9 @@ Only vcpkg's content-addressed binary package archives are cached. Cache keys
 include the manifest/lock/scripts; vcpkg's own ABI keys additionally account
 for compiler, SDK and port inputs. No installed tree, generated project or
 stale `.props` is restored as a build cache.
+If the exact workflow key is absent, an older archive set for the same runner
+and architecture can seed the cache; vcpkg still accepts only exact package ABI
+matches, so a script change does not force recompiling unchanged packages.
 Cache restore and save are separate steps: completed package archives are saved
 even when a later props export or probe fails, provided restore succeeded and
 the exact cache key was not already present. Failed package builds cannot be

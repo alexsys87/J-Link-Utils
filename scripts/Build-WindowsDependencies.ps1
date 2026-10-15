@@ -108,9 +108,10 @@ foreach ($configuration in 'Debug', 'Release') {
     -RepositoryRoot $repo -Architecture $Architecture
 # Independently verify that the exported MSBuild properties compile/link/run,
 # not just that CMake's original project does. Still no J-Link or application.
-$makeProgram = Get-Content "$build/CMakeCache.txt" | Where-Object { $_ -match '^CMAKE_MAKE_PROGRAM:FILEPATH=' }
-if (@($makeProgram).Count -ne 1) { throw 'Cannot locate the CMake-selected MSBuild.' }
-$msbuild = ($makeProgram -split '=', 2)[1]
+$msbuild = (Get-Content "$build/selected-msbuild.txt" -Raw).Trim()
+if (-not $msbuild -or -not (Test-Path -LiteralPath $msbuild -PathType Leaf)) {
+    throw 'Cannot locate the CMake-selected MSBuild exported by the Visual Studio generator.'
+}
 foreach ($configuration in 'Debug', 'Release') {
     Invoke-Native $msbuild @("$repo/build/dependencies/props-probe.vcxproj", '/m',
         "/p:Configuration=$configuration", "/p:Platform=$platform")
