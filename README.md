@@ -1,106 +1,110 @@
 # J-Link-Utils
 
-A C++17 Windows application for watching and changing microcontroller memory through a SEGGER J-Link over SWD. The user interface is described in XML: numeric fields, plots, indicators, a memory editor and other widgets. A built-in XML editor changes the configuration.
+Приложение для Windows на C++17 для наблюдения и изменения памяти микроконтроллера через отладчик SEGGER J-Link по SWD. Интерфейс описывается в XML: числовые поля, графики, индикаторы, редактор памяти и другие виджеты. Встроенный XML-редактор позволяет изменять конфигурацию.
 
-## Connecting
+## Подключение
 
-1. Install the SEGGER J-Link software and driver; connect the probe and the target microcontroller.
-2. In **Settings**, choose the **J-Link device** and set the **MCU Memory address** (default `0x20000000`).
-3. Click **Connect**, then open an XML configuration with **File → Open**. The XML path can also be passed as the first command-line argument.
+1. Установите программное обеспечение и драйвер SEGGER J-Link; подключите отладчик и целевой микроконтроллер.
+2. В **Settings** выберите **J-Link device** и задайте **MCU Memory address** (по умолчанию `0x20000000`).
+3. Нажмите **Connect**, затем откройте XML-конфигурацию через **File → Open**. Путь к XML также можно передать первым аргументом командной строки.
 
-Widget addresses are **physical addresses**, not offsets. `#20000010`, `0x20000010` and decimal values are accepted. A leading `0` without `x` means octal, so use `#` or `0x` for hexadecimal addresses. The visible range is limited to 1 MiB from the selected base and to the end of the 32-bit address space.
+Адреса виджетов — **физические адреса**, а не смещения. Поддерживаются записи `#20000010`, `0x20000010` и десятичные значения. Начальный `0` без `x` означает восьмеричную запись, поэтому для шестнадцатеричных адресов используйте `#` или `0x`. Доступный диапазон ограничен 1 МиБ от выбранного базового адреса и концом 32-битного адресного пространства.
 
-Changing the base address or the target device stops the exchange; click **Connect** again afterwards. A failed or short read or write also stops it. Stopping clears the cache and the pending requests: writes from an old connection are never replayed after reconnecting.
+Изменение базового адреса или целевого устройства останавливает обмен; после этого снова нажмите **Connect**. Ошибка или неполное чтение либо запись также останавливают обмен. При остановке очищаются кэш и ожидающие запросы: записи от старого подключения никогда не повторяются после переподключения.
 
-How the exchange works: every visible widget subscribes to its addresses, and a separate thread re-reads all subscribed addresses continuously (at most once per millisecond). Neighbouring addresses in memory regions (code/SRAM `0x00000000–0x3FFFFFFF` and external RAM `0x60000000–0x9FFFFFFF`) are merged into blocks: gaps of up to 64 bytes are read along with them, and a block of up to 4 KiB takes one J-Link call. In peripheral and system space only the requested bytes are read, so registers with read side effects are not touched. Addresses no widget asked for during 0.5 s (closed window, minimized application) are no longer polled. A written value shows up in the widget immediately; several writes to the same address while the J-Link is busy are sent as one, with the last value.
+Принцип обмена: каждый видимый виджет подписывается на свои адреса, а отдельный поток непрерывно перечитывает все адреса подписки (не чаще одного раза в миллисекунду). Соседние адреса в областях памяти (код/SRAM `0x00000000–0x3FFFFFFF` и внешняя RAM `0x60000000–0x9FFFFFFF`) объединяются в блоки: промежутки до 64 байт читаются вместе с ними, а блок до 4 КиБ считывается одним вызовом J-Link. В областях периферии и системных регистров читаются только запрошенные байты, чтобы не затрагивать регистры с побочными эффектами чтения. Адреса, которые ни один виджет не запрашивал в течение 0,5 с (окно закрыто или приложение свёрнуто), больше не опрашиваются. Записанное значение сразу отображается в виджете; несколько записей по одному адресу, пока J-Link занят, объединяются в одну с последним значением.
 
-Byte order: every widget that reads or writes numbers takes `<LittleEndian>`. It defaults to `true`, the byte order of Cortex-M targets, so the tag can be omitted. Set it to `false` for big-endian data (Modbus registers, network buffers): the bytes are then swapped for every type, floats included. All widgets decode and encode values through the same code (`Widget/TypedValue.h`); the `FLOAT_INV` type uses the byte order opposite to `<LittleEndian>`.
+Порядок байтов: каждый виджет, читающий или записывающий числа, поддерживает `<LittleEndian>`. По умолчанию используется `true` — порядок байтов целевых устройств Cortex-M, поэтому тег можно не указывать. Для данных с порядком от старшего байта к младшему (регистры Modbus, сетевые буферы) задайте `false`: байты будут переставляться для всех типов, включая числа с плавающей точкой. Все виджеты декодируют и кодируют значения через общий код (`Widget/TypedValue.h`); тип `FLOAT_INV` использует порядок байтов, противоположный `<LittleEndian>`.
 
-### Plots
+### Графики
 
-**PlotLines** gets timestamped values from the communication thread, one per polling cycle rather than one per frame, and thins them out to `Freq` (up to 1000 Hz). The X axis is real time, and the history holds the whole `Time Window`. The reachable rate depends on the probe: a J-Link BASE V8 (USB full speed) needs about 1–2 ms per call, so expect roughly 300–700 points per second when all plotted and displayed variables fit into one or two blocks; addresses scattered over memory share that rate.
+**PlotLines** получает значения с временными метками из потока обмена — по одному на цикл опроса, а не на кадр — и прореживает их до частоты `Freq` (до 1000 Гц). Ось X отображает реальное время, а история хранит весь интервал `Time Window`. Достижимая частота зависит от отладчика: J-Link BASE V8 (USB full speed) требует примерно 1–2 мс на вызов, поэтому можно ожидать около 300–700 точек в секунду, если все отображаемые переменные помещаются в один-два блока; при разбросанных по памяти адресах эта частота делится между ними.
 
-For faster signals use **DataLog**/**Histogram** with `DoneAddr`: the microcontroller fills an array at the rate it needs and sets the flag; the program reads the whole array and clears the flag only after the read has completed, so the array is never overwritten while it is being read. In this mode the sample rate is limited only by the microcontroller.
+Для более быстрых сигналов используйте **DataLog**/**Histogram** с `DoneAddr`: микроконтроллер заполняет массив с нужной ему частотой и устанавливает флаг; программа считывает весь массив и сбрасывает флаг только после завершения чтения, поэтому массив не перезаписывается во время считывания. В этом режиме частота дискретизации ограничена только микроконтроллером.
 
-## XML editor
+## XML-редактор
 
-**Widget Editor** edits the open configuration as a tree. Select a window, widget or list item to see its properties:
+**Widget Editor** редактирует открытую конфигурацию в виде дерева. Выберите окно, виджет или элемент списка, чтобы увидеть его свойства:
 
-- Each property gets a control for its type: number fields, check boxes, color pickers, address fields (which accept `0x`, `#` and decimal and show the result), and drop-down lists for data types, modes and orientations. Hover a property name for a short description.
-- **Add property** lists the properties the element can have but does not have yet, with their default values. Elements the loader ignores for that widget are shown in orange.
-- **Add Widget** inserts a new widget into the selected container, after the selected widget, or at the end of the first window. **Add child widget**, **Add Line**, **Add Combo** and similar buttons fill containers and lists.
-- **Save** writes the file and reloads the windows.
+- Для каждого свойства используется соответствующий элемент управления: числовые поля, флажки, выбор цвета, поля адресов (принимают `0x`, `#` и десятичную запись и показывают результат), раскрывающиеся списки типов данных, режимов и ориентаций. Наведите указатель на имя свойства, чтобы увидеть краткое описание.
+- **Add property** показывает доступные, но ещё не добавленные свойства элемента и их значения по умолчанию. Элементы, которые загрузчик игнорирует для этого виджета, выделяются оранжевым.
+- **Add Widget** вставляет новый виджет в выбранный контейнер, после выбранного виджета или в конец первого окна. Кнопки **Add child widget**, **Add Line**, **Add Combo** и аналогичные добавляют элементы в контейнеры и списки.
+- **Save** записывает файл и перезагружает окна.
 
-A missing property always falls back to a safe default, and out-of-range values (zero or negative sizes, reversed or empty ranges, `nan`, `inf`, unknown data types or modes) are corrected when the file is loaded, so a hand-written or partly edited file cannot crash the program.
+Отсутствующее свойство всегда заменяется безопасным значением по умолчанию, а некорректные значения (нулевые или отрицательные размеры, обратные или пустые диапазоны, `nan`, `inf`, неизвестные типы данных или режимы) исправляются при загрузке файла, чтобы написанная вручную или частично отредактированная конфигурация не приводила к аварийному завершению программы.
 
-**Caution:** writing memory changes the state of real hardware. Check addresses and configurations; do not use untested XML files with hardware connected.
+**Внимание:** запись в память изменяет состояние реального оборудования. Проверяйте адреса и конфигурации; не используйте непроверенные XML-файлы при подключённом оборудовании.
 
-## Design mode
+## Режим проектирования
 
-**Windows → Design Mode** (or **Ctrl+E**) edits the widgets of the open configuration with the mouse. The old tree editor (**XML Editor**) stays available and works on the same document; both can be open at once.
+**Windows → Design Mode** (или **Ctrl+E**) позволяет редактировать виджеты открытой конфигурации мышью. Прежний редактор дерева (**XML Editor**) остаётся доступным и работает с тем же документом; оба редактора можно открыть одновременно.
 
-- **Click** a widget to select it, or the empty part of a window to select the window. The innermost widget wins, so a click inside a group or child window selects the widget there; the parent is one click away in the Properties window or the right-click menu.
-- **Drag** a widget to move it. A moved widget gets `<PosX>`/`<PosY>`: it is drawn at that point of its window (window coordinates, 0,0 is the top-left corner of the title bar) instead of after the previous widget, and the widgets around it close the gap. **Back to flow layout** in the right-click menu removes the position again. Positions snap to the grid (8 px by default); hold **Alt** to place freely. The tab above the top-left corner moves widgets whose area opens on a click, such as tree nodes and headers. Widgets inside a Grid stay in the grid.
-- **Drag the orange handles** (right edge, bottom edge, corner) to resize. The new size goes into the widget's own properties: `Width`/`Height`, `Radius` (gauges, knobs, LEDs), `PixelSize` (LCD), `Scale` (8-bit control), `BandWidth` (equalizer) or `<ItemWidth>`, the new width of sliders, input fields, combo boxes and label texts.
-- **Move and resize windows** as usual; in design mode their position and size are stored in `<Window>` as `PosX`, `PosY`, `Width` and `Height` and applied when the file is loaded.
-- The **Properties** window shows every property of the selection with a control for its type: set properties in normal text, missing ones greyed out with their default value (editing creates them, **x** removes them). Plot lines, combo entries, zones and similar lists are edited in place; containers and windows list their widgets, which can be selected, reordered, deleted or added. Its toolbar adds widgets and windows, duplicates and deletes the selection, undoes and redoes, and saves.
-- **Right-click** a widget for **Add widget here** (placed at the mouse), duplicate, reorder (later widgets are drawn on top), back to flow layout, select the parent and delete.
-- Keys: arrows move the selection by a pixel (Shift: a grid step), **Del** deletes, **Ctrl+D** duplicates, **Ctrl+Z**/**Ctrl+Y** undo and redo (also changes made in the XML editor), **Ctrl+S** saves, **Esc** clears the selection or cancels a drag.
+- **Щёлкните** по виджету, чтобы выбрать его, или по пустой области окна, чтобы выбрать окно. Выбирается самый глубоко вложенный виджет: щелчок внутри группы или дочернего окна выбирает находящийся там виджет; родителя можно выбрать одним щелчком в окне **Properties** или в контекстном меню.
+- **Перетащите** виджет, чтобы переместить его. Перемещённому виджету задаются `<PosX>`/`<PosY>`: он рисуется в указанной точке окна (координаты окна, 0,0 — левый верхний угол строки заголовка), а не после предыдущего виджета; соседние виджеты закрывают освободившееся место. Команда **Back to flow layout** в контекстном меню удаляет заданную позицию. Положение привязывается к сетке (по умолчанию 8 пикселей); удерживайте **Alt** для свободного размещения. Ярлычок над левым верхним углом позволяет перемещать виджеты, область которых раскрывается щелчком, например узлы дерева и заголовки. Виджеты внутри Grid остаются в сетке.
+- **Перетаскивайте оранжевые маркеры** (справа, снизу и в углу), чтобы изменить размер. Новый размер записывается в собственные свойства виджета: `Width`/`Height`, `Radius` (шкалы, поворотные регуляторы, светодиоды), `PixelSize` (LCD), `Scale` (8-битный элемент управления), `BandWidth` (эквалайзер) или `<ItemWidth>` — новую ширину ползунков, полей ввода, раскрывающихся списков и текстовых меток.
+- **Перемещайте окна и меняйте их размер** как обычно; в режиме проектирования положение и размер сохраняются в `<Window>` как `PosX`, `PosY`, `Width` и `Height` и применяются при загрузке файла.
+- Окно **Properties** показывает все свойства выбранного элемента с соответствующими элементами управления: заданные свойства отображаются обычным текстом, отсутствующие — серым со значением по умолчанию (редактирование создаёт свойство, **x** удаляет). Линии графиков, элементы списков, зоны и аналогичные списки редактируются на месте; контейнеры и окна показывают свои виджеты, которые можно выбирать, переставлять, удалять и добавлять. Панель инструментов позволяет добавлять виджеты и окна, дублировать и удалять выбранное, отменять и повторять действия, сохранять файл.
+- **Щёлкните правой кнопкой** по виджету, чтобы вызвать **Add widget here** (добавление в позиции указателя), дублирование, изменение порядка (более поздние виджеты рисуются поверх предыдущих), возврат к потоковому размещению, выбор родителя и удаление.
+- Клавиши: стрелки перемещают выбранный элемент на пиксель (**Shift** — на шаг сетки), **Del** удаляет, **Ctrl+D** дублирует, **Ctrl+Z**/**Ctrl+Y** отменяют и повторяют действия (включая изменения в XML-редакторе), **Ctrl+S** сохраняет, **Esc** снимает выделение или отменяет перетаскивание.
 
-Every change is shown at once: the windows are rebuilt from the edited document, unsaved. Buttons, sliders, inputs and other controls do not react in design mode, so editing never writes to the target; values keep updating. Tree nodes, headers and tabs still open and close, to reach the widgets inside them.
+Каждое изменение отображается сразу: окна перестраиваются из редактируемого документа без сохранения файла. Кнопки, ползунки, поля ввода и другие элементы управления в режиме проектирования не реагируют на действия, поэтому редактирование не записывает данные в целевое устройство; значения продолжают обновляться. Узлы дерева, заголовки и вкладки по-прежнему открываются и закрываются, обеспечивая доступ к вложенным виджетам.
 
-## Icon
+## Значок приложения
 
-The program icon is drawn by `res/make_icon.py` (Python 3 with Pillow), which writes `res/app.ico` (16–256 px, linked into the executable through `app.rc`), a 256 px preview `res/app_icon.png` and `res/app_icon.h`, the pixels the program sets as its window icon and shows in **Help → About**.
+Значок программы рисуется скриптом `res/make_icon.py` (Python 3 с Pillow), который создаёт `res/app.ico` (16–256 пикселей, включается в исполняемый файл через `app.rc`), предварительный просмотр `res/app_icon.png` размером 256 пикселей и `res/app_icon.h` с пиксельными данными для значка окна и окна **Help → About**.
 
-## Demo
+## Демонстрационный пример
 
-`examples/demo.xml` uses every widget the loader supports (65 types) in eight windows: Overview, Gauges, Controls, Plots, Layout, Memory, Media and Watch. Its variables are one struct at `0x20001000`; the offset map is at the top of the XML.
+`examples/demo.xml` использует все поддерживаемые загрузчиком виджеты (65 типов) в восьми окнах: Overview, Gauges, Controls, Plots, Layout, Memory, Media и Watch. Переменные размещены в одной структуре по адресу `0x20001000`; карта смещений приведена в начале XML-файла.
 
-`examples/demo_firmware.c` is a matching firmware module for any Cortex-M project: call `demo_init()` once, `demo_tick_1khz()` from a 1 kHz timer interrupt and `demo_poll()` from the main loop. It animates the values (sine waves, gauges, a running light, the LCD) and feeds the DataLog and Histogram through the `DoneAddr` handshake. Reserve `0x2D0` bytes at `0x20001000` in the linker script, or move the struct and change the addresses in the XML.
+`examples/demo_firmware.c` — соответствующий модуль прошивки для любого проекта Cortex-M: вызовите `demo_init()` один раз, `demo_tick_1khz()` из обработчика прерывания таймера с частотой 1 кГц, а `demo_poll()` — из основного цикла. Модуль анимирует значения (синусоиды, шкалы, бегущий огонь, LCD) и передаёт данные в DataLog и Histogram с согласованием через `DoneAddr`. Зарезервируйте `0x2D0` байт по адресу `0x20001000` в скрипте компоновщика либо переместите структуру и измените адреса в XML.
 
-For the **Media** window, copy `demo_logo.png` and `demo_spinner.gif` next to `J-Link Utils.exe`: Image and Gif load files from the program folder.
+Для окна **Media** скопируйте `demo_logo.png` и `demo_spinner.gif` рядом с `J-Link Utils.exe`: виджеты Image и Gif загружают файлы из каталога программы.
 
-## Building on Windows
+## Сборка в Windows
 
-For the **full Release executable**, install Visual Studio 2022 C++ build tools,
-a Windows SDK, Git, CMake 3.25+ and PowerShell 7.2+, then run:
+Для **полной сборки исполняемого файла Release** установите инструменты сборки
+C++ Visual Studio 2022, Windows SDK, Git, CMake 3.25+ и PowerShell 7.2+, затем выполните:
 
 ```powershell
 pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x64
 pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x86
 ```
 
-These commands build the pinned open-source dependencies, run their independent
-link probes, then compile/link the full app with static CRT `/MT`. The package is
-in `out/package/J-Link-Utils-<arch>-Release/`. The **Windows application** Actions
-workflow produces the same x64/x86 packages. See [full build and runtime
-instructions](docs/windows-app.md).
+Эти команды собирают открытые зависимости закреплённых версий, выполняют
+независимые проверки их линковки, затем компилируют и компонуют полное приложение
+со статической библиотекой времени выполнения C/C++ (CRT) `/MT`. Пакет размещается
+в `out/package/J-Link-Utils-<arch>-Release/`. Процесс **Windows application**
+в GitHub Actions создаёт такие же пакеты x64/x86. См. [подробные инструкции
+по полной сборке и запуску](docs/windows-app.md).
 
-The exact supplied `vendor/jlink/JLink_x64.lib` and `JLink.lib` are static DLL-loader
-wrappers, deliberately linked under their original names. `JLinkARM.lib` is a
-different x86 import library, retained but not linked. All remain subject to
-SEGGER licensing. **No proprietary runtime DLL is bundled or downloaded.** Supply
-compatible `JLink_x64.dll` (x64) or `JLinkARM.dll` (x86) beside the exe, or install
-the matching SEGGER software. Missing runtime produces an error and exit 2 rather
-than attempting SDK operations. Hardware operation remains **not verified**.
+Предоставленные `vendor/jlink/JLink_x64.lib` и `JLink.lib` — статические обёртки
+для загрузки DLL; они намеренно подключаются под исходными именами. `JLinkARM.lib`
+— другая импортная библиотека для x86: она сохранена, но не участвует в линковке.
+На все эти файлы распространяются условия лицензии SEGGER.
+**Проприетарная DLL для запуска не включается в пакет и не скачивается.**
+Поместите совместимую `JLink_x64.dll` (x64) или `JLinkARM.dll` (x86) рядом с EXE
+либо установите соответствующее ПО SEGGER. При отсутствии DLL программа выдаёт
+ошибку и завершается с кодом 2, не пытаясь вызывать функции SDK.
+Работа с оборудованием **не проверена**.
 
-The script selects `v143` on the command line; the IDE project's default `v145`
-and C++17 settings are preserved. The supplied wrappers use Release `/MT`;
-full `/MTd` Debug builds are not supported by this automation.
+Скрипт выбирает `v143` через командную строку; заданный в проекте для IDE набор
+инструментов `v145` и настройки C++17 сохраняются. Предоставленные обёртки
+используют Release `/MT`; полные сборки Debug с `/MTd` этой автоматизацией
+не поддерживаются.
 
-The separate [dependency build](docs/windows-dependencies.md) still builds/tests
-both Debug and Release without J-Link or the full application:
+Отдельная [сборка зависимостей](docs/windows-dependencies.md) по-прежнему собирает
+и проверяет Debug и Release без J-Link и без полного приложения:
 
 ```powershell
 pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x64
 pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x86
 ```
 
-Generated dependency headers take precedence in the Visual Studio project.
-Vendored SDL2 and FreeType headers in `include` remain untouched for the Linux
-regression tests; Dear ImGui, ImPlot, tinyxml2, lfqueue and single-file code
-are still compiled from the repository, not replaced with vcpkg copies.
+Созданные при сборке заголовки зависимостей имеют приоритет в проекте Visual Studio.
+Заголовки SDL2 и FreeType в `include` остаются без изменений для регрессионных
+тестов Linux; Dear ImGui, ImPlot, tinyxml2, lfqueue и однофайловый код по-прежнему
+компилируются из репозитория, а не заменяются копиями из vcpkg.
 
 ### Сборка в Visual Studio 2026
 
@@ -217,13 +221,14 @@ SEGGER рядом с EXE: `JLink_x64.dll` для x64 или `JLinkARM.dll` дл�
 **Ограничение проверки:** автоматические Windows-сборки проверены на VS 2022,
 не на VS 2026. Передача генератора устраняет выбор VS 2022, но не гарантирует
 совместимость всей цепочки сборки с VS 2026. Инструмент vcpkg-tool обновлён
-отдельно от каталога портов: baseline **2025.01.13** и версии SDL2, FreeType
-и остальных библиотек сохранены. Архив исходников инструмента проверяется
-по закреплённому SHA512 из официальных метаданных vcpkg 2025.12.12.
+отдельно от каталога портов: базовая версия каталога (**baseline 2025.01.13**)
+и версии SDL2, FreeType и остальных библиотек сохранены. Архив исходников
+инструмента проверяется по закреплённому SHA512 из официальных метаданных vcpkg
+2025.12.12.
 
-## Checks without hardware
+## Проверки без оборудования
 
-On Linux with Python 3, GCC/G++ and the standard tools:
+В Linux с Python 3, GCC/G++ и стандартными инструментами:
 
 ```sh
 sh tests/run_transport_tests.sh
@@ -231,6 +236,23 @@ python3 tests/ui_regression/run.py
 python3 tests/widget_smoke/run.py
 ```
 
-The tests compile the exchange code against simulated SDL and J-Link, use the real tinyxml2/lfqueue, and check individual widgets without a graphics window. They cover connection errors, memory bounds, block merging and polling, write-through, short reads and writes, plot sampling, the `DoneAddr` handshake, XML safety and formatting, with AddressSanitizer, UndefinedBehaviorSanitizer and leak checking enabled. The widget smoke test builds the real Dear ImGui and ImPlot and draws every widget loaded with no properties, with the editor's defaults and with hostile values in every property, inside every container, plus `examples/demo.xml`; it also draws the editor panel for every element, clicks, drags, right-clicks and uses the shortcuts of the design mode in every window (checking that nothing is written to the target meanwhile), and checks that the editor offers exactly the properties the loader reads. Any ImGui assertion fails it. These are regression checks, **not** a build of the full application and **not** a hardware test.
+Тесты компилируют код обмена с имитациями SDL и J-Link, используют настоящие
+tinyxml2/lfqueue и проверяют отдельные виджеты без графического окна. Они охватывают
+ошибки подключения, границы памяти, объединение блоков и опрос, запись с немедленным
+обновлением кэша, неполное чтение и запись, выборку данных графиков, согласование
+через `DoneAddr`, безопасность XML и форматирование; включены AddressSanitizer,
+UndefinedBehaviorSanitizer и проверка утечек памяти.
 
-GitHub Actions runs all three test suites on every push and pull request; **Regression tests** can also be started manually.
+Дымовой тест виджетов собирает настоящие Dear ImGui и ImPlot и отрисовывает каждый
+виджет без свойств, со значениями редактора по умолчанию и с некорректными значениями
+каждого свойства внутри каждого контейнера, а также `examples/demo.xml`. Он также
+отрисовывает панель редактора для каждого элемента, проверяет щелчки,
+перетаскивание, контекстное меню и сочетания клавиш режима проектирования в каждом
+окне (контролируя отсутствие записи в целевое устройство) и сверяет, что редактор
+предлагает ровно те свойства, которые читает загрузчик. Любое нарушение внутренней
+проверки ImGui приводит к провалу теста. Это регрессионные проверки, **не** сборка
+полного приложения и **не** тестирование на оборудовании.
+
+GitHub Actions запускает все три набора тестов при каждой отправке изменений
+и для каждого запроса на слияние; процесс **Regression tests** также можно
+запустить вручную.
