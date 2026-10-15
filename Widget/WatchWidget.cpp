@@ -4,6 +4,9 @@
 #include <string>
 #include <cstdint>
 #include <cstdlib> // strtoull
+#include "Preferences.h"
+#include <map>
+#include <random>
 
 using namespace tinyxml2;
 
@@ -17,6 +20,50 @@ int WatchWidget::s_selectedRow = -1;      // row to delete
 int WatchWidget::s_highlightedRow = -1;   // highlighted row
 int WatchWidget::s_contextMenuRow = -1;
 char WatchWidget::s_xmlPath[MAX_PATH] = "watch.xml";
+
+// Length framing makes arbitrary names/descriptions unambiguous. Values and enabled
+// state are deliberately absent: refreshing the target must never change a UI key.
+static std::string WatchIdentityPart(const std::string& value) {
+    return std::to_string(value.size()) + ":" + value;
+}
+
+static std::string NewWatchPreferenceId() {
+    std::random_device random;
+    std::string id;
+    for (int i = 0; i < 4; ++i) id += WatchIdentityPart(std::to_string(random()));
+    return id;
+}
+
+std::string WatchWidget::RowPreferenceIdentity(const WatchRow& row) {
+    // Explicit IDs survive edits/reordering. Legacy XML gets a configuration identity
+    // until the next ordinary configuration save adds an optional ID attribute.
+    if (!row.preferenceId.empty()) return "id:" + row.preferenceId;
+    return "config:" + WatchIdentityPart(row.name) + WatchIdentityPart(row.desc) +
+        WatchIdentityPart(std::to_string(row.address)) + WatchIdentityPart(std::to_string(row.dataType)) +
+        WatchIdentityPart(row.littleEndian ? "le" : "be");
+}
+
+void WatchWidget::LoadRowPreferences(WatchRow& row) {
+    const std::string identity = RowPreferenceIdentity(row);
+    // Indistinguishable legacy rows cannot safely be matched after reordering.
+    // Do not guess; an ordinary configuration save gives them distinct IDs.
+    int matches = 0;
+    for (const auto& other : s_rows) if (RowPreferenceIdentity(other) == identity) ++matches;
+    if (matches != 1) return;
+    const std::string key = prefs::ScopedKey(s_xmlPath, "Watch.Row", identity);
+    row.bitMode = prefs::ReadBool(key + ".Bit", false);
+    row.hexMode = prefs::ReadBool(key + ".Hex", false);
+}
+
+void WatchWidget::SaveRowPreferences(const WatchRow& row) {
+    const std::string identity = RowPreferenceIdentity(row);
+    int matches = 0;
+    for (const auto& other : s_rows) if (RowPreferenceIdentity(other) == identity) ++matches;
+    if (matches != 1) return;
+    const std::string key = prefs::ScopedKey(s_xmlPath, "Watch.Row", identity);
+    prefs::WriteBool(key + ".Bit", row.bitMode);
+    prefs::WriteBool(key + ".Hex", row.hexMode);
+}
 
 static bool IsSignedIntType(int dt) {
     return dt == S08_DEC || dt == S16_DEC || dt == S32_DEC || dt == S64_DEC;
@@ -45,6 +92,7 @@ void WatchWidget::LoadFromXML(const char* path) {
     if (!items) return;
     for (XMLElement* line = items->FirstChildElement("WatchLine"); line; line = line->NextSiblingElement("WatchLine")) {
         WatchRow row = {};
+        if (const char* id = line->Attribute("PreferenceId")) row.preferenceId = id;
         if (line->FirstChildElement("Enabled"))
             line->FirstChildElement("Enabled")->QueryBoolText(&row.enabled);
         if (line->FirstChildElement("DataType"))
@@ -73,17 +121,35 @@ void WatchWidget::LoadFromXML(const char* path) {
         row.hexMode = false;
         s_rows.push_back(row);
     }
+    for (auto& row : s_rows) LoadRowPreferences(row);
 }
 
-void WatchWidget::SaveToXML(const char* path) {
+void WatchWidget::SaveToXML(const char* path, bool exportOnly) {
+    // Export is a snapshot, not a save of the active watch.xml. In particular it
+    // must not switch live preference identities to IDs absent from watch.xml.
+    // Stage normal-save migrations too, so a failed XML write cannot orphan prefs.
+    std::vector<WatchRow> rowsToSave = s_rows;
+    if (!exportOnly) {
+        std::map<std::string, int> idCounts;
+        for (const auto& row : rowsToSave) if (!row.preferenceId.empty()) ++idCounts[row.preferenceId];
+        for (auto& row : rowsToSave) {
+            if (row.preferenceId.empty() || idCounts[row.preferenceId] > 1) {
+                std::string id;
+                do { id = NewWatchPreferenceId(); } while (idCounts.count(id));
+                row.preferenceId = id;
+                idCounts[id] = 1;
+            }
+        }
+    }
     XMLDocument doc;
     XMLElement* watch = doc.NewElement("Watch");
     doc.InsertEndChild(watch);
     XMLElement* items = doc.NewElement("Items");
     watch->InsertEndChild(items);
 
-    for (const auto& row : s_rows) {
+    for (const auto& row : rowsToSave) {
         XMLElement* line = doc.NewElement("WatchLine");
+        if (!row.preferenceId.empty()) line->SetAttribute("PreferenceId", row.preferenceId.c_str());
         items->InsertEndChild(line);
 
         XMLElement* en = doc.NewElement("Enabled");
@@ -116,14 +182,23 @@ void WatchWidget::SaveToXML(const char* path) {
         le->SetText(row.littleEndian);
         line->InsertEndChild(le);
     }
-    doc.SaveFile(path);
+    if (doc.SaveFile(path) == XML_SUCCESS && !exportOnly) {
+        // Only successful saves of the active configuration migrate live IDs.
+        // UI view toggles never rewrite XML or snapshot current target values.
+        for (size_t i = 0; i < s_rows.size(); ++i) {
+            if (s_rows[i].preferenceId != rowsToSave[i].preferenceId) {
+                s_rows[i].preferenceId = rowsToSave[i].preferenceId;
+                SaveRowPreferences(s_rows[i]);
+            }
+        }
+    }
 }
 
 WatchWidget::WatchWidget() {
     static bool initialized = false;
     if (!initialized) {
-        s_updateInterval = 100.0f;
-        s_opacity = 100.0f;
+        s_updateInterval = (float)prefs::ReadDouble("Watch.UpdateInterval", 100.0, 1.0, 10000.0);
+        s_opacity = (float)prefs::ReadDouble("Watch.Opacity", 100.0, 1.0, 100.0);
         s_refreshTime = 0.0;
         s_selectedRow = -1;
         s_highlightedRow = -1;
@@ -142,11 +217,13 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         float oldInterval = s_updateInterval;
         ImGui::DragFloat("Update Interval(ms)", &s_updateInterval, 1.0f, 1.0f, 10000.0f);
         if (oldInterval != s_updateInterval) {
+            prefs::WriteDouble("Watch.UpdateInterval", s_updateInterval);
             // Reset the timer so that the new interval applies at once
             s_refreshTime = 0.0;
         }
         ImGui::SameLine();
-        ImGui::DragFloat("Opacity(%)", &s_opacity, 0.1f, 1.0f, 100.0f);
+        if (ImGui::DragFloat("Opacity(%)", &s_opacity, 0.1f, 1.0f, 100.0f))
+            prefs::WriteDouble("Watch.Opacity", s_opacity);
         ImGui::PopItemWidth();
     }
 
@@ -494,6 +571,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
             newRow.bitMode = false;
             newRow.littleEndian = true;
             newRow.hexMode = false;
+            newRow.preferenceId = NewWatchPreferenceId();
             s_rows.push_back(newRow);
             s_modified = true;
         }
@@ -505,7 +583,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
 
                 EnsureXmlExtension(path, MAX_PATH); // append .xml if missing
 
-                SaveToXML(path); // save
+                SaveToXML(path, true); // export without changing the active identities
                 // no SDL_free(path): the array is on the stack
             }
         }
@@ -606,6 +684,7 @@ void WatchWidget::DrawRowContextMenu() {
             s_rows[rowIndex].dataType = newType;
             s_rows[rowIndex].bitMode = false;
             s_rows[rowIndex].hexMode = false;
+            SaveRowPreferences(s_rows[rowIndex]);
             s_modified = true;
             };
         if (dt >= 0 && dt < 11) selected[dt] = true;
@@ -649,11 +728,11 @@ void WatchWidget::DrawRowContextMenu() {
     int dt = s_rows[rowIndex].dataType;
     if (IsIntegerType(dt)) {
         if (ImGui::MenuItem("Bit View", "", &s_rows[rowIndex].bitMode)) {
-            // nothing
+            SaveRowPreferences(s_rows[rowIndex]);
         }
         if (ImGui::MenuItem("Hex View", "", &s_rows[rowIndex].hexMode)) {
             if (s_rows[rowIndex].hexMode) s_rows[rowIndex].bitMode = false;
-            s_modified = true;
+            SaveRowPreferences(s_rows[rowIndex]);
         }
     }
     if (dt == S16_DEC || dt == U16_DEC || dt == S32_DEC || dt == U32_DEC ||

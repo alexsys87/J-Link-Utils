@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cfloat>
 #include <initializer_list>
+#include "Preferences.h"
 
 // All widgets
 #include "TextWidget.h"
@@ -83,6 +84,7 @@ using namespace tinyxml2;
 float VirtualBuffer[MAX_BUFF][BUFF_SIZE] = { 0 };
 
 std::vector<WindowData> g_Windows;
+void SaveDashboardWindowVisibility();
 
 // Document the windows were built from in design mode, and its revision at that time.
 // nullptr when they were loaded from the file.
@@ -90,6 +92,8 @@ static const XMLDocument* g_WindowsDoc = nullptr;
 static uint32_t g_WindowsRevision = 0;
 // Set while building from the open document: the widgets keep their elements as keys.
 static bool g_KeepSources = false;
+static std::string g_PreferenceDocument;
+static std::vector<std::string> g_WindowPreferenceKeys;
 
 using ui_safety::XmlChildText;
 
@@ -170,6 +174,66 @@ static uint32_t ReadAddress(XMLElement* e, const char* tag) {
 
 static const char* ReadText(XMLElement* e, const char* tag, const char* def = "") {
     return XmlChildText(e, tag, def);
+}
+
+// Preference identity is semantic, not the widget's index or a pointer into the
+// document. Reordering unrelated siblings and changing layout/options preserves it.
+// No sibling occurrence is included: deleting/reordering another widget must not
+// transfer its settings to a survivor. Ambiguous semantic paths are not persisted.
+// Length framing avoids collisions in user-controlled labels.
+static std::string PreferenceIdentityPart(const std::string& value) {
+    return std::to_string(value.size()) + ":" + value;
+}
+
+static std::string PreferenceElementSignature(XMLElement* elem) {
+    std::string signature = PreferenceIdentityPart(elem->Name());
+    for (const char* field : { "Text", "Name", "Address", "DataType", "BufferId" })
+        signature += PreferenceIdentityPart(ReadText(elem, field));
+    if (std::string(elem->Name()) == "PlotLines") {
+        XMLElement* items = elem->FirstChildElement("Items");
+        if (items) {
+            for (XMLElement* line = items->FirstChildElement("Line"); line; line = line->NextSiblingElement("Line"))
+                signature += PreferenceIdentityPart(PreferenceElementSignature(line));
+        }
+    }
+    return signature;
+}
+
+static std::string PreferenceElementCandidateIdentity(XMLElement* elem) {
+    if (!elem) return "";
+    XMLElement* parent = elem->Parent() ? elem->Parent()->ToElement() : nullptr;
+    // <Items> is a list, not a widget. Its first legacy <Text> widget must not
+    // become an apparent title/address property of every other item in the list.
+    if (strcmp(elem->Name(), "Items") == 0) return PreferenceElementCandidateIdentity(parent);
+    const std::string signature = PreferenceElementSignature(elem);
+    return PreferenceElementCandidateIdentity(parent) + PreferenceIdentityPart(signature);
+}
+
+static int CountPreferenceIdentityMatches(XMLElement* first, const char* tag, const std::string& candidate) {
+    int matches = 0;
+    for (XMLElement* elem = first; elem; elem = elem->NextSiblingElement()) {
+        if (strcmp(elem->Name(), tag) == 0 && PreferenceElementCandidateIdentity(elem) == candidate) ++matches;
+        if (matches > 1) return matches;
+        matches += CountPreferenceIdentityMatches(elem->FirstChildElement(), tag, candidate);
+        if (matches > 1) return matches;
+    }
+    return matches;
+}
+
+static std::string PreferenceElementIdentity(XMLElement* elem) {
+    if (!elem) return "";
+    const std::string candidate = PreferenceElementCandidateIdentity(elem);
+    // Even distinct widgets can have indistinguishable semantic paths (for
+    // example matching plots in anonymous Groups). Do not guess by list index.
+    const std::string ambiguousKey = prefs::ScopedKey(g_PreferenceDocument, "Identity", candidate) + ".Ambiguous";
+    if (CountPreferenceIdentityMatches(elem->GetDocument()->FirstChildElement(), elem->Name(), candidate) != 1) {
+        // Remember ambiguity across rebuilds and restarts: if A had saved prefs,
+        // then matching B was added and A deleted, B must not inherit A's key.
+        // This only stages a UI-store tombstone; reading never changes the XML.
+        prefs::WriteBool(ambiguousKey, true);
+        return "";
+    }
+    return prefs::ReadBool(ambiguousKey, false) ? "" : candidate;
 }
 
 // "#RRGGBB" or "#AARRGGBB" as an IM_COL32 color
@@ -302,7 +366,10 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             const int defaultType = ReadBool(elem, "Float", true) ? FLOAT : U32_DEC;
             lines.push_back(readLine(elem, txt, defaultType));
         }
-        return std::make_unique<PlotLinesWidget>(txt, minV, maxV, w, h, f, sz, sm, autosize, maxSize, lines);
+        auto plot = std::make_unique<PlotLinesWidget>(txt, minV, maxV, w, h, f, sz, sm, autosize, maxSize, lines);
+        const std::string identity = PreferenceElementIdentity(elem);
+        plot->SetPreferenceKey(identity.empty() ? "" : prefs::ScopedKey(g_PreferenceDocument, "PlotLines", identity));
+        return plot;
     }
     else if (name == "TextFormatted") {
         unsigned int hexColor = 0;
@@ -692,12 +759,8 @@ static std::unique_ptr<UIWidget> LoadPlacedWidget(XMLElement* elem) {
 // Builds g_Windows from a document. keepSources: the document stays alive (ctx->CurrentXMLDoc)
 // and the design mode may refer to its elements.
 static void BuildWindows(MainContext* ctx, XMLDocument& doc, bool keepSources) {
-    // A rebuild in design mode keeps the windows the user has hidden hidden
-    std::vector<std::pair<std::string, bool>> shown;
-    if (keepSources) {
-        for (const WindowData& w : g_Windows) shown.emplace_back(w.name, w.show);
-    }
     g_Windows.clear();
+    g_WindowPreferenceKeys.clear();
     g_KeepSources = keepSources;
     int winCount = 0;
     for (XMLElement* win = doc.FirstChildElement("Window"); win; win = win->NextSiblingElement("Window")) {
@@ -705,10 +768,10 @@ static void BuildWindows(MainContext* ctx, XMLDocument& doc, bool keepSources) {
         WindowData wd;
         const char* name = XmlChildText(win, "Text", "Unnamed");
         wd.name = name;
-        wd.show = true;
-        for (const auto& s : shown) {
-            if (s.first == wd.name) wd.show = s.second;
-        }
+        const std::string identity = PreferenceElementIdentity(win);
+        const std::string visibilityKey = identity.empty() ? "" : prefs::ScopedKey(g_PreferenceDocument, "Windows", identity);
+        g_WindowPreferenceKeys.push_back(visibilityKey);
+        wd.show = visibilityKey.empty() ? true : prefs::ReadBool(visibilityKey, true);
         wd.source = keepSources ? win : nullptr;
 
         // Geometry, applied once; without it the window keeps the position ImGui remembers
@@ -788,12 +851,14 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
         return;
     }
     printf("XML loaded successfully: %s\n", filename);
+    g_PreferenceDocument = filename;
     BuildWindows(ctx, doc, false);
     g_WindowsDoc = nullptr;
 }
 
 // Design mode: the windows show the open document, with its unsaved changes.
 static void LoadWindowsFromDocument(MainContext* ctx) {
+    g_PreferenceDocument = ctx->File_path;
     BuildWindows(ctx, *ctx->CurrentXMLDoc, true);
     g_WindowsDoc = ctx->CurrentXMLDoc;
     g_WindowsRevision = ctx->xml_revision;
@@ -854,12 +919,25 @@ int Draw_Window(MainContext* ctx) {
         if (design) TrackWindowGeometry(ctx, win);
         ImGui::End();
     }
+    SaveDashboardWindowVisibility(); // title-bar close buttons, including collapsed windows
     if (design) DesignMode::EndFrame(ctx);
     return 0;
+}
+
+// Main-menu visibility toggles call this immediately after changing win.show.
+// Read-before-write avoids staging defaults simply because a dashboard was drawn.
+void SaveDashboardWindowVisibility() {
+    for (size_t i = 0; i < g_Windows.size() && i < g_WindowPreferenceKeys.size(); ++i) {
+        const std::string& key = g_WindowPreferenceKeys[i];
+        if (key.empty()) continue; // ambiguous windows deliberately have no persisted identity
+        if (prefs::ReadBool(key, true) != g_Windows[i].show)
+            prefs::WriteBool(key, g_Windows[i].show);
+    }
 }
 
 // Removes all windows
 extern "C" void ClearAllWindows(void) {
     g_Windows.clear();
+    g_WindowPreferenceKeys.clear();
     g_WindowsDoc = nullptr;
 }

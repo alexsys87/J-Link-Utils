@@ -297,6 +297,18 @@ static void SetAll(tinyxml2::XMLElement* e, const char* value) {
 }
 
 static int RunCase(MainContext* ctx, const char* name, tinyxml2::XMLDocument& doc) {
+    // Optional deterministic shards for environments with short process limits.
+    // The default still runs every case in one process.
+    static int caseIndex = 0;
+    const char* shardCountText = std::getenv("SMOKE_SHARDS");
+    const char* shardText = std::getenv("SMOKE_SHARD");
+    const int shardCount = shardCountText ? std::atoi(shardCountText) : 1;
+    const int shard = shardText ? std::atoi(shardText) : 0;
+    if (shardCount < 1 || shard < 0 || shard >= shardCount) {
+        std::fprintf(stderr, "invalid SMOKE_SHARDS/SMOKE_SHARD\n");
+        std::exit(1);
+    }
+    if (caseIndex++ % shardCount != shard) return 0;
     g_case = name;
     std::printf("case: %s\n", name);
     const std::string path = std::string(std::getenv("SMOKE_DIR") ? std::getenv("SMOKE_DIR") : ".") + "/case.xml";

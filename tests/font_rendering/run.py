@@ -53,7 +53,7 @@ assert 'io.Fonts->Build()' not in loader
 
 with tempfile.TemporaryDirectory(prefix='font-rendering-') as directory:
     build = Path(directory)
-    (build / 'loader.h').write_text(configuration + frame + loader)
+    (build / 'loader.h').write_text('#include "Preferences.h"\n' + configuration + frame + loader)
     flags = shlex.split(subprocess.check_output(
         ['pkg-config', '--cflags', '--libs', 'freetype2', 'sdl2'], text=True))
     command = [os.environ.get('CXX', 'g++'), '-std=c++17', '-g', '-O0',
