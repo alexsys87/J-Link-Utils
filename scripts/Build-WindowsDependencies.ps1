@@ -112,9 +112,13 @@ $msbuild = (Get-Content "$build/selected-msbuild.txt" -Raw).Trim()
 if (-not $msbuild -or -not (Test-Path -LiteralPath $msbuild -PathType Leaf)) {
     throw 'Cannot locate the CMake-selected MSBuild exported by the Visual Studio generator.'
 }
+# A standalone hand-written vcxproj otherwise falls back to v100. Match the
+# dependency build's selected compiler without changing the application toolset.
+$toolset = (Get-Content "$build/selected-toolset.txt" -Raw).Trim()
+if ($toolset -notmatch '^v[0-9]+$') { throw "Unexpected CMake-selected platform toolset: $toolset" }
 foreach ($configuration in 'Debug', 'Release') {
     Invoke-Native $msbuild @("$repo/build/dependencies/props-probe.vcxproj", '/m',
-        "/p:Configuration=$configuration", "/p:Platform=$platform")
+        "/p:Configuration=$configuration", "/p:Platform=$platform", "/p:PlatformToolset=$toolset")
     Invoke-Native "$state/props-probe/$platform/$configuration/dependency_props_probe.exe" @()
 }
 Write-Host "Dependencies ready for $platform Debug and Release. No J-Link library or application was built."

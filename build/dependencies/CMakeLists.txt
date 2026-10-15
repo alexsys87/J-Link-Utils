@@ -14,6 +14,11 @@ if(NOT CMAKE_VS_MSBUILD_COMMAND)
 endif()
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/selected-msbuild.txt"
   CONTENT "${CMAKE_VS_MSBUILD_COMMAND}\n")
+if(NOT CMAKE_VS_PLATFORM_TOOLSET)
+  message(FATAL_ERROR "Visual Studio generator did not select a C++ platform toolset")
+endif()
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/selected-toolset.txt"
+  CONTENT "${CMAKE_VS_PLATFORM_TOOLSET}\n")
 
 # Let the installed packages, not a second hand-maintained list of .lib names,
 # resolve Debug/Release and all Windows system/transitive libraries.
