@@ -3,6 +3,7 @@
 
 #define main SDL_main
 #include <atomic>
+#include "WriteProtectionRules.h"
 #include "JLinkConnection.h"
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -103,6 +104,7 @@ typedef struct {
         uint64_t all;
     };
     uint8_t* value;  // data to write, or NULL for a read
+    uint64_t write_epoch; // permission/session generation captured on enqueue
 } iodata_t;
 
 // One value captured by the communication thread for the plots.

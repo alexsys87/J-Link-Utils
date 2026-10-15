@@ -42,6 +42,8 @@
     <ClInclude Include="JLinkConnection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="WriteProtection.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="WriteProtectionRules.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Widget\AlignTextWidget.h">
       <Filter>Source Files\Widget</Filter>
     </ClInclude>

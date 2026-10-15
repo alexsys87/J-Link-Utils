@@ -1,5 +1,6 @@
 #pragma once
 #include "../../JLinkConnection.h"
+#include "../../WriteProtectionRules.h"
 // Test-only SDL/J-Link facade. Production DataHelper.cpp is compiled unchanged.
 #include <atomic>
 #include <algorithm>
@@ -31,7 +32,7 @@ inline SDL_Thread* SDL_CreateThread(int (*fn)(void*), const char*, void* data) {
 inline void SDL_WaitThread(SDL_Thread* p, int*) { p->thread.join(); delete p; }
 struct FT32 { union { uint32_t hex; float real; }; };
 struct q_t { uint32_t addr; uint16_t size; };
-struct iodata_t { union { q_t q; uint64_t all; }; uint8_t* value; };
+struct iodata_t { union { q_t q; uint64_t all; }; uint8_t* value; uint64_t write_epoch; };
 struct DataSample { double time; uint8_t bytes[8]; };
 struct MainContext {
     SDL_mutex* Datalock{};

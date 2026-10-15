@@ -302,6 +302,105 @@ static bool WaitForCommunication(unsigned ms)
     return g_commRunning;
 }
 
+static WriteProtectionStatus g_writeProtection; // guarded by g_queueMutex
+
+WriteProtectionStatus GetWriteProtectionStatus()
+{
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    auto status = g_writeProtection;
+    status.epoch = g_sessionSequence;
+    return status;
+}
+
+// Called with g_queueMutex held. Never waits for SDK I/O. A transaction already
+// committed by the worker may complete, but unsent/late producers are revoked.
+static void RevokeTargetWritesLocked(MainContext* ctx)
+{
+    g_writeProtection.readOnly = true;
+    ++g_sessionSequence;
+    if (!ctx) return;
+    while (void* item = lfqueue_deq(&ctx->tx_Queue)) {
+        auto* io = static_cast<iodata_t*>(item);
+        SDL_free(io->value);
+        SDL_free(io);
+    }
+    if (ctx->Datalock && ctx->IOMAP_Data) {
+        SDL_LockMutex(ctx->Datalock);
+        memset(ctx->IOMAP_Data, 0, IOMAP_SIZE);
+        ++g_writeSequence;
+        SDL_UnlockMutex(ctx->Datalock);
+    }
+}
+
+void LockTargetWrites(MainContext* ctx)
+{
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    RevokeTargetWritesLocked(ctx);
+}
+
+bool ArmTargetWrites(MainContext* ctx, uint64_t expectedEpoch)
+{
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    if (!ctx || !ctx->StartComunication || !g_commRunning) {
+        g_writeProtection.lastError = "Connect to the target before enabling writes.";
+        return false;
+    }
+    if (expectedEpoch != UINT64_MAX && expectedEpoch != g_sessionSequence) {
+        g_writeProtection.lastError = "Connection or protection settings changed. Confirm the new session again.";
+        return false;
+    }
+    if (!g_writeProtection.readOnly) return true;
+    ++g_sessionSequence;
+    g_writeProtection.readOnly = false;
+    g_writeProtection.lastError.clear();
+    return true;
+}
+
+bool SetWriteAddressRange(MainContext* ctx, bool enabled, uint32_t first, uint32_t last)
+{
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    RevokeTargetWritesLocked(ctx);
+    if (enabled && (first == 0 || first > last)) {
+        g_writeProtection.lastError = "Invalid inclusive write address range.";
+        return false;
+    }
+    g_writeProtection.restrictAddresses = enabled;
+    g_writeProtection.firstAddress = first;
+    g_writeProtection.lastAddress = last;
+    g_writeProtection.lastError.clear();
+    return true;
+}
+
+bool AddWriteValueRule(MainContext* ctx, const WriteValueRule& rule)
+{
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    RevokeTargetWritesLocked(ctx);
+    if (!ValidateWriteValueRule(rule, g_writeProtection.lastError)) return false;
+    if (g_writeProtection.rules.size() >= 32) {
+        g_writeProtection.lastError = "At most 32 value rules are allowed.";
+        return false;
+    }
+    const uint64_t end = static_cast<uint64_t>(rule.address) + WriteValueSize(rule.type);
+    for (const auto& existing : g_writeProtection.rules) {
+        const uint64_t otherEnd = static_cast<uint64_t>(existing.address) + WriteValueSize(existing.type);
+        if (rule.address < otherEnd && existing.address < end) {
+            g_writeProtection.lastError = "Value rules must not overlap.";
+            return false;
+        }
+    }
+    g_writeProtection.rules.push_back(rule);
+    g_writeProtection.lastError.clear();
+    return true;
+}
+
+void RemoveWriteValueRule(MainContext* ctx, unsigned index)
+{
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    RevokeTargetWritesLocked(ctx);
+    if (index < g_writeProtection.rules.size())
+        g_writeProtection.rules.erase(g_writeProtection.rules.begin() + index);
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -408,10 +507,22 @@ extern "C" {
         io_mem->q.addr = offset;
         io_mem->q.size = size;
         io_mem->value = buf;
+        io_mem->write_epoch = session;
         {
             std::lock_guard<std::mutex> guard(g_queueMutex);
-            if (!ctx->StartComunication || g_sessionSequence != session ||
-                lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
+            if (!ctx->StartComunication || g_sessionSequence != session) {
+                SDL_free(buf);
+                SDL_free(io_mem);
+                return 0;
+            }
+            if (!ValidateProtectedWrite(g_writeProtection, phys_addr, data, size, g_writeProtection.lastError)) {
+                ++g_writeProtection.blockedWrites;
+                // It has not entered the queue yet; enqueue follows validation.
+                SDL_free(buf);
+                SDL_free(io_mem);
+                return 0;
+            }
+            if (lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
                 SDL_free(buf);
                 SDL_free(io_mem);
                 return 0;
@@ -697,6 +808,19 @@ extern "C" {
                 batch[i + 1]->q.addr == io->q.addr && batch[i + 1]->q.size == io->q.size;
             if (ok && !superseded && g_commRunning) {
                 std::lock_guard<std::mutex> lock(g_sdkMutex);
+                bool permitted;
+                {
+                    std::lock_guard<std::mutex> permissionLock(g_queueMutex);
+                    permitted = ctx->StartComunication && g_commRunning &&
+                        io->write_epoch == g_sessionSequence &&
+                        ValidateProtectedWrite(g_writeProtection, ctx->mcu_memory_base + io->q.addr,
+                            io->value, io->q.size, g_writeProtection.lastError);
+                }
+                if (!permitted) {
+                    SDL_free(io->value);
+                    SDL_free(io);
+                    continue;
+                }
                 const int written = JLINKARM_WriteMemEx(ctx->mcu_memory_base + io->q.addr, io->q.size, io->value, 0);
                 ok = (written == io->q.size);
                 if (!ok) {
@@ -719,6 +843,7 @@ extern "C" {
         {
             std::lock_guard<std::mutex> lock(g_queueMutex);
             ctx->StartComunication = false;
+            g_writeProtection.readOnly = true;
             ++g_sessionSequence;
             DrainQueue(&ctx->tx_Queue);
             SDL_LockMutex(ctx->Datalock);
