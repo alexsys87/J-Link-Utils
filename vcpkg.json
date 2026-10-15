@@ -1,0 +1,13 @@
+{
+  "name": "j-link-utils-windows-dependencies",
+  "version-string": "1.0.0",
+  "builtin-baseline": "6f29f12e82a8293156836ad81cc9bf5af41fe836",
+  "dependencies": [
+    { "name": "sdl2", "default-features": false },
+    { "name": "freetype", "default-features": false, "features": ["brotli", "bzip2", "png", "zlib"] },
+    "brotli",
+    "bzip2",
+    "libpng",
+    "zlib"
+  ]
+}

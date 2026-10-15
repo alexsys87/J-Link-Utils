@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{79480599-3255-4921-B585-6D42C155D951}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)..\..\.dependencies\props-probe\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(OutDir)obj\</IntDir>
+    <TargetName>dependency_props_probe</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link><SubSystem>Windows</SubSystem></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClCompile Include="probe.cpp" /></ItemGroup>
+  <Import Project="Dependencies.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

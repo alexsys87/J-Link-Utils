@@ -1,0 +1,101 @@
+#Requires -Version 7.2
+[CmdletBinding()]
+param(
+    [ValidateSet('x64', 'x86')][string]$Architecture = 'x64',
+    [string]$Generator = 'Visual Studio 17 2022'
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+if (-not $IsWindows) { throw 'This script requires Windows and Visual Studio C++ build tools.' }
+
+function Invoke-Native([string]$File, [string[]]$Arguments) {
+    & $File @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "$File failed with exit code $LASTEXITCODE" }
+}
+function Assert-Hash([string]$Path, [string]$Expected) {
+    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA512).Hash -ne $Expected) {
+        throw "SHA512 mismatch: $Path. Remove it and retry; never execute an unverified download."
+    }
+}
+
+$repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$state = Join-Path $repo '.dependencies'
+$vcpkg = Join-Path $state 'vcpkg'
+$installed = Join-Path $state 'installed'
+$lock = Get-Content (Join-Path $repo 'build/dependencies/vcpkg-lock.json') -Raw | ConvertFrom-Json
+$manifest = Get-Content (Join-Path $repo 'vcpkg.json') -Raw | ConvertFrom-Json
+if ($manifest.'builtin-baseline' -ne $lock.commit) { throw 'Manifest baseline and bootstrap commit must match.' }
+foreach ($tool in 'git', 'cmake', 'ctest', 'tar') { Get-Command $tool -ErrorAction Stop | Out-Null }
+New-Item -ItemType Directory -Force $state | Out-Null
+
+if (-not (Test-Path "$vcpkg/.git")) {
+    New-Item -ItemType Directory -Force $vcpkg | Out-Null
+    Invoke-Native git @('init', $vcpkg)
+    Invoke-Native git @('-C', $vcpkg, 'remote', 'add', 'origin', $lock.repository)
+    Invoke-Native git @('-C', $vcpkg, 'fetch', '--depth=1', 'origin', $lock.commit)
+    Invoke-Native git @('-C', $vcpkg, 'checkout', '--detach', $lock.commit)
+}
+$head = & git -C $vcpkg rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or $head -ne $lock.commit) { throw 'Unexpected vcpkg checkout. Remove .dependencies/vcpkg and retry.' }
+Invoke-Native git @('-C', $vcpkg, 'diff', '--exit-code', 'HEAD', '--', 'scripts', 'ports', 'versions', 'triplets')
+
+# The upstream Windows bootstrap downloads an unhashed executable. Instead build
+# the tool from its upstream SHA512-pinned source archive. Its fmt/cmrc downloads
+# are also hash-pinned by that source. No winget, global integration, or mutable exe.
+$archive = Join-Path $state "vcpkg-tool-$($lock.toolVersion).tar.gz"
+if (-not (Test-Path $archive)) { Invoke-WebRequest -Uri $lock.toolSourceUrl -OutFile $archive }
+Assert-Hash $archive $lock.toolSourceSha512
+$toolSource = Join-Path $state "tool-source-$($lock.toolVersion)"
+if (-not (Test-Path $toolSource)) {
+    New-Item -ItemType Directory $toolSource | Out-Null
+    try { Invoke-Native tar @('-xzf', $archive, '--strip-components=1', '-C', $toolSource) }
+    catch { Remove-Item -Recurse -Force $toolSource; throw }
+}
+$toolBuild = Join-Path $state 'tool-build'
+Invoke-Native cmake @('-S', $toolSource, '-B', $toolBuild, '-G', $Generator, '-A', 'x64',
+    '-DBUILD_TESTING=OFF', '-DVCPKG_DEVELOPMENT_WARNINGS=OFF', '-DVCPKG_MSVC_ANALYZE=OFF',
+    "-DVCPKG_BASE_VERSION=$($lock.toolVersion)", "-DVCPKG_VERSION=$($lock.toolCommit)")
+Invoke-Native cmake @('--build', $toolBuild, '--config', 'Release', '--target', 'vcpkg', '--parallel')
+Copy-Item -Force "$toolBuild/Release/vcpkg.exe" "$vcpkg/vcpkg.exe"
+New-Item -ItemType File -Force "$vcpkg/vcpkg.disable_metrics" | Out-Null
+
+$triplet = "$Architecture-windows-static"
+$env:VCPKG_ROOT = $vcpkg
+$env:VCPKG_DISABLE_METRICS = '1'
+# Keep vcpkg on the same VS instance selected by CMake, even on a machine
+# with several Visual Studio generations installed.
+$instanceEntry = Get-Content "$toolBuild/CMakeCache.txt" | Where-Object { $_ -match '^CMAKE_GENERATOR_INSTANCE:INTERNAL=' }
+if (@($instanceEntry).Count -ne 1) { throw 'Cannot locate the CMake-selected Visual Studio instance.' }
+$env:VCPKG_VISUAL_STUDIO_PATH = ($instanceEntry -split '=', 2)[1]
+if (-not $env:VCPKG_VISUAL_STUDIO_PATH) { throw 'CMake did not record a Visual Studio instance.' }
+# Both Debug and Release are installed by the standard static triplet (/MTd,/MT).
+Invoke-Native "$vcpkg/vcpkg.exe" @('install', "--triplet=$triplet", '--host-triplet=x64-windows',
+    "--x-manifest-root=$repo", "--x-install-root=$installed", '--clean-after-build')
+
+$platform = if ($Architecture -eq 'x86') { 'Win32' } else { 'x64' }
+$build = Join-Path $state "probe-$Architecture"
+Invoke-Native cmake @('-S', "$repo/build/dependencies", '-B', $build, '-G', $Generator, '-A', $platform,
+    "-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake", "-DVCPKG_TARGET_TRIPLET=$triplet",
+    "-DCMAKE_GENERATOR_INSTANCE=$env:VCPKG_VISUAL_STUDIO_PATH",
+    "-DVCPKG_INSTALLED_DIR=$installed", '-DVCPKG_MANIFEST_INSTALL=OFF')
+foreach ($configuration in 'Debug', 'Release') {
+    Invoke-Native cmake @('--build', $build, '--config', $configuration, '--parallel')
+    Invoke-Native ctest @('--test-dir', $build, '-C', $configuration, '--output-on-failure')
+}
+
+# Export the exact link closure resolved by CMake's VS generator. This includes
+# SDL2maind's manual-link directory and static SDL2's Windows system libraries.
+# Do not glob *.lib or maintain a second list of debug suffixes by hand.
+& "$PSScriptRoot/Export-DependencyProps.ps1" -Project "$build/dependency_probe.vcxproj" `
+    -RepositoryRoot $repo -Architecture $Architecture
+# Independently verify that the exported MSBuild properties compile/link/run,
+# not just that CMake's original project does. Still no J-Link or application.
+$makeProgram = Get-Content "$build/CMakeCache.txt" | Where-Object { $_ -match '^CMAKE_MAKE_PROGRAM:FILEPATH=' }
+if (@($makeProgram).Count -ne 1) { throw 'Cannot locate the CMake-selected MSBuild.' }
+$msbuild = ($makeProgram -split '=', 2)[1]
+foreach ($configuration in 'Debug', 'Release') {
+    Invoke-Native $msbuild @("$repo/build/dependencies/props-probe.vcxproj", '/m',
+        "/p:Configuration=$configuration", "/p:Platform=$platform")
+    Invoke-Native "$state/props-probe/$platform/$configuration/dependency_props_probe.exe" @()
+}
+Write-Host "Dependencies ready for $platform Debug and Release. No J-Link library or application was built."

@@ -1,0 +1,68 @@
+name: Windows open-source dependencies
+on:
+  push:
+    paths:
+      - 'vcpkg.json'
+      - 'build/dependencies/**'
+      - 'scripts/*Dependency*.ps1'
+      - 'scripts/Build-WindowsDependencies.ps1'
+      - 'J-Link Utils.vcxproj'
+      - '.github/workflows/windows-dependencies.yml'
+  pull_request:
+    paths:
+      - 'vcpkg.json'
+      - 'build/dependencies/**'
+      - 'scripts/*Dependency*.ps1'
+      - 'scripts/Build-WindowsDependencies.ps1'
+      - 'J-Link Utils.vcxproj'
+      - '.github/workflows/windows-dependencies.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    name: ${{ matrix.arch }} static CRT, Debug and Release (no J-Link)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.dependencies\binary-cache
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prepare binary cache
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      # Cache only content-addressed package archives, never stale generated props
+      # or an installation from a different manifest/toolchain. vcpkg ABI hashes
+      # additionally account for compiler, SDK, triplets and port inputs.
+      - uses: actions/cache@v4
+        with:
+          path: .dependencies/binary-cache
+          key: windows-2022-v143-${{ matrix.arch }}-${{ hashFiles('vcpkg.json', 'build/dependencies/vcpkg-lock.json', 'scripts/*Dependency*.ps1', 'scripts/Build-WindowsDependencies.ps1') }}
+      - name: Bootstrap, build and link-test open-source dependencies
+        shell: pwsh
+        run: ./scripts/Build-WindowsDependencies.ps1 -Architecture ${{ matrix.arch }}
+      - name: Record dependency and compiler provenance
+        shell: pwsh
+        run: |
+          Copy-Item vcpkg.json .dependencies/vcpkg.json
+          Copy-Item build/dependencies/vcpkg-lock.json .dependencies/vcpkg-lock.json
+          cmake --version | Out-File .dependencies/tool-versions.txt
+          ./.dependencies/vcpkg/vcpkg.exe version | Out-File -Append .dependencies/tool-versions.txt
+          Copy-Item .dependencies/probe-${{ matrix.arch }}/CMakeCache.txt .dependencies/CMakeCache-${{ matrix.arch }}.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-dependencies-${{ matrix.arch }}-static-debug-release
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            .dependencies/installed/
+            .dependencies/msbuild/
+            .dependencies/vcpkg.json
+            .dependencies/vcpkg-lock.json
+            .dependencies/tool-versions.txt
+            .dependencies/CMakeCache-*.txt
+          retention-days: 14
