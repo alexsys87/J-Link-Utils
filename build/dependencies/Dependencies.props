@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <JLinkDependencyPlatform Condition="'$(Platform)'=='x64'">x64</JLinkDependencyPlatform>
+    <JLinkDependencyPlatform Condition="'$(Platform)'=='Win32'">x86</JLinkDependencyPlatform>
+    <JLinkDependencyProps>$(MSBuildThisFileDirectory)..\..\.dependencies\msbuild\$(JLinkDependencyPlatform).props</JLinkDependencyProps>
+    <!-- Do not let a developer's global vcpkg integration mix another installation in. -->
+    <VcpkgEnabled>false</VcpkgEnabled>
+    <VcpkgEnableManifest>false</VcpkgEnableManifest>
+  </PropertyGroup>
+  <Import Project="$(JLinkDependencyProps)" Condition="Exists('$(JLinkDependencyProps)')" />
+  <Target Name="CheckOpenSourceDependencies" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(JLinkDependencyProps)')" Text="Open-source dependencies are not prepared. Run: pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture $(JLinkDependencyPlatform)" />
+    <Error Condition="'$(Configuration)'!='Debug' and '$(Configuration)'!='Release'" Text="Dependencies support Debug and Release only." />
+  </Target>
+</Project>

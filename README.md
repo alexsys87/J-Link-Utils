@@ -63,16 +63,38 @@ For the **Media** window, copy `demo_logo.png` and `demo_spinner.gif` next to `J
 
 ## Building on Windows
 
-Open `J-Link Utils.sln` in Visual Studio with the C++ and Windows SDK components. The project uses C++17 and the `v145` toolset; that toolset must be installed, or the project must be retargeted.
+The open-source Windows libraries are built locally by a pinned vcpkg manifest,
+with a separate dependency-only Windows CI build. From PowerShell 7.2+:
 
-**The repository is not yet self-contained for a full build.** Missing:
+```powershell
+pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x64
+# Optional: both Debug and Release for the Win32 project configurations:
+pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x86
+```
 
-- the SDL2 and FreeType libraries and their dependencies listed in the `.vcxproj`, in `lib`;
-- the J-Link import library: `JLinkARM_x64.lib` for x64 or `JLinkARM.lib` for Win32, and the matching DLL to run.
+Install Visual Studio C++ build tools and a Windows SDK, Git and CMake 3.25+
+first. Nothing is installed globally by the script. See
+[Windows dependency builds](docs/windows-dependencies.md) for prerequisites,
+pinning, cache/artifact layout, library resolution and updating the lock.
 
-Third-party code is in `include`: Dear ImGui with the SDL2 backends and the FreeType renderer (`imgui`), ImPlot (`implot`), `SDL2` headers, `tinyxml2`, `ifqueue` (lfqueue), `JLinkSDK` and single-file headers (`stb_image.h`, `gif_load.h`, `noc_file_dialog.h` and others). `include/freetype2` contains only the FreeType headers (`ft2build.h` and `freetype/`).
+Then supply the proprietary J-Link import library and matching runtime DLL
+under the SEGGER license; these are **not** downloaded, generated or included
+in the dependency build. For x64 place `JLinkARM_x64.lib` in `lib/x64/` for
+Release and `lib/x64/debug/` for Debug. For Win32 use `JLinkARM.lib` in
+`lib/x86/` and `lib/x86/debug/`. Put the matching DLL next to the application
+executable or on its DLL search path.
 
-The libraries must match the architecture, the Debug/Release configuration and the static CRT (`/MTd` or `/MT`). Distribute the J-Link SDK according to the SEGGER license. A full Windows build and operation with a physical J-Link are **not verified**.
+Open `J-Link Utils.sln` in Visual Studio. The application uses C++17, static
+CRT (`/MTd` or `/MT`) and the `v145` toolset; install that toolset or
+explicitly retarget the application yourself. The dependency CI uses VS 2022
+`v143` without changing the application's toolset. A full application link
+without the J-Link import library is not expected to succeed. Full Windows
+application operation with a physical J-Link remains **not verified**.
+
+Generated dependency headers take precedence in the Visual Studio project.
+Vendored SDL2 and FreeType headers in `include` remain untouched for the Linux
+regression tests; Dear ImGui, ImPlot, tinyxml2, lfqueue and single-file code
+are still compiled from the repository, not replaced with vcpkg copies.
 
 ## Checks without hardware
 

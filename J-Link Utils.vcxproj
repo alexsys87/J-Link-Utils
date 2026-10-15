@@ -209,7 +209,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SDL2-staticd.lib;SDL2main.lib;freetyped.lib;brotlicommon.lib;brotlidec.lib;bz2d.lib;libpng16d.lib;zlibd.lib;winmm.lib;setupapi.lib;version.lib;JLinkARM.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;setupapi.lib;version.lib;JLinkARM.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>
       </IgnoreSpecificDefaultLibraries>
     </Link>
@@ -227,7 +227,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SDL2-staticd.lib;SDL2main.lib;freetyped.lib;brotlicommon.lib;brotlidec.lib;brotlienc.lib;bz2d.lib;libpng16d.lib;zlibd.lib;winmm.lib;setupapi.lib;version.lib;JLinkARM_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;setupapi.lib;version.lib;JLinkARM_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>
       </IgnoreSpecificDefaultLibraries>
     </Link>
@@ -244,7 +244,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>SDL2-static.lib;SDL2main.lib;freetype.lib;brotlicommon.lib;brotlidec.lib;bz2.lib;libpng16.lib;zlib.lib;winmm.lib;setupapi.lib;version.lib;JLinkARM.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;setupapi.lib;version.lib;JLinkARM.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>
       </IgnoreSpecificDefaultLibraries>
       <StackCommitSize>
@@ -271,11 +271,12 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SDL2-static.lib;SDL2main.lib;freetype.lib;brotlicommon.lib;brotlidec.lib;bz2.lib;libpng16.lib;zlib.lib;winmm.lib;setupapi.lib;version.lib;JLinkARM_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;setupapi.lib;version.lib;JLinkARM_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>
       </IgnoreSpecificDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
+  <Import Project="build\dependencies\Dependencies.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
