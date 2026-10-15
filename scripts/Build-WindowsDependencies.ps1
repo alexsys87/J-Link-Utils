@@ -51,10 +51,21 @@ if (-not (Test-Path $toolSource)) {
     try { Invoke-Native tar @('-xzf', $archive, '--strip-components=1', '-C', $toolSource) }
     catch { Remove-Item -Recurse -Force $toolSource; throw }
 }
-$toolBuild = Join-Path $state 'tool-build'
-Invoke-Native cmake @('-S', $toolSource, '-B', $toolBuild, '-G', $Generator, '-A', 'x64',
+# Keep the cache separate when the pinned tool source changes; otherwise CMake
+# rejects an existing cache that still points at tool-source-2025-01-11.
+$toolBuild = Join-Path $state "tool-build-$($lock.toolVersion)"
+$toolConfigureArguments = @('-S', $toolSource, '-B', $toolBuild, '-G', $Generator, '-A', 'x64',
     '-DBUILD_TESTING=OFF', '-DVCPKG_DEVELOPMENT_WARNINGS=OFF', '-DVCPKG_MSVC_ANALYZE=OFF',
     "-DVCPKG_BASE_VERSION=$($lock.toolVersion)", "-DVCPKG_VERSION=$($lock.toolCommit)")
+# Apply the CMake 4 compatibility floor to the bootstrap's nested dependencies
+# only. Do not alter pinned sources or change policies globally for ports.
+$cmakeCapabilitiesJson = & cmake -E capabilities
+if ($LASTEXITCODE -ne 0) { throw "cmake -E capabilities failed with exit code $LASTEXITCODE" }
+$cmakeCapabilities = ($cmakeCapabilitiesJson -join "`n") | ConvertFrom-Json
+if ([int]$cmakeCapabilities.version.major -ge 4) {
+    $toolConfigureArguments += '-DCMAKE_POLICY_VERSION_MINIMUM=3.10'
+}
+Invoke-Native cmake $toolConfigureArguments
 Invoke-Native cmake @('--build', $toolBuild, '--config', 'Release', '--target', 'vcpkg', '--parallel')
 Copy-Item -Force "$toolBuild/Release/vcpkg.exe" "$vcpkg/vcpkg.exe"
 New-Item -ItemType File -Force "$vcpkg/vcpkg.disable_metrics" | Out-Null

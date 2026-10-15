@@ -2,8 +2,8 @@
   "repository": "https://github.com/microsoft/vcpkg.git",
   "commit": "6f29f12e82a8293156836ad81cc9bf5af41fe836",
   "release": "2025.01.13",
-  "toolVersion": "2025-01-11",
-  "toolCommit": "0f310537c75015100d200eb71b137f6376aad510",
-  "toolSourceUrl": "https://github.com/microsoft/vcpkg-tool/archive/2025-01-11.tar.gz",
-  "toolSourceSha512": "f4449167e6294aa38541f2c82c19c0afad3f883e9b53d884650d73e4f3918b2d1e6000c28e869a44189e0a3bf90f05972f9fd13e1832f65de2566037bcb41899"
+  "toolVersion": "2025-12-05",
+  "toolCommit": "d84fb805651077f4ed3a97b61fbad2b513462f8b",
+  "toolSourceUrl": "https://github.com/microsoft/vcpkg-tool/archive/2025-12-05.tar.gz",
+  "toolSourceSha512": "ddd8b1c18e6942aa1f17800559e89ebb85da1c3da8b40069665e54a07385a87b0d477efdd355fad74d19c40acc81a976395fe69dea6da93219762489f7e7702b"
 }
