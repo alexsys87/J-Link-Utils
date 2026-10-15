@@ -112,15 +112,7 @@ MainContext* allocate_context() {
     SDL_memset(ctx->jlink_device, 0, sizeof(ctx->jlink_device));
     strcpy(ctx->jlink_device, "Cortex-M0");
 
-    if (lfqueue_init(&ctx->rx_Queue) != 0) {
-        SDL_free(ctx->IOMAP_Data);
-        SDL_DestroyCond(ctx->Datacond);
-        SDL_DestroyMutex(ctx->Datalock);
-        delete ctx;
-        return nullptr;
-    }
     if (lfqueue_init(&ctx->tx_Queue) != 0) {
-        lfqueue_destroy(&ctx->rx_Queue);
         SDL_free(ctx->IOMAP_Data);
         SDL_DestroyCond(ctx->Datacond);
         SDL_DestroyMutex(ctx->Datalock);
@@ -139,7 +131,6 @@ void free_context(MainContext* ctx)
     ClearAllWindows();
     if (ctx->CurrentXMLDoc) delete ctx->CurrentXMLDoc;
 
-    lfqueue_destroy(&ctx->rx_Queue);
     lfqueue_destroy(&ctx->tx_Queue);
 
     SDL_DestroyCond(ctx->Datacond);

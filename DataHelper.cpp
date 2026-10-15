@@ -13,6 +13,7 @@
 #include <cctype>
 #include <mutex>
 #include <algorithm>
+#include <chrono>
 
 using namespace tinyxml2;
 
@@ -55,6 +56,141 @@ uint32_t AddressFromHex(XMLElement* e)
 
 // Protect the bundled queue's node reclamation from concurrent access.
 static std::mutex g_queueMutex;
+
+// ------------------------------------------------------------------
+// Read subscriptions
+// Widgets call the read functions every frame. Instead of one J-Link request
+// per call, each call marks the bytes it needs (one bit per IOMAP byte). The
+// communication thread merges marked bytes into blocks and polls them in a loop,
+// so the J-Link load no longer grows with the number of widgets or frames.
+// ------------------------------------------------------------------
+static constexpr uint32_t kBitmapWords = IOMAP_SIZE / 64;
+// Ranges no widget asked for during this period stop being polled.
+static constexpr auto kSubscriptionLifetime = std::chrono::milliseconds(500);
+// Unrequested bytes between two ranges that may be read together with them.
+static constexpr uint32_t kMaxMergeGap = 64;
+// Largest single J-Link read; pending writes are sent between blocks.
+static constexpr uint32_t kMaxBlockSize = 4096;
+// Shortest polling cycle, to leave the debug port to the target between cycles.
+static constexpr auto kMinCyclePeriod = std::chrono::milliseconds(1);
+
+struct ReadBlock { uint32_t offset; uint32_t size; };
+
+static std::mutex g_subscriptionMutex;
+static std::vector<uint64_t> g_requested;  // bytes asked for since the last expiry
+static std::vector<uint64_t> g_polled;     // bytes the communication thread reads
+static bool g_polledChanged = false;
+// Incremented on every write-through to the cache (under Datalock).
+static std::atomic<uint32_t> g_writeSequence{0};
+
+// Sets the bits [first, first + count); returns true if any of them was clear.
+static bool MarkBits(std::vector<uint64_t>& bits, uint32_t first, uint32_t count)
+{
+    bool added = false;
+    for (uint32_t pos = first, end = first + count; pos < end; ) {
+        const uint32_t bit = pos % 64;
+        const uint32_t n = std::min<uint32_t>(64 - bit, end - pos);
+        const uint64_t mask = (n == 64 ? ~UINT64_C(0) : ((UINT64_C(1) << n) - 1)) << bit;
+        uint64_t& word = bits[pos / 64];
+        added |= (word & mask) != mask;
+        word |= mask;
+        pos += n;
+    }
+    return added;
+}
+
+static uint32_t LowestSetBit(uint64_t v)
+{
+    uint32_t n = 0;
+    while (!(v & 1)) { v >>= 1; ++n; }
+    return n;
+}
+
+// Index of the first bit at or after pos with the given value, or IOMAP_SIZE.
+static uint32_t FindBit(const std::vector<uint64_t>& bits, uint32_t pos, bool set)
+{
+    uint32_t index = pos / 64;
+    if (index >= kBitmapWords) return IOMAP_SIZE;
+    uint64_t word = (set ? bits[index] : ~bits[index]) & (~UINT64_C(0) << (pos % 64));
+    while (!word) {
+        if (++index == kBitmapWords) return IOMAP_SIZE;
+        word = set ? bits[index] : ~bits[index];
+    }
+    return index * 64 + LowestSetBit(word);
+}
+
+// Cortex-M code/SRAM and external RAM regions, where reading the bytes between
+// two variables has no side effects. Peripheral and system regions are excluded:
+// reading an unrequested register there can clear flags or pop FIFOs.
+static bool IsPlainMemory(uint32_t address)
+{
+    return address < 0x40000000u || (address >= 0x60000000u && address < 0xA0000000u);
+}
+
+static void BuildReadBlocks(const std::vector<uint64_t>& bits, uint32_t base, std::vector<ReadBlock>& blocks)
+{
+    blocks.clear();
+    for (uint32_t start = FindBit(bits, 0, true); start < IOMAP_SIZE; ) {
+        const uint32_t end = FindBit(bits, start, false);
+        if (!blocks.empty()) {
+            ReadBlock& last = blocks.back();
+            const uint32_t lastEnd = last.offset + last.size;
+            if (start - lastEnd <= kMaxMergeGap && end - last.offset <= kMaxBlockSize &&
+                IsPlainMemory(base + lastEnd) && IsPlainMemory(base + start - 1)) {
+                last.size = end - last.offset;
+                start = FindBit(bits, end, true);
+                continue;
+            }
+        }
+        for (uint32_t offset = start; offset < end; offset += kMaxBlockSize)
+            blocks.push_back({ offset, std::min(kMaxBlockSize, end - offset) });
+        start = FindBit(bits, end, true);
+    }
+}
+
+// Called by the readers. Returns false when the exchange is stopped.
+static bool Subscribe(MainContext* ctx, uint32_t offset, uint16_t size)
+{
+    std::lock_guard<std::mutex> guard(g_subscriptionMutex);
+    // Checked under the lock so a subscription cannot survive StopCommunication().
+    if (!ctx->StartComunication) return false;
+    if (g_requested.empty()) {
+        g_requested.assign(kBitmapWords, 0);
+        g_polled.assign(kBitmapWords, 0);
+    }
+    MarkBits(g_requested, offset, size);
+    // New ranges are polled at once instead of waiting for the next expiry.
+    if (MarkBits(g_polled, offset, size)) g_polledChanged = true;
+    return true;
+}
+
+// Rebuilds the block list after new subscriptions; on expiry the polled set is
+// replaced by what was requested during the last period.
+static void UpdateReadBlocks(uint32_t base, bool expired, std::vector<ReadBlock>& blocks)
+{
+    std::lock_guard<std::mutex> guard(g_subscriptionMutex);
+    if (g_requested.empty()) {
+        blocks.clear();
+        return;
+    }
+    if (expired) {
+        g_polled = g_requested;
+        std::fill(g_requested.begin(), g_requested.end(), 0);
+        g_polledChanged = true;
+    }
+    if (g_polledChanged) {
+        BuildReadBlocks(g_polled, base, blocks);
+        g_polledChanged = false;
+    }
+}
+
+static void ClearSubscriptions()
+{
+    std::lock_guard<std::mutex> guard(g_subscriptionMutex);
+    std::fill(g_requested.begin(), g_requested.end(), 0);
+    std::fill(g_polled.begin(), g_polled.end(), 0);
+    g_polledChanged = true;
+}
 
 #ifdef __cplusplus
 extern "C" {
@@ -145,7 +281,9 @@ extern "C" {
         return v;
     }
 
-    // Запись массива данных
+    // Writing: queued for the communication thread and copied into the cache at
+    // once, so the widget shows the new value instead of jumping back until the
+    // next read completes.
     uint16_t DataWriteArray(MainContext* ctx, uint32_t phys_addr, const uint8_t* data, uint16_t size)
     {
         if (!ctx || !ctx->StartComunication || !data || size == 0) return 0;
@@ -153,20 +291,25 @@ extern "C" {
         uint32_t offset = phys_addr - ctx->mcu_memory_base;
         iodata_t* io_mem = (iodata_t*)SDL_malloc(sizeof(iodata_t));
         if (!io_mem) return 0;
-        // Копируем данные
         uint8_t* buf = (uint8_t*)SDL_malloc(size);
         if (!buf) { SDL_free(io_mem); return 0; }
         memcpy(buf, data, size);
         io_mem->q.addr = offset;
         io_mem->q.size = size;
-        io_mem->value = buf; // признак записи + данные
-        std::lock_guard<std::mutex> guard(g_queueMutex);
-        if (!ctx->StartComunication || lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
-            SDL_free(buf);
-            SDL_free(io_mem);
-            return 0;
+        io_mem->value = buf;
+        {
+            std::lock_guard<std::mutex> guard(g_queueMutex);
+            if (!ctx->StartComunication || lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
+                SDL_free(buf);
+                SDL_free(io_mem);
+                return 0;
+            }
         }
-        return size; // возвращаем количество запрошенных байт
+        SDL_LockMutex(ctx->Datalock);
+        memcpy(ctx->IOMAP_Data + offset, data, size);
+        ++g_writeSequence;
+        SDL_UnlockMutex(ctx->Datalock);
+        return size;
     }
 
     // ------------------------------------------------------------------
@@ -264,23 +407,14 @@ extern "C" {
         return v;
     }
 
-    // Чтение массива данных (заполняет IOMAP_Data)
+    // Reading: the value comes from the cache filled by the communication thread.
+    // The call only (re)subscribes the range, so it keeps being polled while the
+    // widget is drawn; ranges nobody asks for expire after kSubscriptionLifetime.
     uint16_t DataReadArray(MainContext* ctx, uint32_t phys_addr, uint16_t size)
     {
-        if (!ctx || !ctx->StartComunication || size == 0) return 0;
+        if (!ctx || size == 0) return 0;
         CHECK_PHYSICAL_ADDR(phys_addr, size);
-        uint32_t offset = phys_addr - ctx->mcu_memory_base;
-        iodata_t* io_mem = (iodata_t*)SDL_malloc(sizeof(iodata_t));
-        if (!io_mem) return 0;
-        io_mem->q.addr = offset;
-        io_mem->q.size = size;
-        io_mem->value = nullptr; // признак чтения
-        std::lock_guard<std::mutex> guard(g_queueMutex);
-        if (!ctx->StartComunication || lfqueue_enq(&ctx->rx_Queue, io_mem) != 0) {
-            SDL_free(io_mem);
-            return 0;
-        }
-        return size;
+        return Subscribe(ctx, phys_addr - ctx->mcu_memory_base, size) ? size : 0;
     }
 
     // ------------------------------------------------------------------
@@ -417,8 +551,8 @@ extern "C" {
     }
 
     // ------------------------------------------------------------------
-    // Поток обработки очередей (только J‑Link)
-    // В очереди лежат смещения (offset). Для J‑Link используем физический адрес = база + offset
+    // Communication thread (J-Link only)
+    // Queued writes and read blocks hold offsets; J-Link gets base + offset.
     // ------------------------------------------------------------------
     static SDL_Thread* g_commThread = nullptr;
     static std::atomic<bool> g_commRunning{false};
@@ -433,20 +567,44 @@ extern "C" {
         }
     }
 
-    static void* Dequeue(lfqueue_t* queue)
+    // Executes queued writes in order. Of consecutive writes to the same range
+    // (e.g. a dragged slider) only the last value is sent. Returns false on a
+    // failed or short write.
+    static bool FlushWrites(MainContext* ctx, std::vector<iodata_t*>& batch)
     {
-        std::lock_guard<std::mutex> guard(g_queueMutex);
-        return lfqueue_deq(queue);
+        batch.clear();
+        {
+            std::lock_guard<std::mutex> guard(g_queueMutex);
+            while (void* item = lfqueue_deq(&ctx->tx_Queue))
+                batch.push_back(static_cast<iodata_t*>(item));
+        }
+        bool ok = true;
+        for (size_t i = 0; i < batch.size(); ++i) {
+            iodata_t* io = batch[i];
+            const bool superseded = i + 1 < batch.size() &&
+                batch[i + 1]->q.addr == io->q.addr && batch[i + 1]->q.size == io->q.size;
+            if (ok && !superseded) {
+                const int written = JLINKARM_WriteMemEx(ctx->mcu_memory_base + io->q.addr, io->q.size, io->value, 0);
+                ok = (written == io->q.size);
+            }
+            SDL_free(io->value);
+            SDL_free(io);
+        }
+        return ok;
     }
 
     static int CommunicationThreadFunc(void* data)
     {
         MainContext* ctx = (MainContext*)data;
 
-        // --- Устанавливаем высокий приоритет для потока ---
         if (SDL_SetThreadPriority(SDL_THREAD_PRIORITY_TIME_CRITICAL) != 0) {
             SDL_SetThreadPriority(SDL_THREAD_PRIORITY_NORMAL);
         }
+
+        std::vector<iodata_t*> writes;
+        std::vector<ReadBlock> blocks;
+        std::vector<uint8_t> buffer(kMaxBlockSize);
+        auto expiry = std::chrono::steady_clock::now() + kSubscriptionLifetime;
 
         while (g_commRunning)
         {
@@ -454,55 +612,38 @@ extern "C" {
                 SDL_Delay(50);
                 continue;
             }
-            // Обработка очереди записи
-            void* item = Dequeue(&ctx->tx_Queue);
-            if (item)
-            {
-                iodata_t* io = (iodata_t*)item;
-                if (ctx->jlink_opened) {
-                    uint32_t real_addr = ctx->mcu_memory_base + io->q.addr;
-                    if (io->value != nullptr) {
-                        int err = JLINKARM_WriteMem(real_addr, io->q.size, io->value);
-                        if (err != io->q.size) {
-                            ctx->StartComunication = false;
-                        }
-                        SDL_free(io->value);
-                    }
-                }
-                else if (io->value) {
-                    SDL_free(io->value);
-                }
-                SDL_free(item);
-            }
+            const auto cycleStart = std::chrono::steady_clock::now();
+            const bool expired = cycleStart >= expiry;
+            if (expired) expiry = cycleStart + kSubscriptionLifetime;
+            UpdateReadBlocks(ctx->mcu_memory_base, expired, blocks);
 
-            // Обработка очереди чтения
-            item = Dequeue(&ctx->rx_Queue);
-            if (item)
-            {
-                iodata_t* io = (iodata_t*)item;
-                if (ctx->StartComunication && ctx->jlink_opened && io->value == nullptr) {
-                    uint32_t real_addr = ctx->mcu_memory_base + io->q.addr;
-                    uint8_t* tmp = (uint8_t*)SDL_malloc(io->q.size);
-                    if (tmp) {
-                        int err = JLINKARM_ReadMem(real_addr, io->q.size, tmp);
-                        if (err != io->q.size) {
-                            ctx->StartComunication = false;
-                        }
-                        else {
-                            SDL_LockMutex(ctx->Datalock);
-                            memcpy(ctx->IOMAP_Data + io->q.addr, tmp, io->q.size);
-                            SDL_UnlockMutex(ctx->Datalock);
-                        }
-                        SDL_free(tmp);
-                    }
+            bool ok = true;
+            if (blocks.empty())
+                ok = FlushWrites(ctx, writes);
+            for (const ReadBlock& block : blocks) {
+                // Writes queued so far reach the target before this read, and a
+                // write queued while it runs is detected by the sequence number.
+                const uint32_t sequence = g_writeSequence;
+                ok = FlushWrites(ctx, writes);
+                if (!ok) break;
+                const int read = JLINKARM_ReadMemEx(ctx->mcu_memory_base + block.offset, block.size, buffer.data(), 0);
+                if (read != (int)block.size) {
+                    ok = false;
+                    break;
                 }
-                else if (io->value) {
-                    SDL_free(io->value);
-                }
-                SDL_free(item);
+                SDL_LockMutex(ctx->Datalock);
+                // A newer write already put its value into the cache; this block
+                // may predate it, so it is published on the next cycle instead.
+                if (g_writeSequence == sequence)
+                    memcpy(ctx->IOMAP_Data + block.offset, buffer.data(), block.size);
+                SDL_UnlockMutex(ctx->Datalock);
             }
-
-            SDL_Delay(1);
+            if (!ok) {
+                ctx->StartComunication = false;
+                continue;
+            }
+            if (std::chrono::steady_clock::now() - cycleStart < kMinCyclePeriod)
+                SDL_Delay(1);
         }
         return 0;
     }
@@ -568,9 +709,9 @@ extern "C" {
             ctx->jlink_opened = false;
         }
 
+        ClearSubscriptions();
         if (ctx) {
             std::lock_guard<std::mutex> guard(g_queueMutex);
-            DrainQueue(&ctx->rx_Queue);
             DrainQueue(&ctx->tx_Queue);
             if (ctx->IOMAP_Data && ctx->Datalock) {
                 SDL_LockMutex(ctx->Datalock);

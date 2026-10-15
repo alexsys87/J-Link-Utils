@@ -109,8 +109,7 @@ typedef struct MainContext {
     SDL_Renderer* Renderer;
     SDL_mutex* Datalock;
     SDL_cond* Datacond;
-    lfqueue_t rx_Queue;
-    lfqueue_t tx_Queue;
+    lfqueue_t tx_Queue;                   // writes for the communication thread (reads are polled)
     // Window
     int Win_width, Win_height;
     int FontSize;
