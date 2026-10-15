@@ -3,6 +3,7 @@
 #include <climits>
 #include <cerrno>
 #include <iostream>
+#include <unordered_map>
 
 using namespace tinyxml2;
 extern uint32_t AddressFromHex(XMLElement*);
@@ -29,17 +30,43 @@ int JLINKARM_Connect() { return connectFail; }
 int JLINKARM_GetSpeed() { return 8000; }
 void JLINKARM_SetMaxSpeed() {}
 void JLINKARM_SetSpeed(int) {}
-int JLINKARM_ReadMem(uint32_t address, uint32_t n, void* out) {
+// Simulated target memory: bytes never written read as 0xAB.
+static std::mutex targetMutex;
+static std::unordered_map<uint32_t, uint8_t> target;
+struct ReadCall { uint32_t address, size; };
+static std::vector<ReadCall> readCalls;
+static std::atomic<bool> holdWrites{false};
+static std::atomic<int> enteredWrites{0};
+int JLINKARM_ReadMemEx(uint32_t address, uint32_t n, void* out, uint32_t) {
     lastAddress = address; lastSize = static_cast<int>(n);
-    std::memset(out, 0xAB, n);
+    {
+        std::lock_guard<std::mutex> lock(targetMutex);
+        for (uint32_t i = 0; i < n; ++i) {
+            auto it = target.find(address + i);
+            static_cast<uint8_t*>(out)[i] = it == target.end() ? 0xAB : it->second;
+        }
+        readCalls.push_back({address, n});
+    }
     ++reads;
     return readResult == -2 ? static_cast<int>(n) : readResult.load();
 }
-int JLINKARM_WriteMem(uint32_t address, uint32_t n, const void* in) {
+int JLINKARM_WriteMemEx(uint32_t address, uint32_t n, const void* in, uint32_t) {
+    ++enteredWrites;
+    while (holdWrites) SDL_Delay(1);
     lastAddress = address; lastSize = static_cast<int>(n);
     std::memcpy(written, in, n);
+    {
+        std::lock_guard<std::mutex> lock(targetMutex);
+        for (uint32_t i = 0; i < n; ++i) target[address + i] = static_cast<const uint8_t*>(in)[i];
+    }
     ++writes;
     return writeResult == -2 ? static_cast<int>(n) : writeResult.load();
+}
+static std::vector<ReadCall> takeReadCalls() {
+    std::lock_guard<std::mutex> lock(targetMutex);
+    std::vector<ReadCall> calls;
+    calls.swap(readCalls);
+    return calls;
 }
 template<class Predicate> void waitFor(Predicate predicate) {
     for (int i = 0; i < 2000 && !predicate(); ++i) SDL_Delay(1);
@@ -92,6 +119,69 @@ static void queueAllocationTests() {
     assert(lfqueue_size(&queue) == 0);
     lfqueue_destroy(&queue); assert(state.live == 0);
 }
+static uint8_t cachedAt(MainContext& ctx, uint32_t address) { return cached(ctx, address - ctx.mcu_memory_base); }
+// Reads are subscriptions polled in merged blocks; writes go through the cache.
+static void pollingTests(MainContext& ctx) {
+    const uint32_t base = ctx.mcu_memory_base;
+    // 100 adjacent variables plus one 32 bytes further are read as one block,
+    // a distant variable as a second one, and both keep being polled.
+    StartCommunication(&ctx);
+    for (int i = 0; i < 100; ++i) assert(DataReadArray(&ctx, base + 0x100 + 4 * i, 4) == 4);
+    DataReadArray(&ctx, base + 0x100 + 400 + 32, 4);
+    DataReadArray(&ctx, base + 0x2000, 4);
+    takeReadCalls();
+    SDL_Delay(30);
+    StopCommunication(&ctx);
+    auto calls = takeReadCalls();
+    int merged = 0, distant = 0;
+    for (const auto& c : calls) {
+        if (c.address == base + 0x100 && c.size == 436) ++merged;
+        else if (c.address == base + 0x2000 && c.size == 4) ++distant;
+        else assert(!"unexpected read block");
+    }
+    assert(merged >= 3 && distant >= 3);
+    // Peripheral space: unrequested registers between two variables are never read.
+    ctx.mcu_memory_base = 0x40000000;
+    StartCommunication(&ctx);
+    DataReadArray(&ctx, 0x40000000, 4);
+    DataReadArray(&ctx, 0x40000008, 4);
+    SDL_Delay(20);
+    StopCommunication(&ctx);
+    calls = takeReadCalls();
+    assert(!calls.empty());
+    for (const auto& c : calls) assert(c.size == 4 && (c.address == 0x40000000 || c.address == 0x40000008));
+    ctx.mcu_memory_base = base;
+    // A range nobody asks for again stops being polled after its lifetime.
+    StartCommunication(&ctx);
+    DataReadArray(&ctx, base + 0x500, 4);
+    SDL_Delay(1200);
+    takeReadCalls();
+    SDL_Delay(100);
+    assert(takeReadCalls().empty());
+    // A write shows up in the cache at once and is not rolled back by a block
+    // read that started before the write reached the target.
+    DataReadArray(&ctx, base + 0x600, 4);
+    waitFor([&] { return cachedAt(ctx, base + 0x600) == 0xAB; });
+    uint8_t value[] = {1, 2, 3, 4};
+    assert(DataWriteArray(&ctx, base + 0x600, value, 4) == 4);
+    for (int i = 0; i < 50; ++i) {
+        DataReadArray(&ctx, base + 0x600, 4);
+        assert(cachedAt(ctx, base + 0x600) == 1 && cachedAt(ctx, base + 0x603) == 4);
+        SDL_Delay(1);
+    }
+    // Consecutive writes to one range while the target is busy send only the last value.
+    holdWrites = true;
+    const int entered = enteredWrites, before = writes;
+    uint8_t v = 0;
+    DataWriteArray(&ctx, base + 0x700, &v, 1);
+    waitFor([&] { return enteredWrites == entered + 1; });
+    for (v = 1; v <= 9; ++v) DataWriteArray(&ctx, base + 0x700, &v, 1);
+    holdWrites = false;
+    waitFor([&] { return writes == before + 2; });
+    SDL_Delay(10);
+    assert(writes == before + 2 && written[0] == 9);
+    StopCommunication(&ctx);
+}
 int main() {
     addressTests();
     queueAllocationTests();
@@ -99,7 +189,6 @@ int main() {
     SDL_mutex mutex; ctx.Datalock = &mutex;
     ctx.IOMAP_Data = static_cast<uint8_t*>(std::calloc(IOMAP_SIZE, 1));
     assert(ctx.IOMAP_Data);
-    assert(lfqueue_init(&ctx.rx_Queue) == 0);
     assert(lfqueue_init(&ctx.tx_Queue) == 0);
     uint8_t value[] = {1, 2, 3, 4};
     assert(DataWriteArray(&ctx, ctx.mcu_memory_base, value, 4) == 0);
@@ -151,7 +240,7 @@ int main() {
     DataWriteArray(&ctx, ctx.mcu_memory_base, value, 4);
     DataReadArray(&ctx, ctx.mcu_memory_base, 4);
     StopCommunication(&ctx);
-    assert(lfqueue_size(&ctx.rx_Queue) == 0 && lfqueue_size(&ctx.tx_Queue) == 0);
+    assert(lfqueue_size(&ctx.tx_Queue) == 0);
     const int oldWrites = writes, oldReads = reads;
     StartCommunication(&ctx); SDL_Delay(10); StopCommunication(&ctx);
     assert(writes == oldWrites && reads == oldReads);
@@ -194,8 +283,9 @@ int main() {
     });
     SDL_Delay(2); StopCommunication(&ctx);
     for (auto& producer : producers) producer.join();
-    assert(lfqueue_size(&ctx.rx_Queue) == 0 && lfqueue_size(&ctx.tx_Queue) == 0);
-    lfqueue_destroy(&ctx.rx_Queue); lfqueue_destroy(&ctx.tx_Queue);
+    assert(lfqueue_size(&ctx.tx_Queue) == 0);
+    pollingTests(ctx);
+    lfqueue_destroy(&ctx.tx_Queue);
     std::free(ctx.IOMAP_Data);
     std::cout << "Transport regression tests passed\n";
 }

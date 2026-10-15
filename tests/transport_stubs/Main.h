@@ -34,7 +34,7 @@ struct iodata_t { union { q_t q; uint64_t all; }; uint8_t* value; };
 struct MainContext {
     SDL_mutex* Datalock{};
     uint8_t* IOMAP_Data{};
-    lfqueue_t rx_Queue{}, tx_Queue{};
+    lfqueue_t tx_Queue{};
     std::atomic<bool> StartComunication{false};
     bool jlink_opened{};
     uint32_t mcu_memory_base = 0x20000000;
@@ -49,7 +49,7 @@ int JLINKARM_Connect();
 int JLINKARM_GetSpeed();
 void JLINKARM_SetMaxSpeed();
 void JLINKARM_SetSpeed(int);
-int JLINKARM_ReadMem(uint32_t, uint32_t, void*);
-int JLINKARM_WriteMem(uint32_t, uint32_t, const void*);
+int JLINKARM_ReadMemEx(uint32_t, uint32_t, void*, uint32_t);
+int JLINKARM_WriteMemEx(uint32_t, uint32_t, const void*, uint32_t);
 extern "C" void StartCommunication(MainContext*);
 extern "C" void StopCommunication(MainContext*);
