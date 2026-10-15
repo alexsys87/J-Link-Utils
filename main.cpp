@@ -26,6 +26,10 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #endif
 
 #include <Main.h>
+#include <misc/freetype/imgui_freetype.h>
+#ifdef _WIN32
+#include <SDL_syswm.h>
+#endif
 
 #define NOC_FILE_DIALOG_IMPLEMENTATION
 #define NOC_FILE_DIALOG_WIN32
@@ -299,17 +303,30 @@ bool CloseFile(MainContext* ctx)
 // DPI scaling (Windows)
 // ------------------------------------------------------------------
 
-float GetDPIScale() {
+float GetDPIScale(SDL_Window* window) {
     float dpiScale = 1.0f;
 #if defined(_WIN32) || defined(_WIN64)
+    typedef UINT(WINAPI* GetDpiForWindowFunc)(HWND);
     typedef UINT(WINAPI* GetDpiForSystemFunc)(void);
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
     if (user32 && user32 != INVALID_HANDLE_VALUE) {
+        // The system DPI belongs to the primary display, not necessarily to
+        // this window. Query the HWND so moving between monitors stays sharp.
+        GetDpiForWindowFunc getDpiForWindow = (GetDpiForWindowFunc)GetProcAddress(user32, "GetDpiForWindow");
+        SDL_SysWMinfo wmInfo = {};
+        SDL_VERSION(&wmInfo.version);
+        if (getDpiForWindow && SDL_GetWindowWMInfo(window, &wmInfo)) {
+            const UINT dpi = getDpiForWindow(wmInfo.info.win.window);
+            if (dpi != 0)
+                return static_cast<float>(dpi) / 96.0f;
+        }
         GetDpiForSystemFunc getDpiForSystem = (GetDpiForSystemFunc)GetProcAddress(user32, "GetDpiForSystem");
         if (getDpiForSystem) {
             dpiScale = getDpiForSystem() / 96.0f;
         }
     }
+#else
+    (void)window;
 #endif
     return dpiScale;
 }
@@ -318,9 +335,14 @@ float GetDPIScale() {
 // Loading system fonts (C4244 warning fixed)
 // ------------------------------------------------------------------
 
-void LoadFonts(MainContext* ctx, float dpiScale) {
+void LoadFonts(MainContext* ctx) {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
+    // FreeType is already linked by the project, but ImGui otherwise defaults
+    // to stb_truetype. Native, full hinting keeps small text crisp while retaining
+    // grayscale antialiasing (no fuzzy light hinting or jagged monochrome mode).
+    io.Fonts->SetFontLoader(ImGuiFreeType::GetFontLoader());
+    io.Fonts->FontLoaderFlags = 0;
 
     // Font files (Windows and Linux equivalents)
     std::vector<std::string> fontFiles = {
@@ -340,7 +362,9 @@ void LoadFonts(MainContext* ctx, float dpiScale) {
         if (ACCESS(fullPath.c_str(), 0) != 0) continue;
 
         for (int size = minSize; size <= maxSize; ++size) {
-            float fontSize = size * dpiScale;
+            // Keep logical sizes stable. ImGui 1.92 bakes glyphs at the current
+            // FontScaleDpi/FramebufferScale, rather than stretching old bitmaps.
+            float fontSize = static_cast<float>(size);
             ImFontConfig config;
 
             // Name without the extension
@@ -358,10 +382,9 @@ void LoadFonts(MainContext* ctx, float dpiScale) {
     }
 
     if (io.Fonts->Fonts.empty()) {
-        io.Fonts->AddFontDefault();
+        // The bitmap default cannot stay crisp at arbitrary DPI scales.
+        io.Fonts->AddFontDefaultVector();
     }
-
-    io.Fonts->Build();
 
     int fontIndex = ctx->FontSize;
     if (fontIndex >= 0 && fontIndex < io.Fonts->Fonts.Size) {
@@ -1258,9 +1281,6 @@ int main(int argc, char* argv[])
         ctx->CurrentXMLDoc = nullptr;
     }
 
-    // DPI scale (limits the window size and scales the fonts)
-    float dpiScale = GetDPIScale();
-
 #if defined (_WIN32) || defined (_WIN64)
     int width = GetSystemMetrics(SM_CXSCREEN);
     int height = GetSystemMetrics(SM_CYSCREEN);
@@ -1270,6 +1290,11 @@ int main(int argc, char* argv[])
 #endif
 
     SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
+#ifdef _WIN32
+    // Must precede SDL_Init/window creation: otherwise Windows can bitmap-scale
+    // the entire application, blurring text even with a correctly baked atlas.
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+#endif
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "1");
     SDL_SetHint(SDL_HINT_TIMER_RESOLUTION, "1");
 
@@ -1343,8 +1368,9 @@ int main(int argc, char* argv[])
     ImGui_ImplSDLRenderer2_Init(ctx->Renderer);
     ImGui_ImplSDL2_InitForSDLRenderer(ctx->Wimdow, ctx->Renderer);
 
-    // Load fonts for the current DPI
-    LoadFonts(ctx, dpiScale);
+    // Load fonts once; the dynamic atlas handles DPI changes without invalidating
+    // font pointers or changing the persisted font selection.
+    LoadFonts(ctx);
 
     // Apply the saved style
     switch (ctx->Style)
@@ -1501,6 +1527,10 @@ int main(int argc, char* argv[])
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
+        ImGui::GetStyle().FontScaleDpi = GetDPIScale(ctx->Wimdow);
+        // In ImGui 1.92 changing FontDefault alone does not change the base size.
+        if (io.FontDefault)
+            ImGui::GetStyle().FontSizeBase = io.FontDefault->LegacySize;
         ImGui::NewFrame();
 
 
