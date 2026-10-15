@@ -8,5 +8,7 @@ public:
     SetCursorPosWidget(float x, float y) : pos(x, y) {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         ImGui::SetCursorPos(pos);
+        // Submit an item there, as ImGui requires after moving the cursor.
+        ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
 };

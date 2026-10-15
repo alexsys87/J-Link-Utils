@@ -18,6 +18,9 @@ public:
         : LeafWidget(lbl), address(addr), minPos(minP), maxPos(maxP), radius(rad), littleEndian(le) {
         // A reversed range would give a negative number of positions.
         if (maxPos < minPos) std::swap(minPos, maxPos);
+        // The value is 16-bit, and a dial with more than 64 positions is unusable.
+        minPos = std::clamp(minPos, 0, 65535);
+        maxPos = std::clamp(maxPos, minPos, std::min(minPos + 63, 65535));
     }
 
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {

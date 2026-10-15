@@ -35,6 +35,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     shutil.copyfile(SRC / 'Editor/XMLSafety.h', build / 'XMLSafety.h')
     shutil.copyfile(SRC / 'Widget/CaptureHandshake.h', build / 'CaptureHandshake.h')
     shutil.copyfile(SRC / 'Widget/TypedValue.h', build / 'TypedValue.h')
+    shutil.copyfile(SRC / 'Editor/WidgetTemplateFactory.h', build / 'WidgetTemplateFactory.h')
     # Read the list of actual test includes, instead of maintaining a second list.
     test_source = (HERE / 'ui_regression.cpp').read_bytes()
     for name in re.findall(rb'#include "([^"]+Widget\.h)"', test_source):
@@ -45,7 +46,8 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     for name in ('imgui_internal.h', 'implot.h'):
         (build / name).write_text('#pragma once\n#include "ui_stubs.h"\n')
     editor = (SRC / 'Editor/XMLEditor.cpp').read_bytes()
-    parsing = b'\n'.join(function(editor, signature) for signature in (
+    parsing = b'#include "WidgetTemplateFactory.h"\nnamespace wtf = WidgetTemplateFactory;\n'
+    parsing += b'\n'.join(function(editor, signature) for signature in (
         b'static bool ParseColor(', b'static bool IsBooleanString(', b'static bool IsNumberString('))
     (build / 'editor_parsing_under_test.h').write_bytes(parsing)
     # Protect the lifetime fix at the actual UI call sites, too.
@@ -53,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     assert b'!ui_safety::ContainsXMLNode(ctx->CurrentXMLDoc, g_selectedNode)' in editor
     assert b'DeepClone(doc)' not in editor
     deletion = editor.index(b'if (ImGui::Button("Delete this node"))')
-    assert b'return;' in editor[deletion:editor.index(b'ImGui::BeginPopup("AddChildWidgetPopup")', deletion)]
+    assert b'return;' in editor[deletion:editor.index(b'else if (textNode)', deletion)]
     xml = (SRC / 'xml_window.cpp').read_bytes()
     assert not re.search(rb'FirstChildElement\("\w+"\) \? \w+->FirstChildElement\("\w+"\)->GetText\(\) : "', xml)
     assert b'lbl, (uint16_t)addr' not in xml
@@ -63,6 +65,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
                '-I', str(build), '-I', str(SRC / 'include'),
                str(HERE / 'ui_regression.cpp'),
                str(SRC / 'include/tinyxml2/tinyxml2.cpp'),
+               str(SRC / 'Editor/WidgetTemplateFactory.cpp'),
                '-o', str(build / 'ui_regression')]
     subprocess.run(command, check=True)
     subprocess.run([str(build / 'ui_regression')], check=True,

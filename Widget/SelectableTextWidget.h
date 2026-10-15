@@ -12,6 +12,8 @@ public:
     }
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
+        // The label is the formatted value, so equal values need their own ID.
+        ImGui::PushID(this);
         if (useBool) {
             bool val = DataReadWriteBoolean(ctx, nullptr, nullptr, &addr);
             char buffer[MAX_ITEM_LEN];
@@ -30,5 +32,6 @@ public:
                 DataReadWriteU16(ctx, nullptr, &v, &addr);
             }
         }
+        ImGui::PopID();
     }
 };

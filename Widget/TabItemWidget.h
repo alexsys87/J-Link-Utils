@@ -7,9 +7,13 @@ class TabItemWidget : public ContainerWidget {
 public:
     TabItemWidget(const char* lbl) : label(lbl ? lbl : "") {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
+        // Outside a TabBar there is no tab to open: show the content directly.
+        if (!ImGui::GetCurrentContext()->CurrentTabBar) {
+            DrawChildren(ctx, dynamicAddr);
+            return;
+        }
         if (ImGui::BeginTabItem(label.c_str())) {
-            for (auto& child : children)
-                child->Draw(ctx, dynamicAddr);
+            DrawChildren(ctx, dynamicAddr);
             ImGui::EndTabItem();
         }
     }

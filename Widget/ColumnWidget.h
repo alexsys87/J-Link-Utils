@@ -5,13 +5,16 @@
 class ColumnWidget : public ContainerWidget {
     int count;
 public:
-    ColumnWidget(int cnt) : count(cnt) {}
+    // ImGui needs at least one column; many columns cost memory every frame.
+    ColumnWidget(int cnt) : count(std::clamp(cnt, 1, 64)) {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         ImGui::Columns(count, nullptr, true);
-        for (auto& child : children) {
+        for (size_t i = 0; i < children.size(); ++i) {
             if (ImGui::GetColumnIndex() == 0)
                 ImGui::Separator();
-            child->Draw(ctx, dynamicAddr);
+            ImGui::PushID((int)i);
+            children[i]->Draw(ctx, dynamicAddr);
+            ImGui::PopID();
             ImGui::NextColumn();
         }
         ImGui::Separator();

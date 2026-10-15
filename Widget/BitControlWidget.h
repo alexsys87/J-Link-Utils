@@ -22,6 +22,8 @@ class BitControlWidget : public LeafWidget {
 public:
     BitControlWidget(const char* lbl, uint32_t addr, BitMode mode, bool le, bool switchable = true)
         : LeafWidget(lbl), address(addr), initialMode(mode), littleEndian(le), allowModeSwitch(switchable), currentMode(mode) {
+        // The drawing code uses the mode as the byte count: only 1, 2 and 4 are valid.
+        if (mode != Bits8 && mode != Bits16 && mode != Bits32) initialMode = currentMode = Bits8;
     }
 
     static int ModeType(BitMode mode) {

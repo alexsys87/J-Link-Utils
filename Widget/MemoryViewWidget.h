@@ -45,7 +45,7 @@ private:
         // Then copy the current IOMAP_Data contents into the cache
         // (it may be stale, later frames refresh it)
         SDL_LockMutex(ctx->Datalock);
-        if (ui_safety::IsMappedRange(baseAddress, ctx->mcu_memory_base, numBytes, IOMAP_SIZE)) {
+        if (numBytes > 0 && ui_safety::IsMappedRange(baseAddress, ctx->mcu_memory_base, numBytes, IOMAP_SIZE)) {
             uint32_t offset = baseAddress - ctx->mcu_memory_base;
             memcpy(m_cache.data(), ctx->IOMAP_Data + offset, numBytes);
         } else {

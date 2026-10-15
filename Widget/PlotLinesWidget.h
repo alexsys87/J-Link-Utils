@@ -1,5 +1,5 @@
 // PlotLinesWidget.h
-// ˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜, ˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜ ˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜ ˜˜˜˜˜ GUI
+// Real-time line plot with per-line settings and a GUI options panel
 
 #pragma once
 #include "widget_common.h"
@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <float.h>
 
-// ˜˜˜˜˜˜˜˜˜ ˜˜˜ ˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜ (˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜)
+// Ring buffer for the scrolling history (real-time plot)
 struct ScrollingData {
     int MaxSize;
     int Offset;
@@ -35,18 +35,18 @@ struct ScrollingData {
     }
 };
 
-// ˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜ ˜˜˜˜˜
+// Configuration of one line
 struct PlotLineConfig {
-    std::string name;           // ˜˜˜ ˜˜˜ ˜˜˜˜˜˜˜
-    uint32_t address;           // ˜˜˜˜˜ ˜ ˜˜˜˜˜˜
-    int dataType;               // ˜˜˜ ˜˜˜˜˜˜ (˜˜. enum ˜ widget_common.h)
+    std::string name;           // name in the legend
+    uint32_t address;           // address in memory
+    int dataType;               // data type (see the defines in widget_common.h)
     bool littleEndian;
-    float scale;                // ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜
-    int bufferId;               // ˜˜˜˜˜˜ ˜ VirtualBuffer
-    ImU32 color;                 // ˜˜˜˜ ˜˜˜˜˜
-    float weight;                // ˜˜˜˜˜˜˜
+    float scale;                // multiplier for the value
+    int bufferId;               // index into VirtualBuffer
+    ImU32 color;                 // line color
+    float weight;                // line width
 
-    // ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜
+    // Run-time buffers
     std::vector<float> smoothBuf;
     ScrollingData history;
     double nextSampleTime;      // next accepted sample time (frequency limit)
@@ -60,24 +60,24 @@ struct PlotLineConfig {
 };
 
 class PlotLinesWidget : public UIWidget {
-    std::string text;            // ˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜
-    float minVal, maxVal;        // ˜˜˜˜˜˜˜ Y (˜˜˜˜ ˜˜˜˜˜˜)
-    ImVec2 size;                 // ˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜ (˜˜˜˜ ˜˜ ˜˜˜˜)
-    float freq;                  // ˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ (˜˜) ˜ ˜˜˜˜˜˜˜˜˜˜
-    int bufferSize;              // ˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜ (Size)
-    int smoothWindow;            // ˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜
-    bool autoSize;               // ˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜
-    int m_maxSize;               // ˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜ ˜˜˜˜˜˜˜ (MaxSize)
+    std::string text;            // plot title
+    float minVal, maxVal;        // Y range (when not auto)
+    ImVec2 size;                 // fixed plot size (if not auto)
+    float freq;                  // sampling frequency (Hz) of the history
+    int bufferSize;              // points in the static buffer (Size)
+    int smoothWindow;            // smoothing window
+    bool autoSize;               // fit the plot to the window
+    int m_maxSize;               // minimum history length in points (MaxSize)
 
-    std::vector<PlotLineConfig> m_lines;  // ˜˜˜ ˜˜˜˜˜ ˜˜˜˜˜˜˜
+    std::vector<PlotLineConfig> m_lines;  // all lines of the plot
 
     struct PlotState {
-        double time;             // ˜˜˜˜˜˜˜ ˜˜˜˜˜ ˜˜˜˜˜˜˜
-        bool paused;             // ˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜ (˜˜˜˜˜ ˜˜˜ ˜˜˜˜˜)
-        bool pause_check;        // ˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜˜ "Real Time Update"
-        bool update;             // ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ (˜˜˜˜˜˜ true)
-        double refresh_time;      // ˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜
-        float timeWindow;         // ˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜ ˜˜ ˜˜˜ X (˜˜˜˜˜˜˜)
+        double time;             // current plot time
+        bool paused;             // real-time update stopped (paused)
+        bool pause_check;        // state of the "Real Time Update" checkbox
+        bool update;             // refresh the data (true by default)
+        double refresh_time;      // time of the last refresh
+        float timeWindow;         // visible time window on the X axis (seconds)
 
         PlotState() : time(0), paused(false), pause_check(true), update(true), refresh_time(0), timeWindow(10.0f) {}
     } state;
@@ -117,7 +117,7 @@ class PlotLinesWidget : public UIWidget {
     }
 
 public:
-    // ˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜ ˜˜˜˜˜ ˜˜˜˜˜ (˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜˜˜)
+    // Constructor for one line (old single-line format)
     PlotLinesWidget(
         const char* txt, const char* fmt, float minV, float maxV,
         float w, float h, float f, float sc,
@@ -131,8 +131,9 @@ public:
     {
         if (bufferSize <= 0) bufferSize = 100;
         if (bufferSize > BUFF_SIZE) bufferSize = BUFF_SIZE;
-        if (freq <= 0.0f) freq = 1.0f;
+        if (!(freq > 0.0f)) freq = 1.0f;   // also catches NaN
         if (freq > kMaxFreq) freq = kMaxFreq;
+        m_maxSize = std::clamp(m_maxSize, 1, kMaxHistory);
         smoothWindow = std::clamp(smoothWindow, 0, bufferSize);
         PlotLineConfig line;
         line.name = txt ? txt : "";
@@ -149,7 +150,7 @@ public:
         ResizeHistory();
     }
 
-    // ˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜
+    // Constructor for several lines
     PlotLinesWidget(
         const char* txt, float minV, float maxV,
         float w, float h, float f, int sz, int sm, bool autosize, int maxSize,
@@ -160,8 +161,9 @@ public:
     {
         if (bufferSize <= 0) bufferSize = 100;
         if (bufferSize > BUFF_SIZE) bufferSize = BUFF_SIZE;
-        if (freq <= 0.0f) freq = 1.0f;
+        if (!(freq > 0.0f)) freq = 1.0f;   // also catches NaN
         if (freq > kMaxFreq) freq = kMaxFreq;
+        m_maxSize = std::clamp(m_maxSize, 1, kMaxHistory);
         smoothWindow = std::clamp(smoothWindow, 0, bufferSize);
         for (auto& line : m_lines) {
             if (line.bufferId < 0 || line.bufferId >= MAX_BUFF) line.bufferId = 0;
@@ -193,12 +195,12 @@ public:
         }
         if (live) state.time = DataTimeNow() - m_timeOrigin;
 
-        // ˜˜˜˜˜˜ ˜˜˜˜˜
+        // Options panel
         if (ImGui::CollapsingHeader("Options")) {
             ImGui::PushItemWidth(80);
             ImGui::Checkbox("Real Time Update", &state.pause_check);
             ImGui::SameLine();
-            // ˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜
+            // Sampling frequency
             float minFreq = 0.1f, maxFreq = kMaxFreq;
             ImGui::SetNextItemWidth(100);
             if (ImGui::InputFloat("Freq (Hz)", &freq, 0.1f, 1.0f, "%.1f")) {
@@ -207,19 +209,19 @@ public:
                 ResizeHistory();
             }
             ImGui::SameLine();
-            // ˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜
+            // Width of the time window
             ImGui::SetNextItemWidth(500);
             if (ImGui::DragFloat("Time Window (s)", &state.timeWindow, 0.1f, 0.1f, 100.0f, "%.1f"))
                 ResizeHistory();
             ImGui::PopItemWidth();
         }
 
-        // ˜˜˜˜˜˜ ˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜
+        // Plot size
         ImVec2 plotSize = autoSize ? ImGui::GetContentRegionAvail() : size;
         if (plotSize.x < 10 && plotSize.x > 0) plotSize.x = 200;
         if (plotSize.y < 10 && plotSize.y > 0) plotSize.y = 100;
 
-        // ˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜ Y, ˜˜˜˜ minVal/maxVal ˜˜ ˜˜˜˜˜˜
+        // Auto-scale Y when minVal/maxVal do not form a range
         float ymin = minVal, ymax = maxVal;
         if (ymin >= ymax) {
             ymin = FLT_MAX;
@@ -234,10 +236,10 @@ public:
             if (ymin == ymax) { ymin -= 1; ymax += 1; }
         }
 
-        // ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜ ˜ ˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜
+        // Real-time plot with a scrolling time window
         if (ImPlot::BeginPlot(text.c_str(), plotSize, ImPlotFlags_Crosshairs)) {
             ImPlot::SetupAxes(nullptr, nullptr);
-            // ˜˜˜˜˜˜˜˜˜˜ state.timeWindow ˜˜˜ ˜˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜ ˜˜ X
+            // state.timeWindow sets the visible range on X
             ImPlot::SetupAxisLimits(ImAxis_X1, state.time - state.timeWindow, state.time,
                 state.paused ? ImGuiCond_Once : ImGuiCond_Always);
             ImPlot::SetupAxisLimits(ImAxis_Y1, ymin, ymax,
@@ -250,7 +252,9 @@ public:
                 spec.Offset = line.history.Offset;
                 spec.Stride = (int)sizeof(ImVec2);
                 spec.LineColor = ImGui::ColorConvertU32ToFloat4(line.color);
-                spec.LineWeight = line.weight;
+                // ImPlot indexes a table of IM_DRAWLIST_TEX_LINES_WIDTH_MAX + 1 entries with the weight.
+                spec.LineWeight = std::isfinite(line.weight)
+                    ? std::clamp(line.weight, 0.0f, (float)IM_DRAWLIST_TEX_LINES_WIDTH_MAX) : 1.0f;
 
                 const char* label = line.name.empty() ? "Line" : line.name.c_str();
                 ImPlot::PlotLine(label,

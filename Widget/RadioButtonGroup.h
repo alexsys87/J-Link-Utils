@@ -18,6 +18,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
         int current = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
+        ImGui::PushID(this);
         for (const auto& item : items) {
             if (ImGui::RadioButton(item.label.c_str(), &current, item.value)) {
                 uint16_t v = current;
@@ -25,5 +26,6 @@ public:
             }
             if (sameLine) ImGui::SameLine();
         }
+        ImGui::PopID();
     }
 };

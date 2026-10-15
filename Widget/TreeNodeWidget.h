@@ -5,12 +5,13 @@
 class TreeNodeWidget : public ContainerWidget {
     std::string label;
 public:
-    TreeNodeWidget(const char* lbl) : label(lbl) {}
+    TreeNodeWidget(const char* lbl) : label(lbl ? lbl : "") {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
-        if (ImGui::TreeNode(label.c_str())) {
-            for (auto& child : children)
-                child->Draw(ctx, dynamicAddr);
+        ImGui::PushID(this);
+        if (ImGui::TreeNode(label.empty() ? "##node" : label.c_str())) {
+            DrawChildren(ctx, dynamicAddr);
             ImGui::TreePop();
         }
+        ImGui::PopID();
     }
 };

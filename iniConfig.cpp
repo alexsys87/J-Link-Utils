@@ -16,7 +16,7 @@ std::string getDirectoryWithCurrentExecutable()
     static char szPath[MAX_PATH] = {};
     GetModuleFileNameA(NULL, szPath, MAX_PATH);
 
-    // ˜˜˜˜˜˜˜ ˜˜˜ ˜˜˜˜˜: ˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜ ˜˜˜˜ ˜ ˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜
+    // Cut off the file name: keep the folder of the executable
     char* lastSlash = strrchr(szPath, '\\');
     if (lastSlash) {
         *lastSlash = '\0';
@@ -25,7 +25,7 @@ std::string getDirectoryWithCurrentExecutable()
     return szPath;
 }
 
-// ---------- ˜˜˜˜˜˜˜ INI-˜˜˜˜˜˜ ----------
+// ---------- INI file access ----------
 class IniFileConfiguration {
 private:
     std::map<std::string, std::string> values;
@@ -120,7 +120,7 @@ public:
     }
 };
 
-// ---------- ˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜ ----------
+// ---------- Loading the settings ----------
 void LoadIniSettings(void* arg)
 {
     assert(arg != NULL);
@@ -262,7 +262,7 @@ void LoadIniSettings(void* arg)
     }
 }
 
-// ---------- ˜˜˜˜˜˜˜˜˜˜ ˜˜˜˜˜˜˜˜ ----------
+// ---------- Saving the settings ----------
 void SaveIniSettings(void* arg)
 {
     assert(arg != NULL);

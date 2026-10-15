@@ -28,6 +28,8 @@ public:
     RPMIndicatorWidget(const char* lbl, uint32_t addr, float minV, float maxV, float rad, const char* u,
         const std::vector<RPMZone>& z, bool le)
         : label(lbl ? lbl : ""), address(addr), minVal(minV), maxVal(maxV), radius(rad), unit(u ? u : ""), zones(z), littleEndian(le) {
+        // std::clamp needs min <= max
+        if (maxVal < minVal) std::swap(minVal, maxVal);
     }
 
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
@@ -118,7 +120,7 @@ private:
             draw->AddLine(ImVec2(p1.x + 1, p1.y + 1), ImVec2(p2.x + 1, p2.y + 1), IM_COL32(0, 0, 0, 60), 2.0f);
 
             char buf[16];
-            snprintf(buf, sizeof(buf), "%d", (int)val);
+            snprintf(buf, sizeof(buf), "%.0f", val);
             ImVec2 text_size = ImGui::CalcTextSize(buf);
             ImVec2 text_pos(center.x + dir.x * radius * 0.62f - text_size.x * 0.5f,
                 center.y + dir.y * radius * 0.62f - text_size.y * 0.5f);

@@ -29,7 +29,8 @@ public:
         bool held = DrawKnob(text.c_str(), &value, minVal, maxVal, radiusFactor);
         ImGui::PopID();
 
-        if (value != oldValue)
+        // NaN in memory compares unequal to itself: do not write it back every frame.
+        if (value != oldValue && !(std::isnan(value) && std::isnan(oldValue)))
             WriteTypedValue(ctx, addr, dataType, littleEndian, value);
     }
 
@@ -53,18 +54,22 @@ private:
         bool hovered, held;
         ImGui::ButtonBehavior(bb, id, &hovered, &held);
 
-        if (held) {
+        // Knob position 0..1; a value outside the range (or NaN) sits at an end stop.
+        const float range = v_max - v_min;
+        const bool hasRange = std::isfinite(range) && range != 0.0f;
+        float current_t = hasRange ? (*p_value - v_min) / range : 0.0f;
+        current_t = std::isfinite(current_t) ? ImClamp(current_t, 0.0f, 1.0f) : 0.0f;
+
+        if (held && hasRange) {
             ImVec2 mouse_rel = ImVec2(io.MousePos.x - center.x, io.MousePos.y - center.y);
             float mouse_angle = atan2f(mouse_rel.y, mouse_rel.x);
             if (mouse_angle < 0) mouse_angle += M_PI_F * 2.0f;
 
-            float current_t = (*p_value - v_min) / (v_max - v_min);
             float current_angle = ANGLE_MIN + (ANGLE_MAX - ANGLE_MIN) * current_t;
             if (current_angle > M_PI_F * 2.0f) current_angle -= M_PI_F * 2.0f;
 
-            float angle_diff = mouse_angle - current_angle;
-            while (angle_diff > M_PI_F) angle_diff -= M_PI_F * 2.0f;
-            while (angle_diff < -M_PI_F) angle_diff += M_PI_F * 2.0f;
+            // Shortest turn, -pi..pi
+            float angle_diff = remainderf(mouse_angle - current_angle, M_PI_F * 2.0f);
 
             if (fabsf(angle_diff) < 1.0f) {
                 float new_t = current_t + (angle_diff / (ANGLE_MAX - ANGLE_MIN));
@@ -74,7 +79,8 @@ private:
         }
 
         ImDrawList* draw_list = window->DrawList;
-        float t = (*p_value - v_min) / (v_max - v_min);
+        float t = hasRange ? (*p_value - v_min) / range : 0.0f;
+        t = std::isfinite(t) ? ImClamp(t, 0.0f, 1.0f) : 0.0f;
         float angle = ANGLE_MIN + (ANGLE_MAX - ANGLE_MIN) * t;
 
         // Theme colors

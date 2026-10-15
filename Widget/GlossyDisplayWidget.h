@@ -145,8 +145,8 @@ public:
         }
 
         ImVec2 drawSize = size;
-        if (drawSize.x <= 0) drawSize.x = 120;
-        if (drawSize.y <= 0) drawSize.y = 40;
+        if (!(drawSize.x > 0)) drawSize.x = 120;   // also catches NaN
+        if (!(drawSize.y > 0)) drawSize.y = 40;
 
         ImGui::PushID(addr);
         DrawGlossyDisplay(buf, drawSize);
@@ -189,7 +189,7 @@ private:
         float targetTextHeight = h * 0.7f;
         float baseFontSize = ImGui::GetFontSize();
         float newScale = targetTextHeight / baseFontSize;
-        newScale = std::clamp(newScale, 0.5f, 3.0f);
+        newScale = std::isfinite(newScale) ? std::clamp(newScale, 0.5f, 3.0f) : 1.0f;
 
         ImGui::SetWindowFontScale(newScale);
 

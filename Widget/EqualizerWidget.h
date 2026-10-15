@@ -28,7 +28,16 @@ public:
         float w, float h, EqDataType type, bool le, int step)
         : label(lbl ? lbl : ""), baseAddress(addr), numBands(bands), minVal(minV), maxVal(maxV),
         bandWidth(w), height(h), dataType(type), littleEndian(le), addressStep(step),
-        values(bands, 0.0f) {
+        values() {
+        numBands = std::clamp(numBands, 1, 64);
+        values.assign(numBands, 0.0f);
+        if (!std::isfinite(minVal)) minVal = 0.0f;
+        if (!std::isfinite(maxVal)) maxVal = 100.0f;
+        minVal = std::clamp(minVal, -FLT_MAX / 2, FLT_MAX / 2);
+        maxVal = std::clamp(maxVal, -FLT_MAX / 2, FLT_MAX / 2);
+        if (maxVal < minVal) std::swap(minVal, maxVal);
+        if (!(bandWidth >= 1.0f)) bandWidth = 20.0f;
+        if (!(height >= 1.0f)) height = 120.0f;
     }
 
     // EQ_INT16 values have always been read and written as unsigned 16-bit.
@@ -39,7 +48,7 @@ public:
 
         // Read the values from memory
         for (int i = 0; i < numBands; ++i) {
-            uint32_t addr = addrBase + i * addressStep;
+            uint32_t addr = addrBase + (uint32_t)i * (uint32_t)addressStep;
             values[i] = (float)ReadTypedValue(ctx, addr, ValueType(), littleEndian);
             // Clamp
             if (values[i] < minVal) values[i] = minVal;
@@ -53,7 +62,7 @@ public:
         // Write changed values back to memory
         if (changed) {
             for (int i = 0; i < numBands; ++i) {
-                uint32_t addr = addrBase + i * addressStep;
+                uint32_t addr = addrBase + (uint32_t)i * (uint32_t)addressStep;
                 WriteTypedValue(ctx, addr, ValueType(), littleEndian, values[i]);
             }
         }

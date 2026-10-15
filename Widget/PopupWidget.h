@@ -6,10 +6,12 @@ class PopupWidget : public ContainerWidget {
 public:
     PopupWidget() {}
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
-        if (ImGui::BeginPopupContextItem()) {
-            for (auto& child : children)
-                child->Draw(ctx, dynamicAddr);
+        // An explicit ID: the previous item (e.g. plain text) may have none.
+        ImGui::PushID(this);
+        if (ImGui::BeginPopupContextItem("##popup")) {
+            DrawChildren(ctx, dynamicAddr);
             ImGui::EndPopup();
         }
+        ImGui::PopID();
     }
 };
