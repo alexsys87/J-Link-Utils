@@ -39,6 +39,14 @@ namespace WidgetTemplateFactory {
             return p;
         }
 
+        // Position and size written by the design mode; not in new elements, as the flow
+        // layout places a widget until it is moved.
+        PropDef Layout(PropDef p) {
+            p.inTemplate = false;
+            p.layout = true;
+            return p;
+        }
+
         // Properties shared by many widgets
         PropDef Text(const char* value) { return P("Text", K::Text, value); }
         PropDef Addr(const char* name = "Address") { return P(name, K::Address, "0x20000000", "Target address: 0x20000000, #20000000 or decimal"); }
@@ -224,6 +232,28 @@ namespace WidgetTemplateFactory {
                 P("ShowHexII", K::Bool, "false"), P("ShowOptions", K::Bool, "true"), P("ShowPreview", K::Bool, "true"),
                 P("GreyZero", K::Bool, "true"), P("UpperHex", K::Bool, "true"), LE(),
                 P("UseExternal", K::Bool, "false"), P("UseCache", K::Bool, "true") }));
+
+            // Elements that only change the flow (SameLine, Indent...) or draw nothing of their
+            // own (Tooltip, Popup...) have no place of their own; a Tab lives in its TabBar.
+            const char* const flow[] = { "SameLine", "Spacing", "Separator", "NewLine", "Indent", "SetCursorPos",
+                "AlignTextToFramePadding", "Tooltip", "PlotTooltip", "Popup", "HintBox", "Tab" };
+            // Standard ImGui input fields, whose width comes from the item width
+            const char* const inputs[] = { "SliderFloat", "SliderInt", "ImputInt", "ImputFloat", "ComboBox", "LabelText" };
+            auto listedIn = [](const char* tag, const auto& list) {
+                for (const char* t : list)
+                    if (std::strcmp(t, tag) == 0) return true;
+                return false;
+            };
+            for (NodeDef& d : w) {
+                d.placeable = !listedIn(d.tag, flow);
+                d.itemWidth = listedIn(d.tag, inputs);
+                if (d.placeable) {
+                    d.props.push_back(Layout(P("PosX", K::Float, "0", "X position in the window, pixels. With PosX/PosY the widget is placed there instead of in the flow layout")));
+                    d.props.push_back(Layout(P("PosY", K::Float, "0", "Y position in the window, pixels (0 is the top of the title bar)")));
+                }
+                if (d.itemWidth)
+                    d.props.push_back(Layout(P("ItemWidth", K::Float, "0", "Width of the input field, pixels; 0 = default, negative = up to that distance from the right edge")));
+            }
             return w;
         }
 
@@ -324,7 +354,11 @@ namespace WidgetTemplateFactory {
     }
 
     const NodeDef& WindowDef() {
-        static const NodeDef window = N("Window", { Text("New Window") }, "Items");
+        static const NodeDef window = N("Window", { Text("New Window"),
+            Layout(P("PosX", K::Float, "0", "Window position on the screen, pixels; without PosX/PosY the last position is kept")),
+            Layout(P("PosY", K::Float, "0", "Window position on the screen, pixels")),
+            Layout(P("Width", K::Float, "0", "Window width, pixels; 0 = fit the content")),
+            Layout(P("Height", K::Float, "0", "Window height, pixels; 0 = fit the content")) }, "Items");
         return window;
     }
 

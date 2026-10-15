@@ -1,6 +1,8 @@
 // xml_window.cpp
 #include "widget_common.h"
 #include "Editor/XMLSafety.h"
+#include "Editor/WidgetTemplateFactory.h"
+#include "Editor/DesignMode.h"
 #include <cctype>
 #include <cfloat>
 #include <initializer_list>
@@ -71,6 +73,7 @@
 #include "GlossyButtonWidget.h"
 #include "MemoryViewWidget.h"
 #include "MemoryEditorWidget.h"
+#include "PlacedWidget.h"
 
 #include <Main.h>
 
@@ -80,6 +83,13 @@ using namespace tinyxml2;
 float VirtualBuffer[MAX_BUFF][BUFF_SIZE] = { 0 };
 
 std::vector<WindowData> g_Windows;
+
+// Document the windows were built from in design mode, and its revision at that time.
+// nullptr when they were loaded from the file.
+static const XMLDocument* g_WindowsDoc = nullptr;
+static uint32_t g_WindowsRevision = 0;
+// Set while building from the open document: the widgets keep their elements as keys.
+static bool g_KeepSources = false;
 
 using ui_safety::XmlChildText;
 
@@ -187,6 +197,7 @@ static void OrderRange(int& lo, int& hi) {
 }
 
 static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem);
+static std::unique_ptr<UIWidget> LoadPlacedWidget(XMLElement* elem);
 
 // Loads the widgets in <Items> into a container.
 template <class Container>
@@ -195,7 +206,7 @@ static std::unique_ptr<Container> WithChildren(std::unique_ptr<Container> contai
     XMLElement* items = elem->FirstChildElement("Items");
     if (items) {
         for (XMLElement* child = items->FirstChildElement(onlyTag); child; child = child->NextSiblingElement(onlyTag)) {
-            auto w = LoadWidgetFromXML(child);
+            auto w = LoadPlacedWidget(child);
             if (w) container->AddChild(std::move(w));
         }
     }
@@ -659,17 +670,35 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     return nullptr;
 }
 
-// Loads all windows from the XML file
-void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
-    XMLDocument doc;
-    if (doc.LoadFile(filename) != XML_SUCCESS) {
-        printf("ERROR: Failed to load XML file: %s\n", filename);
-        // Do not retry on every frame; opening or saving the file resets the flag.
-        ctx->file_loaded = true;
-        return;
+// Properties every widget shares, read around the widget itself: the position in the window
+// and the width of input fields. Which widget takes which comes from the editor's table.
+static std::unique_ptr<UIWidget> PlaceWidget(std::unique_ptr<UIWidget> widget, XMLElement* elem) {
+    if (!widget) return nullptr;
+    const WidgetTemplateFactory::NodeDef* def = WidgetTemplateFactory::FindWidget(elem->Name());
+    WidgetLayout layout;
+    if (def && def->placeable) {
+        layout.placeable = true;
+        layout.absolute = elem->FirstChildElement("PosX") || elem->FirstChildElement("PosY");
+        layout.pos = ImVec2(ReadFloat(elem, "PosX", 0.0f, 0.0f, kMaxExtent), ReadFloat(elem, "PosY", 0.0f, 0.0f, kMaxExtent));
     }
-    printf("XML loaded successfully: %s\n", filename);
+    if (def && def->itemWidth) layout.itemWidth = ReadSize(elem, "ItemWidth", 0.0f);
+    return std::make_unique<PlacedWidget>(std::move(widget), g_KeepSources ? elem : nullptr, layout);
+}
+
+static std::unique_ptr<UIWidget> LoadPlacedWidget(XMLElement* elem) {
+    return PlaceWidget(LoadWidgetFromXML(elem), elem);
+}
+
+// Builds g_Windows from a document. keepSources: the document stays alive (ctx->CurrentXMLDoc)
+// and the design mode may refer to its elements.
+static void BuildWindows(MainContext* ctx, XMLDocument& doc, bool keepSources) {
+    // A rebuild in design mode keeps the windows the user has hidden hidden
+    std::vector<std::pair<std::string, bool>> shown;
+    if (keepSources) {
+        for (const WindowData& w : g_Windows) shown.emplace_back(w.name, w.show);
+    }
     g_Windows.clear();
+    g_KeepSources = keepSources;
     int winCount = 0;
     for (XMLElement* win = doc.FirstChildElement("Window"); win; win = win->NextSiblingElement("Window")) {
         winCount++;
@@ -677,8 +706,17 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
         const char* name = XmlChildText(win, "Text", "Unnamed");
         wd.name = name;
         wd.show = true;
-        //ctx->w[winCount].name = name;
-        //ctx->w[winCount].show = true;
+        for (const auto& s : shown) {
+            if (s.first == wd.name) wd.show = s.second;
+        }
+        wd.source = keepSources ? win : nullptr;
+
+        // Geometry, applied once; without it the window keeps the position ImGui remembers
+        wd.hasPos = win->FirstChildElement("PosX") || win->FirstChildElement("PosY");
+        wd.pos = ImVec2(ReadFloat(win, "PosX", 0.0f, -kMaxExtent, kMaxExtent), ReadFloat(win, "PosY", 0.0f, -kMaxExtent, kMaxExtent));
+        wd.size = ImVec2(ReadFloat(win, "Width", 0.0f, 0.0f, kMaxExtent), ReadFloat(win, "Height", 0.0f, 0.0f, kMaxExtent));
+        wd.hasSize = wd.size.x > 0.0f || wd.size.y > 0.0f;   // 0 on one axis fits the content
+        wd.applyGeometry = wd.hasPos || wd.hasSize;
 
         // IOMap block, if present
         XMLElement* iomap = win->FirstChildElement("IOMap");
@@ -719,31 +757,79 @@ void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
         if (items) {
             auto rootGroup = std::make_unique<GroupWidget>();
             for (XMLElement* child = items->FirstChildElement(); child; child = child->NextSiblingElement()) {
-                auto widget = LoadWidgetFromXML(child);
+                auto widget = LoadPlacedWidget(child);
                 if (widget) {
                     rootGroup->AddChild(std::move(widget));
                 }
-                else {
+                else if (!keepSources) {
                     printf("Warning: could not create widget for element <%s> in window '%s'\n",
                         child->Name(), wd.name.c_str());
                 }
             }
             wd.root = std::move(rootGroup);
         }
-        else {
+        else if (!keepSources) {
             printf("Window '%s' has no <Items>: empty window.\n", wd.name.c_str());
         }
         g_Windows.push_back(std::move(wd));
     }
-    printf("Loaded %d windows.\n", winCount);
+    g_KeepSources = false;
+    if (!keepSources) printf("Loaded %d windows.\n", winCount);
     ctx->file_loaded = true;
+}
+
+// Loads all windows from the XML file
+void LoadWindowsFromXML(MainContext* ctx, const char* filename) {
+    XMLDocument doc;
+    if (doc.LoadFile(filename) != XML_SUCCESS) {
+        printf("ERROR: Failed to load XML file: %s\n", filename);
+        // Do not retry on every frame; opening or saving the file resets the flag.
+        ctx->file_loaded = true;
+        return;
+    }
+    printf("XML loaded successfully: %s\n", filename);
+    BuildWindows(ctx, doc, false);
+    g_WindowsDoc = nullptr;
+}
+
+// Design mode: the windows show the open document, with its unsaved changes.
+static void LoadWindowsFromDocument(MainContext* ctx) {
+    BuildWindows(ctx, *ctx->CurrentXMLDoc, true);
+    g_WindowsDoc = ctx->CurrentXMLDoc;
+    g_WindowsRevision = ctx->xml_revision;
+}
+
+// Design mode: a window moved or resized with the mouse is written back to its <Window>.
+static void TrackWindowGeometry(MainContext* ctx, WindowData& win) {
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const ImVec2 pos = window->Pos;
+    const ImVec2 size = window->SizeFull;   // not the title bar of a collapsed window
+    const bool dragging = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    if (win.seen && dragging && (pos.x != win.seenPos.x || pos.y != win.seenPos.y ||
+        size.x != win.seenSize.x || size.y != win.seenSize.y))
+        win.geometryChanged = true;
+    win.seen = true;
+    win.seenPos = pos;
+    win.seenSize = size;
+    if (win.geometryChanged && !dragging) {
+        win.geometryChanged = false;
+        DesignMode::CommitWindowGeometry(ctx, win.source, pos, size);
+    }
 }
 
 // Draws all windows
 int Draw_Window(MainContext* ctx) {
 
     if (!ctx) return -1;
-    if (g_Windows.empty()) {
+    if (ctx->design_mode && !ctx->CurrentXMLDoc) ctx->design_mode = false;   // nothing to edit
+    const bool design = ctx->design_mode;
+
+    if (design) {
+        // Every change of the document (here, in the XML editor, undo) rebuilds the windows.
+        if (g_WindowsDoc != ctx->CurrentXMLDoc || g_WindowsRevision != ctx->xml_revision)
+            LoadWindowsFromDocument(ctx);
+    }
+    else if (g_Windows.empty()) {
         if (ctx->File_path[0] != '\0' && !ctx->file_loaded) {
             LoadWindowsFromXML(ctx, ctx->File_path);
         }
@@ -751,20 +837,29 @@ int Draw_Window(MainContext* ctx) {
         if (g_Windows.empty()) return -1;
     }
 
+    DesignMode::BeginFrame(design);
     for (auto& win : g_Windows) {
         if (!win.show) continue;
-        ImGui::SetNextWindowBgAlpha(0.9f);
-        if (ImGui::Begin(win.name.c_str(), &win.show, ImGuiWindowFlags_None)) {
-            if (win.root) {
-                win.root->Draw(ctx, nullptr);
-            }
+        if (win.applyGeometry) {
+            if (win.hasPos) ImGui::SetNextWindowPos(win.pos, ImGuiCond_Always);
+            if (win.hasSize) ImGui::SetNextWindowSize(win.size, ImGuiCond_Always);
+            win.applyGeometry = false;
         }
+        ImGui::SetNextWindowBgAlpha(0.9f);
+        const bool visible = ImGui::Begin(win.name.c_str(), &win.show, ImGuiWindowFlags_None);
+        if (design) DesignMode::BeginWindow(win.source);
+        if (visible && win.root) {
+            win.root->Draw(ctx, nullptr);
+        }
+        if (design) TrackWindowGeometry(ctx, win);
         ImGui::End();
     }
+    if (design) DesignMode::EndFrame(ctx);
     return 0;
 }
 
 // Removes all windows
 extern "C" void ClearAllWindows(void) {
     g_Windows.clear();
+    g_WindowsDoc = nullptr;
 }

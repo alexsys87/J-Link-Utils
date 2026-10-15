@@ -188,6 +188,15 @@ struct WindowData {
     std::string name;
     std::unique_ptr<UIWidget> root;
     bool show = false;
+    // <Window> element in ctx->CurrentXMLDoc when the windows were built from the open
+    // document (design mode); only compared, never dereferenced.
+    const tinyxml2::XMLElement* source = nullptr;
+    // Geometry from <PosX>/<PosY>/<Width>/<Height>, applied once after loading
+    bool hasPos = false, hasSize = false, applyGeometry = false;
+    ImVec2 pos, size;
+    // Design mode: geometry of the previous frame, to notice when the user moves the window
+    bool seen = false, geometryChanged = false;
+    ImVec2 seenPos, seenSize;
 };
 
 // Global window list (defined in xml_window.cpp)

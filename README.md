@@ -35,6 +35,24 @@ A missing property always falls back to a safe default, and out-of-range values 
 
 **Caution:** writing memory changes the state of real hardware. Check addresses and configurations; do not use untested XML files with hardware connected.
 
+## Design mode
+
+**Windows → Design Mode** (or **Ctrl+E**) edits the widgets of the open configuration with the mouse. The old tree editor (**XML Editor**) stays available and works on the same document; both can be open at once.
+
+- **Click** a widget to select it, or the empty part of a window to select the window. The innermost widget wins, so a click inside a group or child window selects the widget there; the parent is one click away in the Properties window or the right-click menu.
+- **Drag** a widget to move it. A moved widget gets `<PosX>`/`<PosY>`: it is drawn at that point of its window (window coordinates, 0,0 is the top-left corner of the title bar) instead of after the previous widget, and the widgets around it close the gap. **Back to flow layout** in the right-click menu removes the position again. Positions snap to the grid (8 px by default); hold **Alt** to place freely. The tab above the top-left corner moves widgets whose area opens on a click, such as tree nodes and headers. Widgets inside a Grid stay in the grid.
+- **Drag the orange handles** (right edge, bottom edge, corner) to resize. The new size goes into the widget's own properties: `Width`/`Height`, `Radius` (gauges, knobs, LEDs), `PixelSize` (LCD), `Scale` (8-bit control), `BandWidth` (equalizer) or `<ItemWidth>`, the new width of sliders, input fields, combo boxes and label texts.
+- **Move and resize windows** as usual; in design mode their position and size are stored in `<Window>` as `PosX`, `PosY`, `Width` and `Height` and applied when the file is loaded.
+- The **Properties** window shows every property of the selection with a control for its type: set properties in normal text, missing ones greyed out with their default value (editing creates them, **x** removes them). Plot lines, combo entries, zones and similar lists are edited in place; containers and windows list their widgets, which can be selected, reordered, deleted or added. Its toolbar adds widgets and windows, duplicates and deletes the selection, undoes and redoes, and saves.
+- **Right-click** a widget for **Add widget here** (placed at the mouse), duplicate, reorder (later widgets are drawn on top), back to flow layout, select the parent and delete.
+- Keys: arrows move the selection by a pixel (Shift: a grid step), **Del** deletes, **Ctrl+D** duplicates, **Ctrl+Z**/**Ctrl+Y** undo and redo (also changes made in the XML editor), **Ctrl+S** saves, **Esc** clears the selection or cancels a drag.
+
+Every change is shown at once: the windows are rebuilt from the edited document, unsaved. Buttons, sliders, inputs and other controls do not react in design mode, so editing never writes to the target; values keep updating. Tree nodes, headers and tabs still open and close, to reach the widgets inside them.
+
+## Icon
+
+The program icon is drawn by `res/make_icon.py` (Python 3 with Pillow), which writes `res/app.ico` (16–256 px, linked into the executable through `app.rc`), a 256 px preview `res/app_icon.png` and `res/app_icon.h`, the pixels the program sets as its window icon and shows in **Help → About**.
+
 ## Demo
 
 `examples/demo.xml` uses every widget the loader supports (65 types) in eight windows: Overview, Gauges, Controls, Plots, Layout, Memory, Media and Watch. Its variables are one struct at `0x20001000`; the offset map is at the top of the XML.
@@ -66,6 +84,6 @@ python3 tests/ui_regression/run.py
 python3 tests/widget_smoke/run.py
 ```
 
-The tests compile the exchange code against simulated SDL and J-Link, use the real tinyxml2/lfqueue, and check individual widgets without a graphics window. They cover connection errors, memory bounds, block merging and polling, write-through, short reads and writes, plot sampling, the `DoneAddr` handshake, XML safety and formatting, with AddressSanitizer, UndefinedBehaviorSanitizer and leak checking enabled. The widget smoke test builds the real Dear ImGui and ImPlot and draws every widget loaded with no properties, with the editor's defaults and with hostile values in every property, inside every container, plus `examples/demo.xml`; it also draws the editor panel for every element and checks that the editor offers exactly the properties the loader reads. Any ImGui assertion fails it. These are regression checks, **not** a build of the full application and **not** a hardware test.
+The tests compile the exchange code against simulated SDL and J-Link, use the real tinyxml2/lfqueue, and check individual widgets without a graphics window. They cover connection errors, memory bounds, block merging and polling, write-through, short reads and writes, plot sampling, the `DoneAddr` handshake, XML safety and formatting, with AddressSanitizer, UndefinedBehaviorSanitizer and leak checking enabled. The widget smoke test builds the real Dear ImGui and ImPlot and draws every widget loaded with no properties, with the editor's defaults and with hostile values in every property, inside every container, plus `examples/demo.xml`; it also draws the editor panel for every element, clicks, drags, right-clicks and uses the shortcuts of the design mode in every window (checking that nothing is written to the target meanwhile), and checks that the editor offers exactly the properties the loader reads. Any ImGui assertion fails it. These are regression checks, **not** a build of the full application and **not** a hardware test.
 
 GitHub Actions runs all three test suites on every push and pull request; **Regression tests** can also be started manually.

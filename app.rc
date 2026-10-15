@@ -1,0 +1,5 @@
+// app.rc - resources of J-Link Utils.exe
+// The first icon of the executable is the one Explorer and the taskbar show; SDL also uses it
+// for its window class. The picture comes from res/make_icon.py.
+
+1 ICON "res\\app.ico"

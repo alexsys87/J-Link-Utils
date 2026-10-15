@@ -88,9 +88,13 @@
     <ClInclude Include="Widget\WatchWidget.h" />
     <ClInclude Include="Widget\widget_common.h" />
     <ClInclude Include="Widget\CaptureHandshake.h" />
+    <ClInclude Include="Widget\PlacedWidget.h" />
+    <ClInclude Include="Editor\DesignMode.h" />
+    <ClInclude Include="res\app_icon.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DataHelper.cpp" />
+    <ClCompile Include="Editor\DesignMode.cpp" />
     <ClCompile Include="Editor\WidgetTemplateFactory.cpp" />
     <ClCompile Include="Editor\XMLEditor.cpp" />
     <ClCompile Include="include\ifqueue\lfqueue.c" />
@@ -114,6 +118,12 @@
     <ClCompile Include="Widget\MemoryEditorWidget.cpp" />
     <ClCompile Include="Widget\WatchWidget.cpp" />
     <ClCompile Include="xml_window.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="app.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\app.ico" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

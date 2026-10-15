@@ -75,6 +75,13 @@ def parser_tags():
         # The old single-line PlotLines format reads the line properties from the widget
         if 'PlotLines' in names:
             tags['PlotLines'] |= reads(branch, 'e')
+    # Position and item width are read around every widget (PlaceWidget); the table says which
+    # widgets take them, so here only the names are checked.
+    common = reads(function(source, 'static std::unique_ptr<UIWidget> PlaceWidget('), 'elem')
+    assert common == {'PosX', 'PosY', 'ItemWidth'}, common
+    for tag in tags:
+        if '/' not in tag:
+            tags[tag] |= common
     return tags
 
 
@@ -111,7 +118,7 @@ def main():
                     '-I', str(ROOT / 'include/SDL2'), '-I', str(ROOT / 'include/ifqueue'),
                     '-I', str(ROOT / 'Widget'), '-I', str(ROOT / 'Editor')]
         sources = [HERE / 'widget_smoke.cpp', build / 'data_helpers.cpp',
-                   ROOT / 'xml_window.cpp', ROOT / 'Editor/WidgetTemplateFactory.cpp',
+                   ROOT / 'xml_window.cpp', ROOT / 'Editor/WidgetTemplateFactory.cpp', ROOT / 'Editor/DesignMode.cpp',
                    ROOT / 'Widget/GlossyButtonWidget.cpp', ROOT / 'Widget/MemoryEditorWidget.cpp',
                    ROOT / 'Widget/WatchWidget.cpp',
                    ROOT / 'include/tinyxml2/tinyxml2.cpp',
@@ -141,6 +148,10 @@ def main():
             tag, _, props = line.partition(':')
             schema[tag] = set(props.split())
         loader = parser_tags()
+        # PlaceWidget reads the shared properties only for widgets whose table entry has them
+        for tag, props in loader.items():
+            if tag in schema:
+                props -= {'PosX', 'PosY', 'ItemWidth'} - schema[tag]
         problems = []
         for tag, props in loader.items():
             if tag not in schema:

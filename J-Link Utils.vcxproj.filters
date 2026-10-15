@@ -234,6 +234,15 @@
     <ClInclude Include="Widget\CaptureHandshake.h">
       <Filter>Source Files\Widget</Filter>
     </ClInclude>
+    <ClInclude Include="Widget\PlacedWidget.h">
+      <Filter>Source Files\Widget</Filter>
+    </ClInclude>
+    <ClInclude Include="Editor\DesignMode.h">
+      <Filter>Source Files\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="res\app_icon.h">
+      <Filter>Resource Files</Filter>
+    </ClInclude>
     <ClInclude Include="Widget\GlossyButtonWidget.h">
       <Filter>Source Files\Widget</Filter>
     </ClInclude>
@@ -302,6 +311,9 @@
     <ClCompile Include="Editor\XMLEditor.cpp">
       <Filter>Source Files\Editor</Filter>
     </ClCompile>
+    <ClCompile Include="Editor\DesignMode.cpp">
+      <Filter>Source Files\Editor</Filter>
+    </ClCompile>
     <ClCompile Include="Widget\GlossyButtonWidget.cpp">
       <Filter>Source Files\Widget</Filter>
     </ClCompile>
@@ -311,5 +323,15 @@
     <ClCompile Include="Widget\MemoryEditorWidget.cpp">
       <Filter>Source Files\Widget</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="app.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\app.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>
