@@ -6,6 +6,9 @@ trap 'rm -rf "$build"' EXIT HUP INT TERM
 cc=${CC:-cc}
 cxx=${CXX:-c++}
 flags='-g -O1 -fno-omit-frame-pointer -fno-pie -fsanitize=address,undefined'
+"$cxx" -std=c++17 $flags -no-pie -Wall -Wextra -I"$root" \
+    "$root/tests/write_protection_rules.cpp" -o "$build/write_protection_rules"
+ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/write_protection_rules"
 "$cc" -std=gnu11 $flags -I"$root/include/ifqueue" \
     -c "$root/include/ifqueue/lfqueue.c" -o "$build/queue.o"
 "$cxx" -std=c++17 $flags -no-pie -pthread -Wall -Wextra -DJLINK_RETRY_BASE_MS=10 \

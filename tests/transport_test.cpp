@@ -86,8 +86,12 @@ struct ReadCall { uint32_t address, size; };
 static std::vector<ReadCall> readCalls;
 static std::atomic<bool> holdWrites{false};
 static std::atomic<int> enteredWrites{0};
+static std::atomic<bool> holdReads{false};
+static std::atomic<int> enteredReads{0};
 int JLINKARM_ReadMemEx(uint32_t address, uint32_t n, void* out, uint32_t) {
     SDKCall call;
+    ++enteredReads;
+    while (holdReads) SDL_Delay(1);
     lastAddress = address; lastSize = static_cast<int>(n);
     {
         std::lock_guard<std::mutex> lock(targetMutex);
@@ -131,7 +135,7 @@ template<class Predicate> void waitForImpl(Predicate predicate, int line) {
     assert(predicate());
 }
 #define waitFor(...) waitForImpl((__VA_ARGS__), __LINE__)
-static void startAndWait(MainContext& ctx) {
+static void startAndWait(MainContext& ctx, bool arm = true) {
     StartCommunication(&ctx);
     waitFor([&] {
         return ctx.StartComunication.load() && GetJLinkConnectionStatus().state == JLinkConnectionState::Connected;
@@ -139,12 +143,18 @@ static void startAndWait(MainContext& ctx) {
     assert(ctx.jlink_opened);
     assert(GetJLinkConnectionStatus().state == JLinkConnectionState::Connected);
     assert(IsCommunicationRequested());
+    assert(GetWriteProtectionStatus().readOnly);
+    if (arm) {
+        assert(ArmTargetWrites(&ctx));
+        assert(!GetWriteProtectionStatus().readOnly);
+    }
 }
 static void waitForFailure(MainContext& ctx) {
     waitFor([] { return GetJLinkConnectionStatus().state == JLinkConnectionState::Failed; });
     assert(!ctx.StartComunication && !ctx.jlink_opened);
     assert(GetJLinkConnectionStatus().attempt == 5);
     assert(!GetJLinkConnectionStatus().lastError.empty());
+    assert(GetWriteProtectionStatus().readOnly);
 }
 static uint8_t cached(MainContext& ctx, unsigned offset) {
     std::lock_guard<std::mutex> lock(*ctx.Datalock);
@@ -377,10 +387,12 @@ static void recoveryTests(MainContext& ctx) {
         return !samples.empty();
     });
     const int oldOpen = opens, oldSelections = selections;
+    const uint64_t beforeOutageEpoch = GetWriteProtectionStatus().epoch;
     holdOpen = true; readResult = 1;
     waitFor([&] { return opens > oldOpen; });
     assert(!ctx.StartComunication);
     assert(GetJLinkConnectionStatus().state == JLinkConnectionState::Reconnecting);
+    assert(GetWriteProtectionStatus().readOnly);
     assert(cached(ctx, 0x47) == 0);
     assert(lfqueue_size(&ctx.tx_Queue) == 0);
     assert(DataWriteArray(&ctx, base, value, 4) == 0);
@@ -392,6 +404,10 @@ static void recoveryTests(MainContext& ctx) {
     const int oldReads = reads;
     holdOpen = false;
     waitFor([&] { return ctx.StartComunication.load(); });
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(GetWriteProtectionStatus().epoch != beforeOutageEpoch);
+    assert(!ArmTargetWrites(&ctx, beforeOutageEpoch));
+    assert(GetWriteProtectionStatus().readOnly);
     SDL_Delay(25);
     // Previous subscriptions and plot owners are not resurrected after recovery.
     assert(reads == oldReads && takeReadCalls().empty());
@@ -413,15 +429,19 @@ static void recoveryTests(MainContext& ctx) {
         holdOpen = true; holdWrites = false;
         waitFor([&] { return opens > beforeReconnect; });
         assert(!ctx.StartComunication && cachedAt(ctx, base + 0x900) == 0);
+        assert(GetWriteProtectionStatus().readOnly);
         assert(cachedAt(ctx, base + 0xA00) == 0 && lfqueue_size(&ctx.tx_Queue) == 0);
         assert(writes == oldWrites + 1);
         assert(GetJLinkConnectionStatus().writeMayHaveCompleted);
         assert(DataWriteArray(&ctx, base + 0xB00, value, 4) == 0);
         writeResult = -2; holdOpen = false;
         waitFor([&] { return ctx.StartComunication.load(); });
+        assert(GetWriteProtectionStatus().readOnly);
         SDL_Delay(30);
         assert(writes == oldWrites + 1);
         assert(GetJLinkConnectionStatus().writeMayHaveCompleted);
+        assert(DataWriteArray(&ctx, base + 0xB00, value, 4) == 0);
+        assert(ArmTargetWrites(&ctx));
         assert(DataWriteArray(&ctx, base + 0xB00, value, 4) == 4);
         waitFor([&] { return writes == oldWrites + 2; });
         StopCommunication(&ctx);
@@ -440,6 +460,7 @@ static void recoveryTests(MainContext& ctx) {
     assert(!ctx.StartComunication);
     connectedResult = 1; failNextOpens = 2; holdOpen = false;
     waitFor([&] { return opens == beforeOutage + 3 && ctx.StartComunication.load(); });
+    assert(GetWriteProtectionStatus().readOnly);
     beforeOutage = opens;
     openFail = 1; hwResult = -1;
     waitForFailure(ctx);
@@ -460,6 +481,7 @@ static void recoveryTests(MainContext& ctx) {
     assert(selections > beforeSelect && selectedSerial == originalSerial);
     targetVoltage = 3300; probeSerial = originalSerial; holdOpen = false;
     waitFor([&] { return ctx.StartComunication.load(); });
+    assert(GetWriteProtectionStatus().readOnly);
     const int beforeClose = closes;
     StopCommunication(&ctx);
     assert(closes == beforeClose + 1);
@@ -472,6 +494,154 @@ static void recoveryTests(MainContext& ctx) {
     assert(GetJLinkConnectionStatus().state == JLinkConnectionState::Disconnected);
     assert(sdkActive == 0 && sdkPeak == 1);
 }
+static void clearWriteRules(MainContext& ctx) {
+    while (!GetWriteProtectionStatus().rules.empty()) RemoveWriteValueRule(&ctx, 0);
+    assert(SetWriteAddressRange(&ctx, false, 0, UINT32_MAX));
+    LockTargetWrites(&ctx);
+}
+
+template<class T> static void valueRuleTransportTest(MainContext& ctx, uint32_t address,
+        WriteValueType type, const char* minimum, const char* maximum,
+        T below, T first, T last, T above) {
+    WriteValueRule rule;
+    rule.address = address; rule.type = type;
+    rule.minimum = minimum; rule.maximum = maximum;
+    assert(AddWriteValueRule(&ctx, rule));
+    assert(ArmTargetWrites(&ctx));
+    const auto send = [&](T value) {
+        return DataWriteArray(&ctx, address, reinterpret_cast<const uint8_t*>(&value), sizeof(value));
+    };
+    const int before = writes;
+    const uint8_t oldCache = cachedAt(ctx, address);
+    assert(send(below) == 0 && send(above) == 0);
+    assert(cachedAt(ctx, address) == oldCache);
+    if (sizeof(T) > 1) {
+        // A raw memory-editor byte edit cannot bypass a typed rule.
+        uint8_t byte = 0;
+        assert(DataWriteArray(&ctx, address, &byte, 1) == 0);
+        assert(DataWriteArray(&ctx, address + sizeof(T) - 1, &byte, 1) == 0);
+        uint8_t wider[sizeof(T) + 1]{};
+        assert(DataWriteArray(&ctx, address, wider, sizeof(wider)) == 0);
+    }
+    SDL_Delay(5); assert(writes == before);
+    assert(send(first) == sizeof(T));
+    waitFor([&] { return writes == before + 1; });
+    assert(send(last) == sizeof(T));
+    waitFor([&] { return writes == before + 2; });
+    RemoveWriteValueRule(&ctx, 0);
+}
+
+static void writeProtectionTests(MainContext& ctx) {
+    const uint32_t base = ctx.mcu_memory_base;
+    uint8_t bytes[] = {0x51, 0x52, 0x53, 0x54};
+    clearWriteRules(ctx);
+    assert(!ArmTargetWrites(&ctx));
+    startAndWait(ctx, false);
+    const int beforeDefault = writes;
+    const uint64_t beforeBlocked = GetWriteProtectionStatus().blockedWrites;
+    assert(DataWriteArray(&ctx, base + 0x100, bytes, sizeof(bytes)) == 0);
+    assert(cachedAt(ctx, base + 0x100) == 0 && lfqueue_size(&ctx.tx_Queue) == 0);
+    SDL_Delay(10); assert(writes == beforeDefault);
+    assert(GetWriteProtectionStatus().blockedWrites > beforeBlocked);
+    assert(!GetWriteProtectionStatus().lastError.empty());
+    const uint64_t initialEpoch = GetWriteProtectionStatus().epoch;
+    assert(ArmTargetWrites(&ctx, initialEpoch));
+    const uint64_t armedEpoch = GetWriteProtectionStatus().epoch;
+    assert(ArmTargetWrites(&ctx, armedEpoch));
+    assert(GetWriteProtectionStatus().epoch == armedEpoch);
+
+    // Freeze a read so the worker takes several queued writes in one batch.
+    holdReads = true;
+    const int beforeRead = enteredReads;
+    assert(DataReadArray(&ctx, base + 0x200, 4) == 4);
+    waitFor([&] { return enteredReads > beforeRead; });
+    const int beforeWrite = enteredWrites, beforeCompleted = writes;
+    assert(DataWriteArray(&ctx, base + 0x300, bytes, 4) == 4);
+    assert(DataWriteArray(&ctx, base + 0x400, bytes, 4) == 4);
+    assert(DataWriteArray(&ctx, base + 0x500, bytes, 4) == 4);
+    holdWrites = true; holdReads = false;
+    waitFor([&] { return enteredWrites == beforeWrite + 1; });
+    // This request is in the waiting queue, not the already extracted batch.
+    assert(DataWriteArray(&ctx, base + 0x600, bytes, 4) == 4);
+    assert(cachedAt(ctx, base + 0x400) == bytes[0]);
+    std::atomic<bool> locked{false};
+    std::thread locker([&] { LockTargetWrites(&ctx); locked = true; });
+    waitFor([&] { return locked.load(); });
+    locker.join();
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(ctx.StartComunication && GetJLinkConnectionStatus().state == JLinkConnectionState::Connected);
+    assert(lfqueue_size(&ctx.tx_Queue) == 0);
+    for (uint32_t offset : {0x300u, 0x400u, 0x500u, 0x600u}) assert(cached(ctx, offset) == 0);
+    assert(DataWriteArray(&ctx, base + 0x700, bytes, 4) == 0);
+    // Re-arming must not revive an extracted request from the previous epoch.
+    assert(ArmTargetWrites(&ctx));
+    holdWrites = false;
+    waitFor([&] { return writes == beforeCompleted + 1; });
+    SDL_Delay(20);
+    assert(enteredWrites == beforeWrite + 1 && writes == beforeCompleted + 1);
+    assert(DataWriteArray(&ctx, base + 0x700, bytes, 4) == 4);
+    waitFor([&] { return writes == beforeCompleted + 2; });
+    StopCommunication(&ctx);
+    assert(GetWriteProtectionStatus().readOnly);
+
+    // Inclusive address bounds apply to the whole write, not just its start.
+    startAndWait(ctx);
+    const uint64_t beforeConfigEpoch = GetWriteProtectionStatus().epoch;
+    assert(SetWriteAddressRange(&ctx, true, base + 0x1000, base + 0x1003));
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(GetWriteProtectionStatus().epoch != beforeConfigEpoch);
+    assert(!ArmTargetWrites(&ctx, beforeConfigEpoch));
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(ArmTargetWrites(&ctx));
+    const int rangeBefore = writes;
+    assert(DataWriteArray(&ctx, base + 0xFFF, bytes, 1) == 0);
+    assert(DataWriteArray(&ctx, base + 0x1004, bytes, 1) == 0);
+    assert(DataWriteArray(&ctx, base + 0x1001, bytes, 4) == 0);
+    assert(DataWriteArray(&ctx, base + 0x1000, bytes, 4) == 4);
+    waitFor([&] { return writes == rangeBefore + 1; });
+    assert(DataWriteArray(&ctx, base + 0x1003, bytes, 1) == 1);
+    waitFor([&] { return writes == rangeBefore + 2; });
+    StopCommunication(&ctx);
+    auto saved = GetWriteProtectionStatus();
+    assert(saved.readOnly && saved.restrictAddresses);
+    assert(saved.firstAddress == base + 0x1000 && saved.lastAddress == base + 0x1003);
+    startAndWait(ctx, false);
+    assert(DataWriteArray(&ctx, base + 0x1000, bytes, 4) == 0);
+    assert(ArmTargetWrites(&ctx));
+    assert(!SetWriteAddressRange(&ctx, true, base + 2, base + 1));
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(DataWriteArray(&ctx, base + 0x1000, bytes, 4) == 0);
+    clearWriteRules(ctx);
+
+    // Exercise the actual direct-write gate as well as the pure rule helpers.
+    valueRuleTransportTest<uint8_t>(ctx, base + 0x1100, WriteValueType::U8, "10", "20", 9, 10, 20, 21);
+    valueRuleTransportTest<uint16_t>(ctx, base + 0x1100, WriteValueType::U16, "100", "200", 99, 100, 200, 201);
+    valueRuleTransportTest<uint32_t>(ctx, base + 0x1100, WriteValueType::U32, "1000", "2000", 999, 1000, 2000, 2001);
+    valueRuleTransportTest<uint64_t>(ctx, base + 0x1100, WriteValueType::U64, "18446744073709551613", "18446744073709551614", UINT64_MAX - 3, UINT64_MAX - 2, UINT64_MAX - 1, UINT64_MAX);
+    valueRuleTransportTest<int8_t>(ctx, base + 0x1100, WriteValueType::I8, "-10", "10", -11, -10, 10, 11);
+    valueRuleTransportTest<int16_t>(ctx, base + 0x1100, WriteValueType::I16, "-100", "100", -101, -100, 100, 101);
+    valueRuleTransportTest<int32_t>(ctx, base + 0x1100, WriteValueType::I32, "-1000", "1000", -1001, -1000, 1000, 1001);
+    valueRuleTransportTest<int64_t>(ctx, base + 0x1100, WriteValueType::I64, "-9223372036854775807", "9223372036854775806", INT64_MIN, INT64_MIN + 1, INT64_MAX - 1, INT64_MAX);
+    valueRuleTransportTest<float>(ctx, base + 0x1100, WriteValueType::Float32, "-1.5", "2.5", -2.0f, -1.5f, 2.5f, 3.0f);
+    valueRuleTransportTest<double>(ctx, base + 0x1100, WriteValueType::Float64, "-1.5", "2.5", -2.0, -1.5, 2.5, 3.0);
+    WriteValueRule persistent{base + 0x1200, WriteValueType::U16, "1", "100"};
+    assert(AddWriteValueRule(&ctx, persistent));
+    assert(ArmTargetWrites(&ctx));
+    StopCommunication(&ctx);
+    assert(GetWriteProtectionStatus().readOnly && GetWriteProtectionStatus().rules.size() == 1);
+    startAndWait(ctx, false);
+    assert(GetWriteProtectionStatus().rules.size() == 1);
+    assert(ArmTargetWrites(&ctx));
+    uint16_t badValue = 101;
+    assert(DataWriteArray(&ctx, persistent.address, reinterpret_cast<uint8_t*>(&badValue), 2) == 0);
+    WriteValueRule invalid{base + 0x1300, WriteValueType::U8, "0", "256"};
+    assert(!AddWriteValueRule(&ctx, invalid));
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(DataWriteArray(&ctx, base + 0x1400, bytes, 4) == 0);
+    clearWriteRules(ctx);
+    StopCommunication(&ctx);
+}
+
 int main() {
     addressTests();
     queueAllocationTests();
@@ -481,6 +651,8 @@ int main() {
     assert(ctx.IOMAP_Data);
     assert(lfqueue_init(&ctx.tx_Queue) == 0);
     uint8_t value[] = {1, 2, 3, 4};
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(!ArmTargetWrites(&ctx));
     assert(DataWriteArray(&ctx, ctx.mcu_memory_base, value, 4) == 0);
     startupTests(ctx);
     startAndWait(ctx);
@@ -501,18 +673,17 @@ int main() {
     assert(lastAddress == ctx.mcu_memory_base + IOMAP_SIZE - 4);
     StopCommunication(&ctx); assert(cached(ctx, IOMAP_SIZE - 1) == 0);
     recoveryTests(ctx);
-    // Explicitly queued stale writes/reads are released, not replayed.
-    ctx.StartComunication = true;
-    DataWriteArray(&ctx, ctx.mcu_memory_base, value, 4);
-    DataReadArray(&ctx, ctx.mcu_memory_base, 4);
-    StopCommunication(&ctx);
-    assert(lfqueue_size(&ctx.tx_Queue) == 0);
+    // A stopped session remains locked and cannot accumulate stale work.
+    assert(GetWriteProtectionStatus().readOnly);
+    assert(!ArmTargetWrites(&ctx));
+    assert(DataWriteArray(&ctx, ctx.mcu_memory_base, value, 4) == 0);
+    assert(DataReadArray(&ctx, ctx.mcu_memory_base, 4) == 0);
     const int oldWrites = writes, oldReads = reads;
     startAndWait(ctx); SDL_Delay(10); StopCommunication(&ctx);
     assert(writes == oldWrites && reads == oldReads);
     // Upper edge of the 32-bit address space, including wraparound rejection.
     ctx.mcu_memory_base = 0xFFFFFFF0;
-    ctx.StartComunication = true;
+    startAndWait(ctx);
     assert(DataReadArray(&ctx, UINT32_MAX, 1) == 1);
     assert(DataReadArray(&ctx, UINT32_MAX, 2) == 0);
     StopCommunication(&ctx);
@@ -551,6 +722,7 @@ int main() {
     for (auto& producer : producers) producer.join();
     assert(lfqueue_size(&ctx.tx_Queue) == 0);
     pollingTests(ctx);
+    writeProtectionTests(ctx);
     lfqueue_destroy(&ctx.tx_Queue);
     std::free(ctx.IOMAP_Data);
     std::cout << "Transport regression tests passed\n";

@@ -879,6 +879,114 @@ static void ShowConnectionStatus(bool details)
     }
 }
 
+static bool g_RequestWriteUnlock = false;
+static uint64_t g_WriteUnlockEpoch = 0;
+static bool g_WriteUnlockAcknowledged = false;
+static const char* g_WriteValueTypes[] = {"U8", "U16", "U32", "U64", "I8", "I16", "I32", "I64", "Float32", "Float64"};
+
+static void ShowWriteProtectionSettings(MainContext* ctx)
+{
+    const auto status = GetWriteProtectionStatus();
+    ImGui::SeparatorText("Target write protection");
+    ImGui::TextColored(status.readOnly ? ImVec4(0.3f, 1, 0.4f, 1) : ImVec4(1, 0.4f, 0.2f, 1),
+        "%s", status.readOnly ? "READ ONLY - target writes blocked" : "WRITES ENABLED for this connection");
+    if (status.readOnly) {
+        ImGui::BeginDisabled(!ctx->StartComunication);
+        if (ImGui::Button("Enable writes...")) {
+            g_WriteUnlockEpoch = status.epoch;
+            g_WriteUnlockAcknowledged = false;
+            g_RequestWriteUnlock = true;
+        }
+        ImGui::EndDisabled();
+    } else if (ImGui::Button("Lock target writes now")) {
+        LockTargetWrites(ctx);
+    }
+    ImGui::TextDisabled("Writes lock again after disconnect, I/O failure or protection changes.");
+    ImGui::Text("Blocked requests: %llu", static_cast<unsigned long long>(status.blockedWrites));
+    if (!status.lastError.empty()) {
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 500);
+        ImGui::TextWrapped("Write protection: %s", status.lastError.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    if (status.restrictAddresses)
+        ImGui::Text("Active allowed addresses: 0x%08X - 0x%08X (inclusive)", status.firstAddress, status.lastAddress);
+    else ImGui::TextDisabled("No extra address limit; the MCU memory mapping still applies.");
+
+    // Policy editing is available only while locked. Edits are drafts until Apply.
+    ImGui::BeginDisabled(!status.readOnly);
+    static bool initialized = false, limitAddresses = false;
+    static uint32_t first = 0, last = 0;
+    if (!initialized) {
+        first = ctx->mcu_memory_base;
+        const uint64_t end = static_cast<uint64_t>(first) + IOMAP_SIZE - 1;
+        last = end > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(end);
+        initialized = true;
+    }
+    ImGui::Checkbox("Limit writable addresses (draft)", &limitAddresses);
+    ImGui::SetNextItemWidth(160);
+    ImGui::InputScalar("First address##write", ImGuiDataType_U32, &first, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+    ImGui::SetNextItemWidth(160);
+    ImGui::InputScalar("Last address (inclusive)##write", ImGuiDataType_U32, &last, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+    if (ImGui::Button("Apply address limit")) SetWriteAddressRange(ctx, limitAddresses, first, last);
+
+    ImGui::SeparatorText("Optional value limits by address");
+    static uint32_t ruleAddress = 0;
+    static int ruleType = 1;
+    static char minimum[64] = "0", maximum[64] = "65535";
+    ImGui::SetNextItemWidth(160);
+    ImGui::InputScalar("Address##rule", ImGuiDataType_U32, &ruleAddress, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+    ImGui::SetNextItemWidth(160);
+    ImGui::Combo("Stored data type", &ruleType, g_WriteValueTypes, 10);
+    ImGui::SetNextItemWidth(240);
+    ImGui::InputText("Minimum (decimal)", minimum, sizeof(minimum));
+    ImGui::SetNextItemWidth(240);
+    ImGui::InputText("Maximum (decimal)", maximum, sizeof(maximum));
+    if (ImGui::Button("Add value limit"))
+        AddWriteValueRule(ctx, {ruleAddress, static_cast<WriteValueType>(ruleType), minimum, maximum});
+    for (unsigned i = 0; i < status.rules.size(); ++i) {
+        const auto& rule = status.rules[i];
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::Text("0x%08X %s: [%s, %s]", rule.address, g_WriteValueTypes[static_cast<int>(rule.type)],
+            rule.minimum.c_str(), rule.maximum.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Remove")) RemoveWriteValueRule(ctx, i);
+        ImGui::PopID();
+    }
+    ImGui::TextDisabled("Partial/overlapping writes to a value rule are rejected, including byte edits.");
+    ImGui::EndDisabled();
+}
+
+static void ShowWriteUnlockDialog(MainContext* ctx)
+{
+    if (g_RequestWriteUnlock) {
+        ImGui::OpenPopup("Enable target writes?");
+        g_RequestWriteUnlock = false;
+    }
+    if (!ImGui::BeginPopupModal("Enable target writes?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    const auto status = GetWriteProtectionStatus();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 520);
+    ImGui::TextWrapped("Writing can change outputs, start machinery or damage the target. This enables ALL permitted writes for the current connection, not just one click.");
+    ImGui::Text("Target device: %s", ctx->jlink_device);
+    ImGui::Text("MCU mapping base: 0x%08X", ctx->mcu_memory_base);
+    if (status.restrictAddresses)
+        ImGui::Text("Allowed addresses: 0x%08X - 0x%08X", status.firstAddress, status.lastAddress);
+    else ImGui::TextWrapped("No additional address limit is set. All addresses in the MCU mapping may be written.");
+    ImGui::Text("Additional value limits: %u", static_cast<unsigned>(status.rules.size()));
+    ImGui::TextWrapped("The lock covers widgets, memory editors and automatic DoneAddr acknowledgements. An already submitted SDK write cannot be recalled by locking.");
+    const bool sameSession = ctx->StartComunication && status.epoch == g_WriteUnlockEpoch;
+    if (!sameSession) ImGui::TextWrapped("Connection or protection changed. Cancel and review the new session before enabling writes.");
+    ImGui::Checkbox("I checked the target and accept enabling writes", &g_WriteUnlockAcknowledged);
+    ImGui::BeginDisabled(!sameSession || !g_WriteUnlockAcknowledged);
+    if (ImGui::Button("Enable for this connection")) {
+        if (ArmTargetWrites(ctx, g_WriteUnlockEpoch)) ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+    ImGui::PopTextWrapPos();
+    ImGui::EndPopup();
+}
+
 void ShowMenuSettings(MainContext* ctx)
 {
     // --- MCU base address (hex input) ---
@@ -920,6 +1028,7 @@ void ShowMenuSettings(MainContext* ctx)
         StartCommunication(ctx);
     }
     ShowConnectionStatus(true);
+    ShowWriteProtectionSettings(ctx);
 
     // --- J-Link device selection with filterable list ---
     ImGui::AlignTextToFramePadding();
@@ -1166,6 +1275,10 @@ static void MenuWindow(MainContext* ctx)
             }
 
             ShowConnectionStatus(false);
+            const auto writeStatus = GetWriteProtectionStatus();
+            ImGui::TextColored(writeStatus.readOnly ? ImVec4(0.3f, 1, 0.4f, 1) : ImVec4(1, 0.4f, 0.2f, 1),
+                "%s", writeStatus.readOnly ? "[READ ONLY]" : "[WRITES ENABLED]");
+            if (!writeStatus.readOnly && ImGui::SmallButton("Lock writes")) LockTargetWrites(ctx);
 
             if (ctx->openfile)
                 if (OpenFile(ctx)) ctx->openfile = false;
@@ -1175,6 +1288,8 @@ static void MenuWindow(MainContext* ctx)
 
             ImGui::EndMenuBar();
         }
+
+        ShowWriteUnlockDialog(ctx);
 
         if (g_Windows.empty()) {
             ImGui::TextDisabled("%s", ctx->File_path[0] != '\0'
