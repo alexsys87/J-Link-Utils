@@ -16,6 +16,11 @@ find_package(BZip2 REQUIRED)
 find_package(unofficial-brotli CONFIG REQUIRED)
 
 add_executable(dependency_probe WIN32 probe.cpp)
+# Modern VS generators otherwise put imported package headers in
+# ExternalIncludePath, outside the ClCompile settings exported to MSBuild.
+# Keep this probe's dependency headers in AdditionalIncludeDirectories so the
+# exported application settings and the independent props probe use them too.
+set_property(TARGET dependency_probe PROPERTY NO_SYSTEM_FROM_IMPORTED ON)
 target_compile_features(dependency_probe PRIVATE cxx_std_17)
 target_link_libraries(dependency_probe PRIVATE SDL2::SDL2main SDL2::SDL2-static
   Freetype::Freetype PNG::PNG BZip2::BZip2 ZLIB::ZLIB

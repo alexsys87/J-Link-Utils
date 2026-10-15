@@ -119,12 +119,19 @@ pre-build event. Rerun the script after changing a manifest, pin or build script
 `.github/workflows/windows-dependencies.yml` uses `windows-2022` and separate
 x64/x86 jobs, each building/testing Debug and Release. The existing Linux
 regression workflow is unchanged. Dependency CI triggers on dependency-related
-push/PR changes and manually through **Run workflow**.
+pull request changes, pushes to `main`, and manually through **Run workflow**.
+Feature-branch pushes do not duplicate PR builds. A newer run cancels an older
+run of this workflow for the same ref; the x64/x86 jobs within a run remain
+independent.
 
 Only vcpkg's content-addressed binary package archives are cached. Cache keys
 include the manifest/lock/scripts; vcpkg's own ABI keys additionally account
 for compiler, SDK and port inputs. No installed tree, generated project or
 stale `.props` is restored as a build cache.
+Cache restore and save are separate steps: completed package archives are saved
+even when a later props export or probe fails, provided restore succeeded and
+the exact cache key was not already present. Failed package builds cannot be
+reused as completed packages; vcpkg selects archives by their ABI hashes.
 
 Each successful job uploads `windows-dependencies-<arch>-static-debug-release`
 with the installation, generated `.props`, lock/manifest and provenance files,

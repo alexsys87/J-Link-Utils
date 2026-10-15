@@ -1,6 +1,7 @@
 name: Windows open-source dependencies
 on:
   push:
+    branches: [main]
     paths:
       - 'vcpkg.json'
       - 'build/dependencies/**'
@@ -19,6 +20,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   dependencies:
     name: ${{ matrix.arch }} static CRT, Debug and Release (no J-Link)
@@ -38,7 +42,8 @@ jobs:
       # Cache only content-addressed package archives, never stale generated props
       # or an installation from a different manifest/toolchain. vcpkg ABI hashes
       # additionally account for compiler, SDK, triplets and port inputs.
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: restore-cache
         with:
           path: .dependencies/binary-cache
           key: windows-2022-v143-${{ matrix.arch }}-${{ hashFiles('vcpkg.json', 'build/dependencies/host-tools/vcpkg.json', 'build/dependencies/vcpkg-lock.json', 'scripts/*Dependency*.ps1', 'scripts/Build-WindowsDependencies.ps1') }}
@@ -66,3 +71,10 @@ jobs:
             .dependencies/tool-versions.txt
             .dependencies/CMakeCache-*.txt
           retention-days: 14
+      # Preserve completed package builds even if a later export/probe fails.
+      # Only ABI-addressed archives are saved; never partial installed trees.
+      - uses: actions/cache/save@v4
+        if: ${{ always() && steps.restore-cache.outcome == 'success' && steps.restore-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: .dependencies/binary-cache
+          key: ${{ steps.restore-cache.outputs.cache-primary-key }}
