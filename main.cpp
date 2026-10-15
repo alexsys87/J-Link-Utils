@@ -34,7 +34,9 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #include <imgui_color.h>
 
 #include "XMLEditor.h"
+#include "DesignMode.h"
 #include "widget_common.h"
+#include "res/app_icon.h"
 
 // ------------------------------------------------------------------
 // Helper functions
@@ -86,6 +88,8 @@ MainContext* allocate_context() {
 	ctx->openfile = false;
 	ctx->show_style_editor = false;
     ctx->show_xml_editor = false;
+    ctx->xml_revision = 0;
+    ctx->design_mode = false;
     ctx->CurrentXMLDoc = nullptr;
     ctx->jlink_opened = false;
     ctx->StateMinimized = false;
@@ -128,6 +132,7 @@ void free_context(MainContext* ctx)
     if (!ctx) return;
     StopCommunication(ctx);
     ResetXMLEditorState();
+    DesignMode::Reset();
     ClearAllWindows();
     if (ctx->CurrentXMLDoc) delete ctx->CurrentXMLDoc;
 
@@ -138,6 +143,33 @@ void free_context(MainContext* ctx)
 
     SDL_free(ctx->IOMAP_Data);
     delete ctx;
+}
+
+// ------------------------------------------------------------------
+// Application icon (res/app_icon.h, made by res/make_icon.py)
+// ------------------------------------------------------------------
+
+// The executable carries the same icon as a resource (app.rc) for Explorer and the taskbar;
+// this sets it on the window itself.
+static void SetAppIcon(SDL_Window* window)
+{
+    SDL_Surface* icon = SDL_CreateRGBSurfaceWithFormatFrom((void*)kAppIconPixels, kAppIconSize, kAppIconSize,
+        32, kAppIconSize * 4, SDL_PIXELFORMAT_RGBA32);
+    if (!icon) return;
+    SDL_SetWindowIcon(window, icon);
+    SDL_FreeSurface(icon);
+}
+
+// Texture of the icon for the About window
+static SDL_Texture* g_AppIconTexture = nullptr;
+
+static SDL_Texture* CreateAppIconTexture(SDL_Renderer* renderer)
+{
+    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, kAppIconSize, kAppIconSize);
+    if (!texture) return nullptr;
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_UpdateTexture(texture, nullptr, kAppIconPixels, kAppIconSize * 4);
+    return texture;
 }
 
 // ------------------------------------------------------------------
@@ -161,6 +193,7 @@ bool NewFile(MainContext* ctx) {
 
     // Close the current document, if any
     ResetXMLEditorState();
+    DesignMode::Reset();
     if (ctx->CurrentXMLDoc) {
         delete ctx->CurrentXMLDoc;
         ctx->CurrentXMLDoc = nullptr;
@@ -205,6 +238,7 @@ bool OpenFile(MainContext* ctx)
     ctx->show_style_editor = false;
 
     ResetXMLEditorState();
+    DesignMode::Reset();
     if (ctx->CurrentXMLDoc) {
         delete ctx->CurrentXMLDoc;
         ctx->CurrentXMLDoc = nullptr;
@@ -241,6 +275,7 @@ bool CloseFile(MainContext* ctx)
     ctx->File_path[0] = '\0';
 
     ResetXMLEditorState();
+    DesignMode::Reset();
     if (ctx->CurrentXMLDoc) {
         delete ctx->CurrentXMLDoc;
         ctx->CurrentXMLDoc = nullptr;
@@ -763,6 +798,15 @@ void ShowMenuWindow(MainContext* ctx)
     if (ImGui::MenuItem("XML Editor", NULL, &ctx->show_xml_editor)) {
         // nothing to do
     }
+    bool design = ctx->design_mode;
+    if (ImGui::MenuItem("Design Mode", "Ctrl+E", &design, DesignMode::CanEnable(ctx))) {
+        DesignMode::SetEnabled(ctx, design);
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", DesignMode::CanEnable(ctx)
+            ? "Edit the widgets with the mouse: select, move, resize, and change their properties"
+            : "Open or create an XML file first");
+    }
 }
 
 void ShowMenuSettings(MainContext* ctx)
@@ -959,9 +1003,15 @@ void ShowAbout(bool* p_open)
         return;
     }
 
+    if (g_AppIconTexture) {
+        ImGui::Image((ImTextureID)(intptr_t)g_AppIconTexture, ImVec2(64.0f, 64.0f));
+        ImGui::SameLine();
+    }
+    ImGui::BeginGroup();
     ImGui::Text("J-Link Utils");
-    ImGui::Separator();
     ImGui::Text("Version 2.0");
+    ImGui::EndGroup();
+    ImGui::Separator();
     ImGui::Text("A utility application for debugging and configuring microcontrollers via J-Link.");
     ImGui::Text("Built with SDL2, ImGui, and ImPlot.");
     ImGui::Text(" ");
@@ -1223,6 +1273,8 @@ int main(int argc, char* argv[])
     else
         SDL_Log("Window Initialized successfully");
 
+    SetAppIcon(ctx->Wimdow);
+
     SDL_RendererInfo info;
     int n = SDL_GetNumRenderDrivers();
     if (n == 0) {
@@ -1256,6 +1308,8 @@ int main(int argc, char* argv[])
         SDL_Log("Renderer Initialized successfully");
 
     SDL_SetWindowResizable(ctx->Wimdow, SDL_TRUE);
+
+    g_AppIconTexture = CreateAppIconTexture(ctx->Renderer);
 
     ImGui::CreateContext();
     ImPlot::CreateContext();
@@ -1392,6 +1446,9 @@ int main(int argc, char* argv[])
                     case SDL_SCANCODE_Q:
                         ctx->closefile = true;
                         break;
+                    case SDL_SCANCODE_E:
+                        DesignMode::SetEnabled(ctx, !ctx->design_mode);
+                        break;
                     default:
                         break;
                     }
@@ -1477,6 +1534,7 @@ int main(int argc, char* argv[])
     ImGui_ImplSDL2_Shutdown();
     ImGui_ImplSDLRenderer2_Shutdown();
 
+    if (g_AppIconTexture) SDL_DestroyTexture(g_AppIconTexture);
     SDL_DestroyRenderer(ctx->Renderer);
     SDL_DestroyWindow(ctx->Wimdow);
 

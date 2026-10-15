@@ -4,6 +4,7 @@
 #include "Main.h"
 #include "widget_common.h"
 #include "WidgetTemplateFactory.h"
+#include "DesignMode.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -30,6 +31,8 @@ extern "C" void SmokeAssertFailed(const char* expr, const char* file, int line) 
 static std::vector<uint8_t> g_memory(IOMAP_SIZE);
 static const uint32_t kBase = 0x20000000;
 
+static int g_writes = 0;   // writes to the target, counted while the design mode is tested
+
 static bool Mapped(uint32_t addr, uint32_t size) {
     return addr >= kBase && (uint64_t)addr - kBase + size <= IOMAP_SIZE;
 }
@@ -39,7 +42,7 @@ static T Access(uint32_t* addr, T* val) {
     T out{};
     if (!addr || !Mapped(*addr, sizeof(T))) return out;
     uint8_t* p = g_memory.data() + (*addr - kBase);
-    if (val) std::memcpy(p, val, sizeof(T));
+    if (val) { std::memcpy(p, val, sizeof(T)); ++g_writes; }
     std::memcpy(&out, p, sizeof(T));
     return out;
 }
@@ -53,7 +56,7 @@ extern "C" {
     uint64_t DataReadWriteU64(MainContext*, XMLElement*, uint64_t* val, uint32_t* addr) { return Access(addr, val); }
     uint16_t DataReadWriteArray(MainContext*, XMLElement*, uint8_t* data, uint32_t* addr, uint16_t size) {
         if (!addr || !Mapped(*addr, size)) return 0;
-        if (data) std::memcpy(g_memory.data() + (*addr - kBase), data, size);
+        if (data) { std::memcpy(g_memory.data() + (*addr - kBase), data, size); ++g_writes; }
         return size;
     }
     void StartCommunication(MainContext*) {}
@@ -169,6 +172,82 @@ static void DrawWindows(MainContext* ctx) {
     g_window = "(editor)";
 }
 
+// Design mode: one frame with the given mouse buttons and keys (keys are pressed and released).
+static void DesignFrame(MainContext* ctx, ImVec2 mouse, bool left, bool right = false,
+    std::initializer_list<ImGuiKey> keys = {}, bool ctrl = false, bool shift = false) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.DeltaTime = 1.0f / 60.0f;
+    g_time += io.DeltaTime;
+    io.AddMousePosEvent(mouse.x, mouse.y);
+    io.AddMouseButtonEvent(0, left);
+    io.AddMouseButtonEvent(1, right);
+    io.AddKeyEvent(ImGuiMod_Ctrl, ctrl);
+    io.AddKeyEvent(ImGuiMod_Shift, shift);
+    for (ImGuiKey k : keys) io.AddKeyEvent(k, true);
+    ImGui::NewFrame();
+    Draw_Window(ctx);
+    ImGui::Render();
+    for (ImGuiKey k : keys) io.AddKeyEvent(k, false);
+}
+
+// Clicks, drags (moving widgets, and resizing them where a handle is hit), right clicks and
+// the shortcuts over every window in design mode. Leaf widgets must not write to the target.
+static void DrawDesign(MainContext* ctx) {
+    g_window = "(design mode)";
+    std::fill(g_memory.begin(), g_memory.end(), 0);   // no DoneAddr flag set: nothing to clear
+    DesignMode::SetEnabled(ctx, true);
+    if (!ctx->design_mode) { std::fprintf(stderr, "case %s: design mode not enabled\n", g_case); std::exit(1); }
+    g_writes = 0;
+    const uint32_t revision = ctx->xml_revision;
+    const ImVec2 off(-100.0f, -100.0f);
+    DesignFrame(ctx, off, false);
+    const bool bigContainers = std::strncmp(g_case, "inside ", 7) == 0;
+    const size_t windowCount = g_Windows.size();
+    for (size_t w = 0; w < windowCount && w < g_Windows.size(); ++w) {
+        for (size_t i = 0; i < g_Windows.size(); ++i) g_Windows[i].show = (i == w);
+        g_window = g_Windows[w].name + " (design)";
+        const std::string name = g_Windows[w].name;
+        DesignFrame(ctx, off, false);
+        for (int point = 0; point < 16; ++point) {
+            ImGuiWindow* window = ImGui::FindWindowByName(name.c_str());
+            if (!window) break;
+            const ImVec2 at(window->Pos.x + window->Size.x * ((point % 4) + 0.5f) / 4.0f,
+                            window->Pos.y + window->Size.y * ((point / 4) + 0.5f) / 4.0f);
+            DesignFrame(ctx, at, true);                                   // press: select
+            DesignFrame(ctx, ImVec2(at.x + 9.0f, at.y + 7.0f), true);     // drag
+            DesignFrame(ctx, ImVec2(at.x + 23.0f, at.y + 17.0f), true);
+            DesignFrame(ctx, ImVec2(at.x + 23.0f, at.y + 17.0f), false);  // release: commit
+            DesignFrame(ctx, ImVec2(at.x + 23.0f, at.y + 17.0f), false, false, { ImGuiKey_RightArrow, ImGuiKey_DownArrow });
+            if (point % 5 == 0) {
+                DesignFrame(ctx, at, false, true);                        // context menu
+                DesignFrame(ctx, at, false, false);
+                DesignFrame(ctx, off, false, false, { ImGuiKey_Escape });
+            }
+            // Duplicating a container that holds every widget (four times in a Grid) would exceed
+            // the vertex limit of one ImGui window, so these cases do not duplicate.
+            if (point % 7 == 3 && !bigContainers) DesignFrame(ctx, at, false, false, { ImGuiKey_D }, true);
+            if (point % 7 == 5) DesignFrame(ctx, at, false, false, { ImGuiKey_Delete });        // delete
+            if (point % 4 == 1) DesignFrame(ctx, at, false, false, { ImGuiKey_Z }, true);       // undo
+            if (point % 8 == 2) DesignFrame(ctx, at, false, false, { ImGuiKey_Z }, true, true); // redo
+        }
+    }
+    for (auto& win : g_Windows) win.show = true;
+    DesignFrame(ctx, off, false);
+    if (g_writes != 0) {
+        std::fprintf(stderr, "case %s: %d writes to the target in design mode\n", g_case, g_writes);
+        std::exit(1);
+    }
+    // The clicks and drags must have edited something (moves, nudges, deletions)
+    if (ctx->xml_revision == revision) {
+        std::fprintf(stderr, "case %s: the design mode changed nothing\n", g_case);
+        std::exit(1);
+    }
+    std::printf("design mode: %u changes\n", (unsigned)(ctx->xml_revision - revision));
+    DesignMode::SetEnabled(ctx, false);
+    DesignMode::Reset();
+    g_window = "(editor)";
+}
+
 // Draws the editor's property panel for every node of the document.
 static void DrawEditor(MainContext* ctx, tinyxml2::XMLNode* node) {
     for (tinyxml2::XMLNode* n = node; n; n = n->NextSibling()) {
@@ -241,8 +320,12 @@ static int RunCase(MainContext* ctx, const char* name, tinyxml2::XMLDocument& do
     ctx->CurrentXMLDoc = &doc;
     DrawEditor(ctx, doc.FirstChild());
     g_selectedNode = nullptr;
+    const int loaded = (int)g_Windows.size();
+    DrawDesign(ctx);
+    ResetXMLEditorState();
+    ClearAllWindows();
     ctx->CurrentXMLDoc = nullptr;
-    return (int)g_Windows.size();
+    return loaded;
 }
 
 // ------------------------------------------------------------------

@@ -37,6 +37,7 @@ namespace WidgetTemplateFactory {
         bool attribute = false;             // stored as an XML attribute instead of a child element
         std::vector<EnumOption> options;    // PropKind::Enum
         const char* help = nullptr;         // tooltip in the editor
+        bool layout = false;                // position or size set by the design mode; listed even when missing
     };
 
     // Overrides of item property values for the sample items of a new widget.
@@ -49,6 +50,8 @@ namespace WidgetTemplateFactory {
         const char* itemTag = nullptr;      // element type in that list; nullptr means any widget
         std::vector<Sample> samples;        // list items written into a new widget
         bool listed = true;                 // offered in the "add widget" list
+        bool placeable = true;              // takes <PosX>/<PosY>: can be placed anywhere in its window
+        bool itemWidth = false;             // takes <ItemWidth>: a standard input field with a label
     };
 
     // All widget types the loader supports.

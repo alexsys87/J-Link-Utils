@@ -135,6 +135,8 @@ typedef struct MainContext {
 	bool show_style_editor;               // show the style editor
     bool show_xml_editor;                 // show the XML editor
     bool xml_modified;                    // XML has unsaved changes
+    uint32_t xml_revision;                // incremented by every change of CurrentXMLDoc
+    bool design_mode;                     // widgets are edited with the mouse (Editor/DesignMode.cpp)
     bool openfile, closefile;
 
     //J-link
@@ -144,6 +146,13 @@ typedef struct MainContext {
     uint32_t   mcu_memory_base;           // MCU memory base address for Cortex-M (usually 0x20000000)
 } MainContext;
 
+
+// Every change of ctx->CurrentXMLDoc goes through here: the design mode rebuilds the
+// windows from the document when the revision changes.
+inline void MarkXMLModified(MainContext* ctx) {
+    ctx->xml_modified = true;
+    ++ctx->xml_revision;
+}
 
 int Draw_Window(MainContext* ctx);
 

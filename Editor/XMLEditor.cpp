@@ -143,8 +143,8 @@ static void InvalidNote(const char* what) {
     ImGui::TextColored(kWarningColor, "%s", what);
 }
 
-static bool EditKnownValue(const wtf::PropDef& prop, const char* text, std::string& out) {
-    ImGui::SetNextItemWidth(220.0f);
+bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& out, float width) {
+    ImGui::SetNextItemWidth(width);
     switch (prop.kind) {
     case wtf::PropKind::Int: {
         int value = 0;
@@ -264,7 +264,7 @@ static bool EditGuessedValue(const char* name, const char* text, std::string& ou
         address.name = name;
         address.kind = wtf::PropKind::Address;
         address.defaultValue = "0";
-        return EditKnownValue(address, text, out);
+        return EditPropertyValue(address, text, out);
     }
     ImVec4 color;
     bool boolValue = false;
@@ -295,7 +295,7 @@ static bool EditGuessedValue(const char* name, const char* text, std::string& ou
 // ------------------------------------------------------------------
 // Widget picker popup: returns the chosen widget type
 // ------------------------------------------------------------------
-static const wtf::NodeDef* WidgetPicker(const char* popupId) {
+const wtf::NodeDef* WidgetPickerPopup(const char* popupId) {
     const wtf::NodeDef* chosen = nullptr;
     if (!ImGui::BeginPopup(popupId)) return nullptr;
     if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
@@ -407,9 +407,9 @@ static bool ShowAttributes(XMLElement* element, const wtf::NodeDef* def, MainCon
             HelpTooltip(prop);
             ImGui::SameLine(140.0f);
             std::string value;
-            if (EditKnownValue(*prop, attrs[i].second.c_str(), value)) {
+            if (EditPropertyValue(*prop, attrs[i].second.c_str(), value)) {
                 element->SetAttribute(prop->name, value.c_str());
-                ctx->xml_modified = true;
+                MarkXMLModified(ctx);
             }
         }
         else {
@@ -424,19 +424,19 @@ static bool ShowAttributes(XMLElement* element, const wtf::NodeDef* def, MainCon
                 IsValidTagName(nameBuf)) {
                 element->DeleteAttribute(attrs[i].first.c_str());
                 element->SetAttribute(nameBuf, valueBuf);
-                ctx->xml_modified = true;
+                MarkXMLModified(ctx);
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(220.0f);
             if (ImGui::InputText("##value", valueBuf, sizeof(valueBuf))) {
                 element->SetAttribute(attrs[i].first.c_str(), valueBuf);
-                ctx->xml_modified = true;
+                MarkXMLModified(ctx);
             }
         }
         ImGui::SameLine();
         if (ImGui::Button("X")) {
             element->DeleteAttribute(attrs[i].first.c_str());
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
             ImGui::PopID();
             return true;
         }
@@ -453,7 +453,7 @@ static bool ShowAttributes(XMLElement* element, const wtf::NodeDef* def, MainCon
     if (ImGui::Button("Add") && IsValidTagName(g_newAttrName)) {
         element->SetAttribute(g_newAttrName, g_newAttrValue);
         g_newAttrName[0] = g_newAttrValue[0] = '\0';
-        ctx->xml_modified = true;
+        MarkXMLModified(ctx);
     }
     return false;
 }
@@ -495,11 +495,11 @@ static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElemen
     }
     else {
         std::string value;
-        const bool changed = prop ? EditKnownValue(*prop, child->GetText(), value)
+        const bool changed = prop ? EditPropertyValue(*prop, child->GetText(), value)
                                   : EditGuessedValue(childName, child->GetText(), value);
         if (changed) {
             child->SetText(value.c_str());
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
         }
     }
 
@@ -511,7 +511,7 @@ static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElemen
             XMLNode* prevPrev = prev ? prev->PreviousSibling() : nullptr;
             if (prevPrev) element->InsertAfterChild(prevPrev, child);
             else element->InsertFirstChild(child);
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
             restart = true;
         }
     }
@@ -520,7 +520,7 @@ static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElemen
         if (ImGui::ArrowButton("##down", ImGuiDir_Down)) {
             XMLNode* next = child->NextSiblingElement();
             if (next) element->InsertAfterChild(next, child);
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
             restart = true;
         }
     }
@@ -528,7 +528,7 @@ static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElemen
         ImGui::SameLine();
         if (ImGui::SmallButton("X")) {
             element->DeleteChild(child);
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
             restart = true;
         }
     }
@@ -571,7 +571,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         if (ImGui::InputText("Tag name", elemName, sizeof(elemName), ImGuiInputTextFlags_EnterReturnsTrue)) {
             if (IsValidTagName(elemName)) {
                 element->SetName(elemName);
-                ctx->xml_modified = true;
+                MarkXMLModified(ctx);
             }
         }
 
@@ -582,9 +582,9 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
             HelpTooltip(ownProp);
             ImGui::SameLine(140.0f);
             std::string value;
-            if (EditKnownValue(*ownProp, element->GetText(), value)) {
+            if (EditPropertyValue(*ownProp, element->GetText(), value)) {
                 element->SetText(value.c_str());
-                ctx->xml_modified = true;
+                MarkXMLModified(ctx);
             }
             ImGui::PopID();
         }
@@ -602,7 +602,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
                 textBuf[sizeof(textBuf) - 1] = '\0';
                 if (ImGui::InputTextMultiline("##text", textBuf, sizeof(textBuf), ImVec2(-1, 60))) {
                     element->SetText(textBuf);
-                    ctx->xml_modified = true;
+                    MarkXMLModified(ctx);
                 }
             }
         }
@@ -632,7 +632,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
                     std::string label = std::string(prop->name) + (prop->inTemplate ? "" : "  (old format)");
                     if (ImGui::Selectable(label.c_str())) {
                         wtf::AddProperty(element, *prop);
-                        ctx->xml_modified = true;
+                        MarkXMLModified(ctx);
                     }
                     HelpTooltip(prop);
                 }
@@ -650,7 +650,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
                     XMLElement* item = wtf::CreateItem(doc, *owner);
                     if (item) {
                         wtf::EnsureList(ownerElement, *owner)->InsertEndChild(item);
-                        ctx->xml_modified = true;
+                        MarkXMLModified(ctx);
                     }
                 }
             }
@@ -659,11 +659,11 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
                     g_widgetFilter[0] = '\0';
                     ImGui::OpenPopup("AddChildWidgetPopup");
                 }
-                if (const wtf::NodeDef* chosen = WidgetPicker("AddChildWidgetPopup")) {
+                if (const wtf::NodeDef* chosen = WidgetPickerPopup("AddChildWidgetPopup")) {
                     XMLElement* widget = wtf::CreateNode(doc, *chosen);
                     wtf::EnsureList(ownerElement, *owner)->InsertEndChild(widget);
                     g_selectedNode = widget;
-                    ctx->xml_modified = true;
+                    MarkXMLModified(ctx);
                     return;
                 }
             }
@@ -674,7 +674,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
             tinyxml2::XMLComment* newComment = doc->NewComment("New comment");
             XMLElement* container = (def && def->listTag) ? wtf::EnsureList(element, *def) : element;
             container->InsertEndChild(newComment);
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
         }
         ImGui::SameLine();
 
@@ -683,7 +683,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
             if (parentNode)
                 parentNode->DeleteChild(node);
             g_selectedNode = nullptr;
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
             return;
         }
     }
@@ -694,14 +694,14 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         textBuf[sizeof(textBuf) - 1] = '\0';
         if (ImGui::InputTextMultiline("Text", textBuf, sizeof(textBuf))) {
             textNode->SetValue(textBuf);
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
         }
         if (ImGui::Button("Delete this node")) {
             XMLNode* parentNode = node->Parent();
             if (parentNode)
                 parentNode->DeleteChild(node);
             g_selectedNode = nullptr;
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
             return;
         }
     }
@@ -713,14 +713,14 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         commentBuf[sizeof(commentBuf) - 1] = '\0';
         if (ImGui::InputTextMultiline("##comment", commentBuf, sizeof(commentBuf))) {
             commentNode->SetValue(commentBuf);
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
         }
         if (ImGui::Button("Delete this comment")) {
             XMLNode* parentNode = node->Parent();
             if (parentNode)
                 parentNode->DeleteChild(node);
             g_selectedNode = nullptr;
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
             return;
         }
     }
@@ -776,7 +776,7 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         XMLElement* newWindow = wtf::CreateNewWindow(ctx->CurrentXMLDoc);
         ctx->CurrentXMLDoc->InsertEndChild(newWindow);
         g_selectedNode = newWindow;
-        ctx->xml_modified = true;
+        MarkXMLModified(ctx);
     }
     ImGui::SameLine();
 
@@ -800,13 +800,13 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         }
     }
 
-    if (const wtf::NodeDef* chosen = WidgetPicker("AddWidgetPopup")) {
+    if (const wtf::NodeDef* chosen = WidgetPickerPopup("AddWidgetPopup")) {
         XMLElement* selected = g_selectedNode ? g_selectedNode->ToElement() : nullptr;
         if (!selected && g_selectedNode) selected = ParentElement(g_selectedNode);
         XMLElement* widget = wtf::CreateNode(ctx->CurrentXMLDoc, *chosen);
         if (wtf::InsertWidget(ctx->CurrentXMLDoc, selected, widget)) {
             g_selectedNode = widget;
-            ctx->xml_modified = true;
+            MarkXMLModified(ctx);
         }
         else {
             ctx->CurrentXMLDoc->DeleteNode(widget);
