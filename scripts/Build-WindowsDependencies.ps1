@@ -47,19 +47,33 @@ $archive = Join-Path $state "vcpkg-tool-$($lock.toolVersion).zip"
 if (-not (Test-Path $archive)) { Invoke-WebRequest -Uri $lock.toolSourceUrl -OutFile $archive }
 Assert-Hash $archive $lock.toolSourceSha512
 $toolSource = Join-Path $state "tool-source-$($lock.toolVersion)"
+# An older bootstrap cache can still point at the January tool sources.
+# Discard only that build directory when the source version changes; retain
+# downloads, installed libraries and the vcpkg binary cache.
+$previousToolBuild = Join-Path $state 'tool-build'
+$previousToolCache = Join-Path $previousToolBuild 'CMakeCache.txt'
+if (Test-Path -LiteralPath $previousToolCache) {
+    $sourceEntry = @(Get-Content -LiteralPath $previousToolCache | Where-Object { $_ -match '^CMAKE_HOME_DIRECTORY:INTERNAL=' })
+    if ($sourceEntry.Count -ne 1 -or
+        [IO.Path]::GetFullPath(($sourceEntry[0] -split '=', 2)[1]) -ine [IO.Path]::GetFullPath($toolSource)) {
+        Write-Host 'Removing outdated vcpkg-tool build cache (tool source version changed).'
+        Remove-Item -LiteralPath $previousToolBuild -Recurse -Force
+    }
+}
 if (-not (Test-Path $toolSource)) {
     New-Item -ItemType Directory $toolSource | Out-Null
     try { Invoke-Native tar @('-xf', $archive, '--strip-components=1', '-C', $toolSource) }
     catch { Remove-Item -Recurse -Force $toolSource; throw }
 }
-# Keep the cache separate when the pinned tool source changes; otherwise CMake
-# rejects an existing cache that still points at tool-source-2025-01-11.
-$toolBuild = Join-Path $state "tool-build-$($lock.toolVersion)"
+$toolBuild = Join-Path $state 'tool-build'
 $toolConfigureArguments = @('-S', $toolSource, '-B', $toolBuild, '-G', $Generator, '-A', 'x64',
     '-DBUILD_TESTING=OFF', '-DVCPKG_DEVELOPMENT_WARNINGS=OFF', '-DVCPKG_MSVC_ANALYZE=OFF',
     "-DVCPKG_BASE_VERSION=$($lock.toolVersion)", "-DVCPKG_VERSION=$($lock.toolCommit)")
-# Apply the CMake 4 compatibility floor to the bootstrap's nested dependencies
-# only. Do not alter pinned sources or change policies globally for ports.
+# The pinned vcpkg-tool embeds CMakeRC with a pre-3.5 policy baseline.
+# CMake 4 rejects that baseline. Apply the supported compatibility override only
+# to this bootstrap configure (including its FetchContent subdirectories), not
+# globally to vcpkg ports or the application. 3.10 also avoids CMake 4's warning
+# about policy compatibility older than 3.10. Keep the hash-pinned sources intact.
 $cmakeCapabilitiesJson = & cmake -E capabilities
 if ($LASTEXITCODE -ne 0) { throw "cmake -E capabilities failed with exit code $LASTEXITCODE" }
 $cmakeCapabilities = ($cmakeCapabilitiesJson -join "`n") | ConvertFrom-Json
