@@ -1,4 +1,5 @@
 #pragma once
+#include "../../JLinkConnection.h"
 // Test-only SDL/J-Link facade. Production DataHelper.cpp is compiled unchanged.
 #include <atomic>
 #include <algorithm>
@@ -37,7 +38,7 @@ struct MainContext {
     uint8_t* IOMAP_Data{};
     lfqueue_t tx_Queue{};
     std::atomic<bool> StartComunication{false};
-    bool jlink_opened{};
+    std::atomic<bool> jlink_opened{false};
     uint32_t mcu_memory_base = 0x20000000;
     char jlink_device[64] = "Cortex-M0";
 };
@@ -50,6 +51,13 @@ int JLINKARM_Connect();
 int JLINKARM_GetSpeed();
 void JLINKARM_SetMaxSpeed();
 void JLINKARM_SetSpeed(int);
+struct JLINKARM_HW_STATUS { uint16_t VTarget; };
+struct JLINKARM_DEVICE_INFO { unsigned SizeOfStruct; const char* sName; };
+int JLINKARM_GetHWStatus(JLINKARM_HW_STATUS*);
+char JLINKARM_IsConnected();
+int JLINKARM_GetSN();
+int JLINKARM_EMU_SelectByUSBSN(uint32_t);
+int JLINKARM_DEVICE_GetInfo(int, JLINKARM_DEVICE_INFO*);
 int JLINKARM_ReadMemEx(uint32_t, uint32_t, void*, uint32_t);
 int JLINKARM_WriteMemEx(uint32_t, uint32_t, const void*, uint32_t);
 extern "C" void StartCommunication(MainContext*);

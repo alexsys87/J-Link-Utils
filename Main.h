@@ -3,6 +3,7 @@
 
 #define main SDL_main
 #include <atomic>
+#include "JLinkConnection.h"
 #include <SDL.h>
 #include <SDL_syswm.h>
 
@@ -140,7 +141,7 @@ typedef struct MainContext {
     bool openfile, closefile;
 
     //J-link
-    bool jlink_opened;                    // J-Link opened successfully
+    std::atomic<bool> jlink_opened{false}; // observed by UI; SDK session owned by worker
     bool auto_connect;                    // connect automatically on start
     char jlink_device[64];                // J-Link device name
     uint32_t   mcu_memory_base;           // MCU memory base address for Cortex-M (usually 0x20000000)

@@ -842,6 +842,43 @@ void ShowMenuWindow(MainContext* ctx)
     }
 }
 
+static const char* ConnectionStateText(JLinkConnectionState state)
+{
+    switch (state) {
+    case JLinkConnectionState::Connecting: return "Connecting";
+    case JLinkConnectionState::Connected: return "Connected";
+    case JLinkConnectionState::Reconnecting: return "Reconnecting";
+    case JLinkConnectionState::Failed: return "Connection failed";
+    case JLinkConnectionState::Stopping: return "Disconnecting";
+    default: return "Disconnected";
+    }
+}
+
+static void ShowConnectionStatus(bool details)
+{
+    const auto status = GetJLinkConnectionStatus();
+    const ImVec4 color = status.state == JLinkConnectionState::Connected ? ImVec4(0, 1, 0, 1) :
+        status.state == JLinkConnectionState::Failed ? ImVec4(1, 0.35f, 0.25f, 1) : ImVec4(1, 0.75f, 0.2f, 1);
+    ImGui::TextColored(color, "J-Link: %s%s", ConnectionStateText(status.state),
+        status.lastError.empty() && !status.writeMayHaveCompleted ? "" : " (!)");
+    if (ImGui::IsItemHovered() && (!status.lastError.empty() || status.writeMayHaveCompleted))
+        ImGui::SetTooltip("Last error: %s%s", status.lastError.c_str(), status.writeMayHaveCompleted ?
+            "\nA write may have partially completed. Check the target; pending writes were discarded." : "");
+    if (details) {
+        if (status.attempt) ImGui::Text("Attempt %u of 5", status.attempt);
+        if (status.retryInMs) ImGui::Text("Next attempt in %.1f s", status.retryInMs / 1000.0);
+        if (!status.lastError.empty()) {
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 500.0f);
+            ImGui::TextWrapped("Last error: %s", status.lastError.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        if (status.writeMayHaveCompleted)
+            ImGui::TextWrapped("A write may have partially completed. Check the target before writing again; pending writes were discarded.");
+        if (status.state == JLinkConnectionState::Failed)
+            ImGui::TextDisabled("Automatic attempts stopped. Fix the cause and press Connect to retry.");
+    }
+}
+
 void ShowMenuSettings(MainContext* ctx)
 {
     // --- MCU base address (hex input) ---
@@ -874,22 +911,15 @@ void ShowMenuSettings(MainContext* ctx)
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Automatically connect to J-Link on program start.");
 
-    // --- Connect / Disconnect button with status ---
+    // Cancel remains available during connection and retry backoff.
     ImGui::SameLine();
-    if (ctx->StartComunication) {
-        if (ImGui::Button("Disconnect")) {
+    if (IsCommunicationRequested()) {
+        if (ImGui::Button(ctx->StartComunication ? "Disconnect" : "Cancel connection"))
             StopCommunication(ctx);
-        }
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0, 1, 0, 1), "Connected");
+    } else if (ImGui::Button("Connect")) {
+        StartCommunication(ctx);
     }
-    else {
-        if (ImGui::Button("Connect")) {
-            StartCommunication(ctx);
-        }
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1, 0, 0, 1), "Disconnected");
-    }
+    ShowConnectionStatus(true);
 
     // --- J-Link device selection with filterable list ---
     ImGui::AlignTextToFramePadding();
@@ -903,19 +933,11 @@ void ShowMenuSettings(MainContext* ctx)
     static bool init_done = false;
 
     // Build the device list on the first call
-    if (!init_done) {
-        int numDevices = JLINKARM_DEVICE_GetInfo(-1, NULL);
-        if (numDevices > 0) {
-            for (int i = 0; i < numDevices; ++i) {
-                JLINKARM_DEVICE_INFO info{};
-                info.SizeOfStruct = sizeof(JLINKARM_DEVICE_INFO);
-                if (JLINKARM_DEVICE_GetInfo(i, &info) == 0 && info.sName) {
-                    all_devices.push_back(info.sName);
-                    std::string lower = info.sName;
-                    for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-                    all_devices_lower.push_back(lower);
-                }
-            }
+    if (!init_done && TryGetJLinkDeviceNames(all_devices)) {
+        for (const std::string& name : all_devices) {
+            std::string lower = name;
+            for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+            all_devices_lower.push_back(lower);
         }
         // If the list is empty, add the current device
         if (all_devices.empty()) {
@@ -1142,6 +1164,8 @@ static void MenuWindow(MainContext* ctx)
                 ImGui::MenuItem("About..", NULL, &show_app_about);
                 ImGui::EndMenu();
             }
+
+            ShowConnectionStatus(false);
 
             if (ctx->openfile)
                 if (OpenFile(ctx)) ctx->openfile = false;

@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <condition_variable>
+#include "JLinkConnection.h"
 
 using namespace tinyxml2;
 
@@ -75,6 +77,8 @@ static std::vector<uint64_t> g_polled;     // bytes the communication thread rea
 static bool g_polledChanged = false;
 // Incremented on every write-through to the cache (under Datalock).
 static std::atomic<uint32_t> g_writeSequence{0};
+// Reject a producer that allocated a request in an earlier connection session.
+static std::atomic<uint64_t> g_sessionSequence{0};
 
 // Sets the bits [first, first + count); returns true if any of them was clear.
 static bool MarkBits(std::vector<uint64_t>& bits, uint32_t first, uint32_t count)
@@ -239,6 +243,65 @@ static void ClearSubscriptions()
     g_streams.clear();
 }
 
+// The worker owns the session. The mutex also excludes device enumeration in
+// Settings; that UI path uses try_lock and never waits for a USB transaction.
+static std::mutex g_sdkMutex;
+static std::mutex g_statusMutex;
+static JLinkConnectionStatus g_status;
+static std::atomic<bool> g_commRunning{false};
+static std::condition_variable g_wake;
+static std::mutex g_waitMutex;
+static std::chrono::steady_clock::time_point g_retryAt;
+
+JLinkConnectionStatus GetJLinkConnectionStatus()
+{
+    std::lock_guard<std::mutex> lock(g_statusMutex);
+    auto status = g_status;
+    if (status.state == JLinkConnectionState::Reconnecting) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            g_retryAt - std::chrono::steady_clock::now()).count();
+        status.retryInMs = remaining > 0 ? static_cast<unsigned>(remaining) : 0;
+    }
+    return status;
+}
+
+bool IsCommunicationRequested() { return g_commRunning; }
+
+bool TryGetJLinkDeviceNames(std::vector<std::string>& names)
+{
+    std::unique_lock<std::mutex> lock(g_sdkMutex, std::try_to_lock);
+    if (!lock.owns_lock()) return false;
+    names.clear();
+    const int count = JLINKARM_DEVICE_GetInfo(-1, nullptr);
+    for (int i = 0; i < count; ++i) {
+        JLINKARM_DEVICE_INFO info{};
+        info.SizeOfStruct = sizeof(info);
+        if (JLINKARM_DEVICE_GetInfo(i, &info) == 0 && info.sName)
+            names.emplace_back(info.sName);
+    }
+    return true;
+}
+
+static void SetConnectionStatus(JLinkConnectionState state, unsigned attempt = 0,
+    const std::string& error = {}, unsigned retryMs = 0)
+{
+    std::lock_guard<std::mutex> lock(g_statusMutex);
+    g_status.state = state;
+    g_status.attempt = attempt;
+    g_status.retryInMs = retryMs;
+    g_retryAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(retryMs);
+    // Keep the last failure visible after recovery, especially ambiguous writes.
+    if (!error.empty()) g_status.lastError = error;
+}
+
+// Unlike SDL_Delay, retry waits are interrupted by Disconnect/exit immediately.
+static bool WaitForCommunication(unsigned ms)
+{
+    std::unique_lock<std::mutex> lock(g_waitMutex);
+    g_wake.wait_for(lock, std::chrono::milliseconds(ms), [] { return !g_commRunning.load(); });
+    return g_commRunning;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -333,6 +396,7 @@ extern "C" {
     // next read completes.
     uint16_t DataWriteArray(MainContext* ctx, uint32_t phys_addr, const uint8_t* data, uint16_t size)
     {
+        const uint64_t session = g_sessionSequence;
         if (!ctx || !ctx->StartComunication || !data || size == 0) return 0;
         CHECK_PHYSICAL_ADDR(phys_addr, size);
         uint32_t offset = phys_addr - ctx->mcu_memory_base;
@@ -346,16 +410,17 @@ extern "C" {
         io_mem->value = buf;
         {
             std::lock_guard<std::mutex> guard(g_queueMutex);
-            if (!ctx->StartComunication || lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
+            if (!ctx->StartComunication || g_sessionSequence != session ||
+                lfqueue_enq(&ctx->tx_Queue, io_mem) != 0) {
                 SDL_free(buf);
                 SDL_free(io_mem);
                 return 0;
             }
+            SDL_LockMutex(ctx->Datalock);
+            memcpy(ctx->IOMAP_Data + offset, data, size);
+            ++g_writeSequence;
+            SDL_UnlockMutex(ctx->Datalock);
         }
-        SDL_LockMutex(ctx->Datalock);
-        memcpy(ctx->IOMAP_Data + offset, data, size);
-        ++g_writeSequence;
-        SDL_UnlockMutex(ctx->Datalock);
         return size;
     }
 
@@ -588,6 +653,7 @@ extern "C" {
     // Helper that sets the J-Link interface speed
     // ------------------------------------------------------------------
     void GetSetMaxSpeed(void) {
+        std::lock_guard<std::mutex> lock(g_sdkMutex);
         int v1, v2, v3;
         v1 = JLINKARM_GetSpeed();
         JLINKARM_SetMaxSpeed();
@@ -602,7 +668,6 @@ extern "C" {
     // Queued writes and read blocks hold offsets; J-Link gets base + offset.
     // ------------------------------------------------------------------
     static SDL_Thread* g_commThread = nullptr;
-    static std::atomic<bool> g_commRunning{false};
 
     // Queue nodes do not own their payloads. Always release both allocations.
     static void DrainQueue(lfqueue_t* queue)
@@ -617,7 +682,7 @@ extern "C" {
     // Executes queued writes in order. Of consecutive writes to the same range
     // (e.g. a dragged slider) only the last value is sent. Returns false on a
     // failed or short write.
-    static bool FlushWrites(MainContext* ctx, std::vector<iodata_t*>& batch)
+    static bool FlushWrites(MainContext* ctx, std::vector<iodata_t*>& batch, std::string& error)
     {
         batch.clear();
         {
@@ -630,9 +695,17 @@ extern "C" {
             iodata_t* io = batch[i];
             const bool superseded = i + 1 < batch.size() &&
                 batch[i + 1]->q.addr == io->q.addr && batch[i + 1]->q.size == io->q.size;
-            if (ok && !superseded) {
+            if (ok && !superseded && g_commRunning) {
+                std::lock_guard<std::mutex> lock(g_sdkMutex);
                 const int written = JLINKARM_WriteMemEx(ctx->mcu_memory_base + io->q.addr, io->q.size, io->value, 0);
                 ok = (written == io->q.size);
+                if (!ok) {
+                    std::lock_guard<std::mutex> statusLock(g_statusMutex);
+                    g_status.writeMayHaveCompleted = true;
+                }
+                if (!ok) error = "Write failed at " + std::to_string(ctx->mcu_memory_base + io->q.addr) +
+                    " (" + std::to_string(written) + "/" + std::to_string(io->q.size) +
+                    " bytes). Target may have been modified; pending writes discarded, not replayed.";
             }
             SDL_free(io->value);
             SDL_free(io);
@@ -640,24 +713,127 @@ extern "C" {
         return ok;
     }
 
+    // Block producers before draining: no write may cross a session boundary.
+    static void InvalidateSessionData(MainContext* ctx)
+    {
+        {
+            std::lock_guard<std::mutex> lock(g_queueMutex);
+            ctx->StartComunication = false;
+            ++g_sessionSequence;
+            DrainQueue(&ctx->tx_Queue);
+            SDL_LockMutex(ctx->Datalock);
+            memset(ctx->IOMAP_Data, 0, IOMAP_SIZE);
+            ++g_writeSequence;
+            SDL_UnlockMutex(ctx->Datalock);
+        }
+        ClearSubscriptions();
+    }
+
+    static void CloseSession(MainContext* ctx)
+    {
+        if (ctx->jlink_opened.exchange(false)) {
+            std::lock_guard<std::mutex> lock(g_sdkMutex);
+            JLINKARM_Close();
+        }
+    }
+
+    // No reset/halt is performed. A session always reapplies the selected target,
+    // interface and speed; reconnect never reuses a possibly broken DLL session.
+    static bool OpenSession(MainContext* ctx, int& serial, std::string& error)
+    {
+        std::lock_guard<std::mutex> lock(g_sdkMutex);
+        if (serial > 0 && JLINKARM_EMU_SelectByUSBSN(static_cast<uint32_t>(serial)) < 0) {
+            error = "Cannot select the original J-Link (serial " + std::to_string(serial) + ").";
+            return false;
+        }
+        const char* openError = JLINKARM_Open();
+        if (openError) { error = std::string("J-Link open failed: ") + openError; return false; }
+        ctx->jlink_opened = true;
+        // Pin even a failed target connection to this probe, not another USB probe.
+        const int openedSerial = JLINKARM_GetSN();
+        if (serial > 0 && openedSerial != serial) {
+            error = "J-Link serial does not match the original probe; refusing to use a different device.";
+            return false;
+        }
+        if (openedSerial > 0) serial = openedSerial;
+        if (!g_commRunning) return false;
+        char output[1024] = {};
+        char command[128];
+        snprintf(command, sizeof(command), "device = %s", ctx->jlink_device);
+        const int configured = JLINKARM_ExecCommand(command, output, sizeof(output));
+        output[sizeof(output) - 1] = 0;
+        if (configured != 0) {
+            error = "Target configuration failed (" + std::to_string(configured) + "): " + output;
+            return false;
+        }
+        const int interfaceResult = JLINKARM_TIF_Select(JLINKARM_TIF_SWD);
+        if (interfaceResult < 0) {
+            error = "Cannot select SWD (" + std::to_string(interfaceResult) + ").";
+            return false;
+        }
+        JLINKARM_SetSpeed(8000);
+        if (!g_commRunning) return false;
+        const int connected = JLINKARM_Connect();
+        if (connected < 0) {
+            error = "Target connection failed (" + std::to_string(connected) +
+                "). Check target power, SWD wiring and selected device.";
+            return false;
+        }
+        JLINKARM_HW_STATUS hw{};
+        const int health = JLINKARM_GetHWStatus(&hw);
+        if (health != 0 || !JLINKARM_IsConnected() || hw.VTarget == 0) {
+            error = health == 0 && hw.VTarget == 0 ?
+                "Target reference voltage is zero. Check target power and VTref wiring." :
+                "Target did not pass the connection health check (" + std::to_string(health) + ").";
+            return false;
+        }
+        return true;
+    }
+
+#ifndef JLINK_RETRY_BASE_MS
+#define JLINK_RETRY_BASE_MS 500
+#endif
+    static constexpr unsigned kMaxConnectionAttempts = 5;
+    static constexpr unsigned kHealthCheckMs = 250;
+
     static int CommunicationThreadFunc(void* data)
     {
-        MainContext* ctx = (MainContext*)data;
-
-        if (SDL_SetThreadPriority(SDL_THREAD_PRIORITY_TIME_CRITICAL) != 0) {
-            SDL_SetThreadPriority(SDL_THREAD_PRIORITY_NORMAL);
-        }
-
+        MainContext* ctx = static_cast<MainContext*>(data);
+        SDL_SetThreadPriority(SDL_THREAD_PRIORITY_NORMAL);
         std::vector<iodata_t*> writes;
         std::vector<ReadBlock> blocks;
         std::vector<uint8_t> buffer(kMaxBlockSize);
         auto expiry = std::chrono::steady_clock::now() + kSubscriptionLifetime;
+        auto healthAt = std::chrono::steady_clock::now();
+        unsigned attempt = 0;
+        int serial = 0;
+        bool recovering = false;
+        std::string error;
 
-        while (g_commRunning)
-        {
-            if (!ctx->StartComunication || !ctx->jlink_opened) {
-                SDL_Delay(50);
-                continue;
+        while (g_commRunning) {
+            if (!ctx->StartComunication) {
+                SetConnectionStatus(recovering ? JLinkConnectionState::Reconnecting :
+                    JLinkConnectionState::Connecting, ++attempt);
+                if (!OpenSession(ctx, serial, error)) {
+                    CloseSession(ctx);
+                    if (!g_commRunning) break;
+                    if (attempt >= kMaxConnectionAttempts) {
+                        SetConnectionStatus(JLinkConnectionState::Failed, attempt, error);
+                        break;
+                    }
+                    const unsigned delay = std::min(4000u, static_cast<unsigned>(JLINK_RETRY_BASE_MS) << (attempt - 1));
+                    SetConnectionStatus(JLinkConnectionState::Reconnecting, attempt, error, delay);
+                    if (!WaitForCommunication(delay)) break;
+                    recovering = true;
+                    continue;
+                }
+                if (!g_commRunning) break;
+                ctx->StartComunication = true;
+                attempt = 0;
+                SetConnectionStatus(JLinkConnectionState::Connected);
+                healthAt = std::chrono::steady_clock::now();
+                expiry = healthAt + kSubscriptionLifetime;
+                blocks.clear();
             }
             const auto cycleStart = std::chrono::steady_clock::now();
             const bool expired = cycleStart >= expiry;
@@ -669,116 +845,99 @@ extern "C" {
 
             bool ok = true;
             bool published = true;
-            if (blocks.empty())
-                ok = FlushWrites(ctx, writes);
+            if (cycleStart >= healthAt) {
+                // Probe health even when there are no visible widgets/subscriptions.
+                // This does not read arbitrary target memory/peripheral registers.
+                std::lock_guard<std::mutex> lock(g_sdkMutex);
+                JLINKARM_HW_STATUS hw{};
+                const int result = JLINKARM_GetHWStatus(&hw);
+                ok = result == 0 && JLINKARM_IsConnected() && hw.VTarget > 0;
+                if (!ok) error = result == 0 && hw.VTarget == 0 ?
+                    "Target reference voltage is zero. Check target power and VTref wiring." :
+                    "J-Link/target connection lost (health check " + std::to_string(result) + ").";
+                healthAt = cycleStart + std::chrono::milliseconds(kHealthCheckMs);
+            }
+            if (ok && blocks.empty()) ok = FlushWrites(ctx, writes, error);
             for (const ReadBlock& block : blocks) {
-                // Writes queued so far reach the target before this read, and a
-                // write queued while it runs is detected by the sequence number.
+                if (!ok || !g_commRunning) break;
                 const uint32_t sequence = g_writeSequence;
-                ok = FlushWrites(ctx, writes);
-                if (!ok) break;
+                ok = FlushWrites(ctx, writes, error);
+                if (!ok || !g_commRunning) break;
                 const auto readStart = std::chrono::steady_clock::now();
-                const int read = JLINKARM_ReadMemEx(ctx->mcu_memory_base + block.offset, block.size, buffer.data(), 0);
-                if (read != (int)block.size) {
+                int read;
+                {
+                    std::lock_guard<std::mutex> lock(g_sdkMutex);
+                    read = JLINKARM_ReadMemEx(ctx->mcu_memory_base + block.offset, block.size, buffer.data(), 0);
+                }
+                if (read != static_cast<int>(block.size)) {
+                    error = "Read failed at " + std::to_string(ctx->mcu_memory_base + block.offset) +
+                        " (" + std::to_string(read) + "/" + std::to_string(block.size) +
+                        " bytes). Cache invalidated; pending writes discarded.";
                     ok = false;
                     break;
                 }
-                // The middle of the J-Link call is the best estimate of when the target memory was read.
                 const auto readEnd = std::chrono::steady_clock::now();
                 RecordSamples(block.offset, block.size, buffer.data(),
                     SecondsSinceStart(readStart + (readEnd - readStart) / 2));
                 SDL_LockMutex(ctx->Datalock);
-                // A newer write already put its value into the cache; this block
-                // may predate it, so it is published on the next cycle instead.
                 if (g_writeSequence == sequence)
                     memcpy(ctx->IOMAP_Data + block.offset, buffer.data(), block.size);
-                else
-                    published = false;
+                else published = false;
                 SDL_UnlockMutex(ctx->Datalock);
             }
             if (!ok) {
-                ctx->StartComunication = false;
+                InvalidateSessionData(ctx);
+                blocks.clear();
+                CloseSession(ctx);
+                recovering = true;
+                SetConnectionStatus(JLinkConnectionState::Reconnecting, 0, error, JLINK_RETRY_BASE_MS);
+                if (!WaitForCommunication(JLINK_RETRY_BASE_MS)) break;
                 continue;
             }
-            if (published && !blocks.empty())
-                ++g_completedCycles;
+            if (published && !blocks.empty() && g_commRunning) ++g_completedCycles;
             if (std::chrono::steady_clock::now() - cycleStart < kMinCyclePeriod)
-                SDL_Delay(1);
+                WaitForCommunication(blocks.empty() ? 10 : 1);
         }
+        InvalidateSessionData(ctx);
+        CloseSession(ctx);
+        g_commRunning = false;
         return 0;
     }
 
+    // Lifecycle calls are UI-thread only. SDK Open/Connect/Close never run here.
     void StartCommunication(MainContext* ctx)
     {
-        if (!ctx || !ctx->Datalock || !ctx->IOMAP_Data) return;
-        if (ctx->StartComunication && g_commThread) return;
-        // Reconnect after an I/O failure must not reuse the failed session.
+        if (!ctx || !ctx->Datalock || !ctx->IOMAP_Data || g_commRunning) return;
         StopCommunication(ctx);
-
-        if (!ctx->jlink_opened) {
-            const char* err = JLINKARM_Open();
-            if (err) {
-                printf("J-Link open failed: %s\n", err);
-                ctx->jlink_opened = false;
-                ctx->StartComunication = false;
-                return;
-            }
-            char acOut[1024];
-            char cmd[128];
-            snprintf(cmd, sizeof(cmd), "device = %s", ctx->jlink_device);
-            if (JLINKARM_ExecCommand(cmd, acOut, sizeof(acOut)) != 0 ||
-                JLINKARM_TIF_Select(JLINKARM_TIF_SWD) < 0) {
-                JLINKARM_Close();
-                return;
-            }
-            GetSetMaxSpeed();
-            if (JLINKARM_Connect() < 0) {
-                JLINKARM_Close();
-                return;
-            }
-            ctx->jlink_opened = true;
-            ctx->StartComunication = true;
+        {
+            std::lock_guard<std::mutex> lock(g_statusMutex);
+            g_status = {};
+            g_status.state = JLinkConnectionState::Connecting;
         }
-        else {
-            ctx->StartComunication = true;
-        }
-
+        g_commRunning = true;
+        g_commThread = SDL_CreateThread(CommunicationThreadFunc, "CommThread", ctx);
         if (!g_commThread) {
-            g_commRunning = true;
-            g_commThread = SDL_CreateThread(CommunicationThreadFunc, "CommThread", ctx);
-            if (!g_commThread) {
-                g_commRunning = false;
-                ctx->StartComunication = false;
-                JLINKARM_Close();
-                ctx->jlink_opened = false;
-            }
+            g_commRunning = false;
+            SetConnectionStatus(JLinkConnectionState::Failed, 0, "Cannot create J-Link communication thread.");
         }
     }
 
     void StopCommunication(MainContext* ctx)
     {
+        if (g_commRunning) SetConnectionStatus(JLinkConnectionState::Stopping);
+        {
+            std::lock_guard<std::mutex> lock(g_waitMutex);
+            g_commRunning = false;
+        }
         if (ctx) ctx->StartComunication = false;
-        g_commRunning = false;
+        g_wake.notify_all();
         if (g_commThread) {
-            SDL_WaitThread(g_commThread, NULL);
+            // Never close the DLL concurrently with an in-flight SDK call.
+            SDL_WaitThread(g_commThread, nullptr);
             g_commThread = nullptr;
         }
-
-        if (ctx && ctx->jlink_opened) {
-            JLINKARM_Close();
-            ctx->jlink_opened = false;
-        }
-
-        ClearSubscriptions();
-        if (ctx) {
-            std::lock_guard<std::mutex> guard(g_queueMutex);
-            DrainQueue(&ctx->tx_Queue);
-            if (ctx->IOMAP_Data && ctx->Datalock) {
-                SDL_LockMutex(ctx->Datalock);
-                memset(ctx->IOMAP_Data, 0, IOMAP_SIZE);
-                SDL_UnlockMutex(ctx->Datalock);
-            }
-        }
+        if (ctx && ctx->IOMAP_Data && ctx->Datalock) InvalidateSessionData(ctx);
+        SetConnectionStatus(JLinkConnectionState::Disconnected);
     }
 
 #ifdef __cplusplus

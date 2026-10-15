@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClInclude Include="Widget\GifWidget.h" />
     <ClInclude Include="Main.h" />
+    <ClInclude Include="JLinkConnection.h" />
     <ClInclude Include="Widget\AlignTextWidget.h" />
     <ClInclude Include="Widget\BitControl8BitWidget.h" />
     <ClInclude Include="Widget\BitControlWidget.h" />
