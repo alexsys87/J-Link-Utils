@@ -42,13 +42,14 @@ Invoke-Native git @('-C', $vcpkg, 'diff', '--exit-code', 'HEAD', '--', 'scripts'
 # The upstream Windows bootstrap downloads an unhashed executable. Instead build
 # the tool from its upstream SHA512-pinned source archive. Its fmt/cmrc downloads
 # are also hash-pinned by that source. No winget, global integration, or mutable exe.
-$archive = Join-Path $state "vcpkg-tool-$($lock.toolVersion).tar.gz"
+# Upstream VCPKG_TOOL_SOURCE_SHA describes the tag ZIP, not the tar.gz.
+$archive = Join-Path $state "vcpkg-tool-$($lock.toolVersion).zip"
 if (-not (Test-Path $archive)) { Invoke-WebRequest -Uri $lock.toolSourceUrl -OutFile $archive }
 Assert-Hash $archive $lock.toolSourceSha512
 $toolSource = Join-Path $state "tool-source-$($lock.toolVersion)"
 if (-not (Test-Path $toolSource)) {
     New-Item -ItemType Directory $toolSource | Out-Null
-    try { Invoke-Native tar @('-xzf', $archive, '--strip-components=1', '-C', $toolSource) }
+    try { Invoke-Native tar @('-xf', $archive, '--strip-components=1', '-C', $toolSource) }
     catch { Remove-Item -Recurse -Force $toolSource; throw }
 }
 # Keep the cache separate when the pinned tool source changes; otherwise CMake

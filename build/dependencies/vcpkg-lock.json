@@ -4,6 +4,6 @@
   "release": "2025.01.13",
   "toolVersion": "2025-12-05",
   "toolCommit": "d84fb805651077f4ed3a97b61fbad2b513462f8b",
-  "toolSourceUrl": "https://github.com/microsoft/vcpkg-tool/archive/2025-12-05.tar.gz",
+  "toolSourceUrl": "https://github.com/microsoft/vcpkg-tool/archive/2025-12-05.zip",
   "toolSourceSha512": "ddd8b1c18e6942aa1f17800559e89ebb85da1c3da8b40069665e54a07385a87b0d477efdd355fad74d19c40acc81a976395fe69dea6da93219762489f7e7702b"
 }
