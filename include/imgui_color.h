@@ -2,7 +2,7 @@
 #include <imgui.h>
 
 // ----------------------------------------------------------------------------
-// Базовые цветовые макросы (формат IM_COL32)
+// Base color macros (IM_COL32 format)
 // ----------------------------------------------------------------------------
 #define IM_COL32_YELLOW        IM_COL32(255, 255, 0,   255)
 #define IM_COL32_GREEN         IM_COL32(0,   255, 0,   255)
@@ -34,14 +34,14 @@
 #define IM_COL32_MINT          IM_COL32(189, 252, 201, 255)
 #define IM_COL32_LAVENDER      IM_COL32(230, 230, 250, 255)
 
-// Яркие версии
+// Bright versions
 #define IM_COL32_BRIGHTBLUE    IM_COL32(85,  85,  255, 255)
 #define IM_COL32_BRIGHTGREEN   IM_COL32(85,  255, 85,  255)
 #define IM_COL32_BRIGHTCYAN    IM_COL32(85,  255, 255, 255)
 #define IM_COL32_BRIGHTRED     IM_COL32(255, 85,  85,  255)
 #define IM_COL32_BRIGHTMAGENTA IM_COL32(255, 85,  255, 255)
 
-// Тёмные версии
+// Dark versions
 #define IM_COL32_DARKRED       IM_COL32(139, 0,   0,   255)
 #define IM_COL32_DARKGREEN     IM_COL32(0,   100, 0,   255)
 #define IM_COL32_DARKBLUE      IM_COL32(0,   0,   139, 255)
@@ -53,7 +53,7 @@
 #define IM_COL32_LIGHTGRAY     IM_COL32(211, 211, 211, 255)
 
 // ----------------------------------------------------------------------------
-// Прозрачные варианты (альфа = 128 - полупрозрачные)
+// Translucent versions (alpha = 128)
 // ----------------------------------------------------------------------------
 #define IM_COL32_WHITE_TRANS   IM_COL32(255, 255, 255, 128)
 #define IM_COL32_RED_TRANS     IM_COL32(255, 0,   0,   128)
@@ -68,7 +68,7 @@
 #define IM_COL32_TEAL_TRANS    IM_COL32(0,   128, 128, 128)
 
 // ----------------------------------------------------------------------------
-// Прозрачные варианты (альфа = 64 - более прозрачные)
+// More transparent versions (alpha = 64)
 // ----------------------------------------------------------------------------
 #define IM_COL32_WHITE_ALPHA64 IM_COL32(255, 255, 255, 64)
 #define IM_COL32_BLACK_ALPHA64 IM_COL32(0,   0,   0,   64)
@@ -80,7 +80,7 @@
 namespace ImGui
 {
     // ------------------------------------------------------------------------
-    // Вспомогательные функции для цветного текста
+    // Colored text helpers
     // ------------------------------------------------------------------------
     const char ColorMarkerStart = '{';
     const char ColorMarkerEnd = '}';
@@ -131,21 +131,21 @@ namespace ImGui
         {
             if (*textCur == ColorMarkerStart)
             {
-                // Выводим накопленный текст
+                // Output the accumulated text
                 if (textCur != textStart)
                 {
                     ImGui::TextUnformatted(textStart, textCur);
                     ImGui::SameLine(0.0f, 0.0f);
                 }
 
-                // Обрабатываем цветовой код
+                // Handle the color code
                 const char* colorStart = textCur + 1;
                 do
                 {
                     ++textCur;
                 } while (*textCur != '\0' && *textCur != ColorMarkerEnd);
 
-                // Меняем цвет
+                // Change the color
                 if (pushedColorStyle)
                 {
                     ImGui::PopStyleColor();
@@ -163,7 +163,7 @@ namespace ImGui
             }
             else if (*textCur == '\n')
             {
-                // Выводим накопленный текст и переходим на новую строку
+                // Output the accumulated text and start a new line
                 ImGui::TextUnformatted(textStart, textCur);
                 textStart = textCur + 1;
             }
@@ -187,17 +187,17 @@ namespace ImGui
     }
 
     // ------------------------------------------------------------------------
-    // ТЕМЫ ОФОРМЛЕНИЯ (COLOR STYLES)
+    // COLOR STYLES
     // ------------------------------------------------------------------------
 
-    // ---------- Blender Dark (адаптировано из v3.0.0) ----------
+    // ---------- Blender Dark (adapted from v3.0.0) ----------
     void StyleColorsBlender(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
         ImVec4* colors = style->Colors;
-        ImGui::StyleColorsDark(style); // база
+        ImGui::StyleColorsDark(style); // base
 
-        // Основные переопределения
+        // Main overrides
         colors[ImGuiCol_Text] = ImVec4(0.84f, 0.84f, 0.84f, 1.00f);
         colors[ImGuiCol_WindowBg] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
         colors[ImGuiCol_ChildBg] = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
@@ -235,18 +235,18 @@ namespace ImGui
         colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.20f, 0.39f, 0.69f, 1.00f);
         colors[ImGuiCol_TextSelectedBg] = ImVec4(0.28f, 0.45f, 0.70f, 1.00f);
         colors[ImGuiCol_NavHighlight] = ImVec4(0.28f, 0.45f, 0.70f, 1.00f);
-        // Таблицы (подобраны под общую гамму)
-        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f); // как WindowBg
-        colors[ImGuiCol_TableBorderStrong] = ImVec4(0.17f, 0.17f, 0.17f, 1.00f); // как Border
-        colors[ImGuiCol_TableBorderLight] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f); // светлее Border
+        // Tables (matched to the palette)
+        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f); // same as WindowBg
+        colors[ImGuiCol_TableBorderStrong] = ImVec4(0.17f, 0.17f, 0.17f, 1.00f); // same as Border
+        colors[ImGuiCol_TableBorderLight] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f); // lighter than Border
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
-        // Дополнительные
+        // Other
         colors[ImGuiCol_DragDropTarget] = ImVec4(0.28f, 0.45f, 0.70f, 0.90f);
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
         colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.20f);
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.35f);
-        // Docking (если используется)
+        // Docking (if used)
         //colors[ImGuiCol_DockingPreview]             = ImVec4(0.28f, 0.45f, 0.70f, 0.70f);
         //colors[ImGuiCol_DockingEmptyBg]             = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 
@@ -302,14 +302,14 @@ namespace ImGui
         colors[ImGuiCol_TabHovered] = ImVec4(0.00f, 0.92f, 1.00f, 0.80f);
         colors[ImGuiCol_TabActive] = ImVec4(0.62f, 0.00f, 0.80f, 1.00f);
         colors[ImGuiCol_PlotHistogram] = ImVec4(0.00f, 1.00f, 0.88f, 1.00f);
-        // Таблицы
-        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.12f, 0.06f, 0.27f, 1.00f); // как PopupBg
-        colors[ImGuiCol_TableBorderStrong] = ImVec4(0.61f, 0.00f, 1.00f, 1.00f); // как Border
-        colors[ImGuiCol_TableBorderLight] = ImVec4(0.40f, 0.00f, 0.70f, 1.00f); // мягче
+        // Tables
+        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.12f, 0.06f, 0.27f, 1.00f); // same as PopupBg
+        colors[ImGuiCol_TableBorderStrong] = ImVec4(0.61f, 0.00f, 1.00f, 1.00f); // same as Border
+        colors[ImGuiCol_TableBorderLight] = ImVec4(0.40f, 0.00f, 0.70f, 1.00f); // softer
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.07f);
-        // Дополнительные
-        colors[ImGuiCol_TextSelectedBg] = ImVec4(0.28f, 0.45f, 0.70f, 0.35f); // взято из базовой темы, можно подкорректировать
+        // Other
+        colors[ImGuiCol_TextSelectedBg] = ImVec4(0.28f, 0.45f, 0.70f, 0.35f); // taken from the base theme, can be adjusted
         colors[ImGuiCol_DragDropTarget] = ImVec4(0.95f, 0.19f, 0.92f, 0.90f);
         colors[ImGuiCol_NavHighlight] = ImVec4(0.00f, 1.00f, 0.88f, 1.00f);
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
@@ -326,7 +326,7 @@ namespace ImGui
         style->GrabRounding = 0.00f;
     }
 
-    // ---------- Nord (тёмный) ----------
+    // ---------- Nord (dark) ----------
     void StyleColorsNord(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
@@ -374,13 +374,13 @@ namespace ImGui
         colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.53f, 0.75f, 0.82f, 1.00f);
         colors[ImGuiCol_TextSelectedBg] = ImVec4(0.37f, 0.51f, 0.67f, 1.00f);
         colors[ImGuiCol_NavHighlight] = ImVec4(0.53f, 0.75f, 0.82f, 0.86f);
-        // Таблицы
-        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.23f, 0.26f, 0.32f, 1.00f); // как FrameBg
-        colors[ImGuiCol_TableBorderStrong] = ImVec4(0.14f, 0.16f, 0.19f, 1.00f); // как Border
-        colors[ImGuiCol_TableBorderLight] = ImVec4(0.20f, 0.22f, 0.27f, 1.00f); // средний
+        // Tables
+        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.23f, 0.26f, 0.32f, 1.00f); // same as FrameBg
+        colors[ImGuiCol_TableBorderStrong] = ImVec4(0.14f, 0.16f, 0.19f, 1.00f); // same as Border
+        colors[ImGuiCol_TableBorderLight] = ImVec4(0.20f, 0.22f, 0.27f, 1.00f); // medium
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
-        // Дополнительные
+        // Other
         colors[ImGuiCol_DragDropTarget] = ImVec4(0.56f, 0.74f, 0.73f, 0.90f);
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
         colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
@@ -395,7 +395,7 @@ namespace ImGui
         style->FrameBorderSize = 1.00f;
     }
 
-    // ---------- Soft (светлая пастельная) ----------
+    // ---------- Soft (light pastel) ----------
     void StyleColorsSoft()
     {
         ImGuiStyle* style = &ImGui::GetStyle();
@@ -446,13 +446,13 @@ namespace ImGui
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(0.70f, 0.70f, 0.70f, 0.70f);
         colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.20f);
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.35f);
-        // Таблицы (подобраны к светлой теме)
-        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.84f, 0.83f, 0.80f, 0.80f); // светлый серый
+        // Tables (matched to the light theme)
+        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.84f, 0.83f, 0.80f, 0.80f); // light grey
         colors[ImGuiCol_TableBorderStrong] = ImVec4(0.70f, 0.70f, 0.70f, 1.00f);
         colors[ImGuiCol_TableBorderLight] = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.00f, 0.00f, 0.00f, 0.05f);
-        // Docking (оставим закомментированными, но добавим для справки)
+        // Docking (kept commented out for reference)
         //colors[ImGuiCol_DockingPreview]             = ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
         //colors[ImGuiCol_DockingEmptyBg]             = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 
@@ -469,7 +469,7 @@ namespace ImGui
         style->GrabRounding = 3.0f;
     }
 
-    // ---------- Black (чисто чёрная) ----------
+    // ---------- Black (pure black) ----------
     void StyleColorsBlack()
     {
         ImGuiStyle& style = ImGui::GetStyle();
@@ -523,7 +523,7 @@ namespace ImGui
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
         colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
-        // Таблицы
+        // Tables
         colors[ImGuiCol_TableHeaderBg] = ImVec4(0.18f, 0.19f, 0.20f, 1.00f);
         colors[ImGuiCol_TableBorderStrong] = ImVec4(0.30f, 0.30f, 0.32f, 1.00f);
         colors[ImGuiCol_TableBorderLight] = ImVec4(0.23f, 0.23f, 0.25f, 1.00f);
@@ -533,10 +533,10 @@ namespace ImGui
         //colors[ImGuiCol_DockingPreview]             = ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
         //colors[ImGuiCol_DockingEmptyBg]             = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 
-        // style.GrabRounding; // эта строка ничего не делает, можно убрать
+        // style.GrabRounding; // this line does nothing and can be removed
     }
 
-    // ---------- Green (зелёные акценты) ----------
+    // ---------- Green (green accents) ----------
     void StyleColorsGreen()
     {
         ImVec4* colors = ImGui::GetStyle().Colors;
@@ -599,7 +599,7 @@ namespace ImGui
         //colors[ImGuiCol_DockingEmptyBg]             = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     }
 
-    // ---------- Red (красные акценты) ----------
+    // ---------- Red (red accents) ----------
     void StyleColorsRed()
     {
         ImVec4* colors = ImGui::GetStyle().Colors;
@@ -662,7 +662,7 @@ namespace ImGui
         //colors[ImGuiCol_DockingEmptyBg]             = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     }
 
-    // ---------- Embrace (тёмная с низкой контрастностью) ----------
+    // ---------- Embrace (dark, low contrast) ----------
     void StyleColorsEmbrace()
     {
         ImVec4* colors = ImGui::GetStyle().Colors;
@@ -747,7 +747,7 @@ namespace ImGui
         style.TabRounding = 4;
     }
 
-    // ---------- Dracula (фиолетово-тёмный) ----------
+    // ---------- Dracula (dark purple) ----------
     void StyleColorsDracula()
     {
         auto& colors = ImGui::GetStyle().Colors;
@@ -801,13 +801,13 @@ namespace ImGui
         colors[ImGuiCol_ResizeGripHovered] = ImVec4{ 0.74f, 0.58f, 0.98f, 0.29f };
         colors[ImGuiCol_ResizeGripActive] = ImVec4{ 0.84f, 0.58f, 1.0f, 0.29f };
 
-        // Таблицы (подобраны к теме)
+        // Tables (matched to the theme)
         colors[ImGuiCol_TableHeaderBg] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
         colors[ImGuiCol_TableBorderStrong] = ImVec4{ 0.44f, 0.37f, 0.61f, 0.50f };
         colors[ImGuiCol_TableBorderLight] = ImVec4{ 0.30f, 0.30f, 0.40f, 0.50f };
         colors[ImGuiCol_TableRowBg] = ImVec4{ 0.00f, 0.00f, 0.00f, 0.00f };
         colors[ImGuiCol_TableRowBgAlt] = ImVec4{ 1.00f, 1.00f, 1.00f, 0.06f };
-        // Дополнительные
+        // Other
         colors[ImGuiCol_TextSelectedBg] = ImVec4{ 0.74f, 0.58f, 0.98f, 0.35f };
         colors[ImGuiCol_DragDropTarget] = ImVec4{ 0.74f, 0.58f, 0.98f, 0.90f };
         colors[ImGuiCol_NavHighlight] = ImVec4{ 0.74f, 0.58f, 0.98f, 1.00f };
@@ -828,7 +828,7 @@ namespace ImGui
         style.ChildRounding = 4;
     }
 
-    // ==================== НОВЫЕ СТИЛИ ====================
+    // ==================== MORE STYLES ====================
 
     // ---------- Visual Studio Dark ----------
     void StyleColorsVisualStudio(ImGuiStyle* dst = nullptr)
@@ -859,20 +859,20 @@ namespace ImGui
         colors[ImGuiCol_TabActive] = ImVec4(0.13f, 0.14f, 0.17f, 1.00f);
         colors[ImGuiCol_TabUnfocused] = ImVec4(0.09f, 0.10f, 0.12f, 1.00f);
         colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.13f, 0.14f, 0.17f, 1.00f);
-        // Таблицы
+        // Tables
         colors[ImGuiCol_TableHeaderBg] = ImVec4(0.19f, 0.20f, 0.24f, 1.00f);
         colors[ImGuiCol_TableBorderStrong] = ImVec4(0.31f, 0.31f, 0.35f, 1.00f);
         colors[ImGuiCol_TableBorderLight] = ImVec4(0.23f, 0.23f, 0.25f, 1.00f);
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
-        // Дополнительные
+        // Other
         colors[ImGuiCol_TextSelectedBg] = ImVec4(0.44f, 0.68f, 0.96f, 0.35f);
         colors[ImGuiCol_DragDropTarget] = ImVec4(0.44f, 0.68f, 0.96f, 0.90f);
         colors[ImGuiCol_NavHighlight] = ImVec4(0.44f, 0.68f, 0.96f, 1.00f);
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
         colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
-        // Docking (по желанию)
+        // Docking (optional)
         //colors[ImGuiCol_DockingPreview]         = ImVec4(0.44f, 0.68f, 0.96f, 0.70f);
         //colors[ImGuiCol_DockingEmptyBg]         = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     }
@@ -906,13 +906,13 @@ namespace ImGui
         colors[ImGuiCol_TabActive] = ImVec4(0.20f, 0.22f, 0.27f, 1.00f);
         colors[ImGuiCol_TabUnfocused] = ImVec4(0.15f, 0.17f, 0.20f, 1.00f);
         colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.20f, 0.22f, 0.27f, 1.00f);
-        // Таблицы
+        // Tables
         colors[ImGuiCol_TableHeaderBg] = ImVec4(0.18f, 0.20f, 0.24f, 1.00f);
         colors[ImGuiCol_TableBorderStrong] = ImVec4(0.25f, 0.28f, 0.33f, 1.00f);
         colors[ImGuiCol_TableBorderLight] = ImVec4(0.20f, 0.22f, 0.27f, 1.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.12f, 0.14f, 0.17f, 0.50f);
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-        // Дополнительные
+        // Other
         colors[ImGuiCol_TextSelectedBg] = ImVec4(0.65f, 0.73f, 1.00f, 0.35f);
         colors[ImGuiCol_DragDropTarget] = ImVec4(0.65f, 0.73f, 1.00f, 0.90f);
         colors[ImGuiCol_NavHighlight] = ImVec4(0.65f, 0.73f, 1.00f, 1.00f);
@@ -921,14 +921,14 @@ namespace ImGui
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
     }
 
-    // ---------- Light Classic (светлая классическая) ----------
+    // ---------- Light Classic ----------
     void StyleColorsLightClassic(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
         ImGui::StyleColorsLight(style);
         ImVec4* colors = style->Colors;
 
-        // Корректировки
+        // Adjustments
         colors[ImGuiCol_WindowBg] = ImVec4(0.94f, 0.94f, 0.94f, 1.00f);
         colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.00f);
         colors[ImGuiCol_TitleBgActive] = ImVec4(0.75f, 0.75f, 0.75f, 1.00f);
@@ -950,14 +950,14 @@ namespace ImGui
         colors[ImGuiCol_TabActive] = ImVec4(0.94f, 0.94f, 0.94f, 1.00f);
         colors[ImGuiCol_TabUnfocused] = ImVec4(0.90f, 0.90f, 0.90f, 1.00f);
         colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.94f, 0.94f, 0.94f, 1.00f);
-        // Таблицы (оставляем из базовой светлой темы, можно подкорректировать)
+        // Tables (kept from the base light theme, can be adjusted)
         colors[ImGuiCol_TableHeaderBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.00f);
         colors[ImGuiCol_TableBorderStrong] = ImVec4(0.70f, 0.70f, 0.70f, 1.00f);
         colors[ImGuiCol_TableBorderLight] = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
-        // Остальные цвета уже определены в StyleColorsLight
+        // The other colors come from StyleColorsLight
     }
 
-    // ---------- Cherry (вишнёвый) ----------
+    // ---------- Cherry ----------
     void StyleColorsCherry(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
@@ -986,13 +986,13 @@ namespace ImGui
         colors[ImGuiCol_TabActive] = ImVec4(0.32f, 0.14f, 0.20f, 1.00f);
         colors[ImGuiCol_TabUnfocused] = ImVec4(0.24f, 0.12f, 0.16f, 1.00f);
         colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.32f, 0.14f, 0.20f, 1.00f);
-        // Таблицы
+        // Tables
         colors[ImGuiCol_TableHeaderBg] = ImVec4(0.24f, 0.12f, 0.16f, 1.00f);
         colors[ImGuiCol_TableBorderStrong] = ImVec4(0.40f, 0.20f, 0.25f, 1.00f);
         colors[ImGuiCol_TableBorderLight] = ImVec4(0.30f, 0.15f, 0.20f, 1.00f);
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
-        // Дополнительные
+        // Other
         colors[ImGuiCol_TextSelectedBg] = ImVec4(0.90f, 0.40f, 0.50f, 0.35f);
         colors[ImGuiCol_DragDropTarget] = ImVec4(0.90f, 0.40f, 0.50f, 0.90f);
         colors[ImGuiCol_NavHighlight] = ImVec4(0.90f, 0.40f, 0.50f, 1.00f);
@@ -1001,7 +1001,7 @@ namespace ImGui
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
     }
 
-    // ---------- Nord Light (светлая версия Nord) ----------
+    // ---------- Nord Light (light version of Nord) ----------
     void StyleColorsNordLight(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
@@ -1013,16 +1013,16 @@ namespace ImGui
         colors[ImGuiCol_TitleBg] = ImVec4(0.82f, 0.85f, 0.89f, 1.00f); // nord4
         colors[ImGuiCol_TitleBgActive] = ImVec4(0.76f, 0.80f, 0.85f, 1.00f); // nord3
         colors[ImGuiCol_MenuBarBg] = ImVec4(0.89f, 0.91f, 0.94f, 1.00f); // nord5
-        colors[ImGuiCol_Header] = ImVec4(0.56f, 0.63f, 0.71f, 0.50f); // nord2 полупрозрачный
+        colors[ImGuiCol_Header] = ImVec4(0.56f, 0.63f, 0.71f, 0.50f); // nord2, translucent
         colors[ImGuiCol_HeaderHovered] = ImVec4(0.46f, 0.55f, 0.64f, 0.70f); // nord1
         colors[ImGuiCol_HeaderActive] = ImVec4(0.36f, 0.46f, 0.56f, 1.00f); // nord0
         colors[ImGuiCol_Button] = ImVec4(0.76f, 0.80f, 0.85f, 1.00f); // nord3
         colors[ImGuiCol_ButtonHovered] = ImVec4(0.66f, 0.71f, 0.78f, 1.00f); // nord2
-        colors[ImGuiCol_ButtonActive] = ImVec4(0.56f, 0.63f, 0.71f, 1.00f); // nord2 ярче
+        colors[ImGuiCol_ButtonActive] = ImVec4(0.56f, 0.63f, 0.71f, 1.00f); // nord2, brighter
         colors[ImGuiCol_FrameBg] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
         colors[ImGuiCol_FrameBgHovered] = ImVec4(0.89f, 0.91f, 0.94f, 1.00f); // nord5
         colors[ImGuiCol_FrameBgActive] = ImVec4(0.82f, 0.85f, 0.89f, 1.00f); // nord4
-        colors[ImGuiCol_CheckMark] = ImVec4(0.34f, 0.43f, 0.53f, 1.00f); // nord0 чуть светлее
+        colors[ImGuiCol_CheckMark] = ImVec4(0.34f, 0.43f, 0.53f, 1.00f); // nord0, slightly lighter
         colors[ImGuiCol_SliderGrab] = ImVec4(0.46f, 0.55f, 0.64f, 0.70f); // nord1
         colors[ImGuiCol_SliderGrabActive] = ImVec4(0.36f, 0.46f, 0.56f, 1.00f); // nord0
         colors[ImGuiCol_Tab] = ImVec4(0.89f, 0.91f, 0.94f, 1.00f); // nord5
@@ -1030,19 +1030,19 @@ namespace ImGui
         colors[ImGuiCol_TabActive] = ImVec4(0.96f, 0.97f, 0.98f, 1.00f); // nord6
         colors[ImGuiCol_TabUnfocused] = ImVec4(0.89f, 0.91f, 0.94f, 1.00f);
         colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.96f, 0.97f, 0.98f, 1.00f);
-        // Таблицы
+        // Tables
         colors[ImGuiCol_TableHeaderBg] = ImVec4(0.82f, 0.85f, 0.89f, 1.00f); // nord4
         colors[ImGuiCol_TableBorderStrong] = ImVec4(0.76f, 0.80f, 0.85f, 1.00f); // nord3
         colors[ImGuiCol_TableBorderLight] = ImVec4(0.89f, 0.91f, 0.94f, 1.00f); // nord5
         colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.00f, 0.00f, 0.00f, 0.05f);
-        // Дополнительные (оставляем из базовой светлой темы, но можно скорректировать)
+        // Other (kept from the base light theme, can be adjusted)
         colors[ImGuiCol_TextSelectedBg] = ImVec4(0.36f, 0.46f, 0.56f, 0.35f);
         colors[ImGuiCol_DragDropTarget] = ImVec4(0.46f, 0.55f, 0.64f, 0.90f);
         colors[ImGuiCol_NavHighlight] = ImVec4(0.46f, 0.55f, 0.64f, 1.00f);
     }
 
-    // ---------- Matrix (зелёный неон) ----------
+    // ---------- Matrix (green neon) ----------
     void StyleColorsMatrix(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
@@ -1166,7 +1166,7 @@ namespace ImGui
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
     }
 
-    // ==================== 4 НОВЫХ ПОПУЛЯРНЫХ СТИЛЯ ====================
+    // ==================== 4 POPULAR STYLES ====================
 
     // ---------- Adobe Spectrum ----------
     void StyleColorsAdobeSpectrum(ImGuiStyle* dst = nullptr)
@@ -1175,7 +1175,7 @@ namespace ImGui
         ImGui::StyleColorsDark(style);
         ImVec4* colors = style->Colors;
 
-        // Фирменный синий Adobe #1473E6
+        // Adobe brand blue #1473E6
         const ImVec4 adobeBlue = ImVec4(20.0f / 255.0f, 115.0f / 255.0f, 230.0f / 255.0f, 1.0f);
         const ImVec4 adobeBlueHover = ImVec4(0.2f, 0.5f, 0.9f, 1.0f);
         const ImVec4 adobeBlueActive = ImVec4(0.1f, 0.4f, 0.8f, 1.0f);
@@ -1235,14 +1235,14 @@ namespace ImGui
         colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
     }
 
-    // ---------- Doug Binks Dark (элегантная тёмная с прозрачностью) ----------
+    // ---------- Doug Binks Dark (elegant dark with transparency) ----------
     void StyleColorsDougBinksDark(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
         ImVec4* colors = style->Colors;
-        ImGui::StyleColorsDark(style); // база
+        ImGui::StyleColorsDark(style); // base
 
-        // Прозрачные окна
+        // Translucent windows
         colors[ImGuiCol_WindowBg] = ImVec4(0.06f, 0.06f, 0.06f, 0.94f);
         colors[ImGuiCol_PopupBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.94f);
         colors[ImGuiCol_ChildBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
@@ -1282,7 +1282,7 @@ namespace ImGui
         colors[ImGuiCol_NavHighlight] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
     }
 
-    // ---------- Enemy Mouse (ретро-синтезатор) ----------
+    // ---------- Enemy Mouse (retro synth) ----------
     void StyleColorsEnemyMouse(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
@@ -1324,7 +1324,7 @@ namespace ImGui
         colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.05f);
     }
 
-    // ---------- LED Synth Master (неоновый синтезатор) ----------
+    // ---------- LED Synth Master (neon synth) ----------
     void StyleColorsLEDSynthMaster(ImGuiStyle* dst = nullptr)
     {
         ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();

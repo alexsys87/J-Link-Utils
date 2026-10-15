@@ -1,6 +1,6 @@
 ﻿// DataHelper.cpp
-// Версия с преобразованием физических адресов в смещения для IOMAP_Data
-// Все операции записи/чтения используют единый механизм через DataWriteArray/DataReadArray
+// Converts physical addresses into offsets in IOMAP_Data
+// All reads and writes go through DataWriteArray/DataReadArray
 
 #include <Main.h>
 #include <cstring>
@@ -18,7 +18,7 @@
 
 using namespace tinyxml2;
 
-// Проверка, что физический адрес лежит в диапазоне памяти MCU
+// Checks that the physical address lies within the mapped MCU memory
 #define CHECK_PHYSICAL_ADDR(addr, size) \
     do { \
         if ((addr) == 0 || (addr) < ctx->mcu_memory_base) return 0; \
@@ -26,7 +26,7 @@ using namespace tinyxml2;
             (uint64_t)(addr) + (uint64_t)(size) > UINT64_C(0x100000000)) return 0; \
     } while (0)
 
-// Поиск дочернего элемента по имени
+// Finds a child element by name
 XMLElement* TryFindElement(XMLElement* e, const char* name)
 {
     if (!e || !name) return nullptr;
@@ -38,7 +38,7 @@ XMLElement* TryFindElement(XMLElement* e, const char* name)
     return nullptr;
 }
 
-// Преобразование строки вида "#01A4" в целое число (hex)
+// Converts a string like "#01A4" (hex) or "0x..."/decimal into an integer
 uint32_t AddressFromHex(XMLElement* e)
 {
     if (!e || !e->GetText()) return 0;
@@ -255,8 +255,8 @@ extern "C" {
     uint16_t DataReadArray(MainContext* ctx, uint32_t phys_addr, uint16_t size);
 
     // ------------------------------------------------------------------
-    // Запись (помещают запрос в tx_Queue)
-    // Принимают физический адрес, преобразуют в смещение
+    // Writing (requests go to tx_Queue)
+    // Take a physical address and convert it into an offset
     // ------------------------------------------------------------------
 
     bool DataWriteBolean(MainContext* ctx, uint8_t* val, uint32_t phys_addr)
@@ -368,8 +368,8 @@ extern "C" {
     }
 
     // ------------------------------------------------------------------
-    // Чтение (читают из IOMAP_Data и ставят запрос в rx_Queue)
-    // Принимают физический адрес, преобразуют в смещение
+    // Reading (from IOMAP_Data; the range stays subscribed for polling)
+    // Take a physical address and convert it into an offset
     // ------------------------------------------------------------------
 
     bool DataReadBolean(MainContext* ctx, uint32_t phys_addr)
@@ -380,7 +380,7 @@ extern "C" {
         SDL_LockMutex(ctx->Datalock);
         bool b = (ctx->IOMAP_Data[offset] & 0x01) != 0;
         SDL_UnlockMutex(ctx->Datalock);
-        DataReadArray(ctx, phys_addr, 1); // асинхронное обновление
+        DataReadArray(ctx, phys_addr, 1); // asynchronous refresh
         return b;
     }
 
@@ -473,8 +473,8 @@ extern "C" {
     }
 
     // ------------------------------------------------------------------
-    // Универсальные функции (используются в виджетах)
-    // Они принимают физический адрес через указатель, передают дальше
+    // Generic functions used by the widgets
+    // They take the physical address through a pointer and pass it on
     // ------------------------------------------------------------------
 
     bool DataReadWriteBoolean(MainContext* ctx, XMLElement* e, uint8_t* val, uint32_t* phys_addr)
@@ -573,8 +573,8 @@ extern "C" {
             return DataReadU64(ctx, reg);
     }
 
-    // Универсальная функция для чтения/записи массива (используется в виджетах)
-    // data != nullptr – запись, иначе чтение
+    // Generic array read/write used by the widgets
+    // data != nullptr - write, otherwise read
     uint16_t DataReadWriteArray(MainContext* ctx, XMLElement* e, uint8_t* data, uint32_t* phys_addr, uint16_t size)
     {
         if (!ctx || !ctx->StartComunication) return 0;
@@ -593,7 +593,7 @@ extern "C" {
     }
 
     // ------------------------------------------------------------------
-    // Вспомогательная функция для установки скорости J‑Link
+    // Helper that sets the J-Link interface speed
     // ------------------------------------------------------------------
     void GetSetMaxSpeed(void) {
         int v1, v2, v3;
@@ -828,7 +828,7 @@ double DataTimeNow(void)
 }
 
 // ------------------------------------------------------------------
-// Среднее арифметическое
+// Arithmetic mean
 // ------------------------------------------------------------------
 float average(const std::vector<float>& v) {
     if (v.empty()) return 0.0f;
@@ -840,7 +840,7 @@ float average(const std::vector<float>& v) {
 }
 
 // ------------------------------------------------------------------
-// Сглаживание скользящим окном (окно приводится к нечётному)
+// Moving-window smoothing (the window is made odd)
 // ------------------------------------------------------------------
 std::vector<float> smooth(const std::vector<float>& input, int window) {
     if (input.empty() || window <= 0) return {};

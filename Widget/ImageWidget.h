@@ -14,7 +14,7 @@ extern "C" {
 class ImageWidget : public LeafWidget {
     std::string filePath;
     float scale;
-    float fixedWidth, fixedHeight;  // если >0, то фиксированный размер
+    float fixedWidth, fixedHeight;  // fixed size if > 0
     ImVec2 uv0, uv1;
     ImU32 tint_col;
     ImU32 border_col;

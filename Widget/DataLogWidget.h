@@ -4,7 +4,7 @@
 #include "CaptureHandshake.h"
 #include <vector>
 #include <cstring>
-#include <algorithm> // для std::min/max
+#include <algorithm> // std::min/max
 
 class DataLogWidget : public UIWidget {
 public:
@@ -13,27 +13,27 @@ public:
         uint32_t baseAddr = 0;
         float yScale = 1.0f;
         ImU32 color = IM_COL32_WHITE;
-        int dataType = FLOAT;      // тип данных элемента (см. константы в widget_common.h)
+        int dataType = FLOAT;      // element data type (see the constants in widget_common.h)
     };
 
 private:
-    std::string text;            // заголовок графика
-    std::string format;          // формат для подписи (среднее значение)
-    float minVal, maxVal;        // пределы по Y (если autosize=false)
-    ImVec2 size;                 // размер области графика
-    float xScale;                // масштаб по X
-    int bufferSize;              // количество точек
-    int smoothWindow;            // окно сглаживания
-    uint32_t doneAddr;           // адрес флага готовности
-    bool littleEndian;           // порядок байт
-    bool autosize;               // автоматический подбор пределов Y
+    std::string text;            // plot title
+    std::string format;          // label format (average value)
+    float minVal, maxVal;        // Y limits (when autosize=false)
+    ImVec2 size;                 // plot size
+    float xScale;                // X scale
+    int bufferSize;              // number of points
+    int smoothWindow;            // smoothing window
+    uint32_t doneAddr;           // ready flag address
+    bool littleEndian;           // byte order
+    bool autosize;               // automatic Y limits
 
-    std::vector<LineConfig> lines;            // конфигурации линий
-    std::vector<std::vector<float>> data;     // данные для каждой линии (float после масштабирования)
-    std::vector<std::vector<float>> smoothed; // сглаженные данные
+    std::vector<LineConfig> lines;            // line settings
+    std::vector<std::vector<float>> data;     // data of each line (scaled floats)
+    std::vector<std::vector<float>> smoothed; // smoothed data
     CaptureHandshake m_capture;           // DoneAddr handshake state
 
-    // Размер элемента в байтах для данного типа данных
+    // Element size in bytes for a data type
     static int GetElementSize(int dataType) {
         switch (dataType) {
         case BOOLEAN:
@@ -46,11 +46,11 @@ private:
         case FLOAT:     return 4;
         case S64_DEC:
         case U64_DEC:   return 8;
-        default:        return 4; // по умолчанию float
+        default:        return 4; // float by default
         }
     }
 
-    // Преобразование сырых байт в float с учётом типа и порядка байт
+    // Converts raw bytes to float using the data type and byte order
     float RawToFloat(const uint8_t* bytes, int dataType, bool le) const {
         switch (dataType) {
         case BOOLEAN: return (bytes[0] & 1) ? 1.0f : 0.0f;
@@ -111,7 +111,7 @@ private:
     }
 
 public:
-    // Конструктор для одной линии (старый стиль)
+    // Single-line constructor (old format)
     DataLogWidget(const char* txt, const char* fmt, float minV, float maxV,
         float w, float h, float xs, int sz, int sm,
         uint32_t addr, uint32_t done, bool le, float ys, ImU32 color, int dtype = FLOAT, bool autoSz = false)
@@ -128,7 +128,7 @@ public:
         InitBuffers();
     }
 
-    // Конструктор для нескольких линий
+    // Multi-line constructor
     DataLogWidget(const char* txt, const char* fmt, float minV, float maxV,
         float w, float h, float xs, int sz, int sm,
         uint32_t done, bool le, const std::vector<LineConfig>& lineList, bool autoSz = false)
@@ -166,23 +166,23 @@ public:
             }
         }
 
-        // Применяем сглаживание, если нужно
+        // Smoothing, if enabled
         if (smoothWindow > 0) {
             for (size_t l = 0; l < lines.size(); ++l) {
                 smoothed[l] = smooth(data[l], smoothWindow);
             }
         }
 
-        // Подготовка оси X (общая для всех линий)
+        // X axis (shared by all lines)
         std::vector<float> x(bufferSize);
         for (int i = 0; i < bufferSize; i++) {
             x[i] = i * xScale;
         }
 
-        // Определение пределов Y
+        // Y limits
         float yMin = minVal, yMax = maxVal;
         if (autosize) {
-            // Находим глобальные минимум и максимум по всем линиям
+            // Global minimum and maximum over all lines
             yMin = std::numeric_limits<float>::max();
             yMax = std::numeric_limits<float>::lowest();
             for (size_t l = 0; l < lines.size(); ++l) {
@@ -192,14 +192,14 @@ public:
                     if (plotData[i] > yMax) yMax = plotData[i];
                 }
             }
-            // Добавляем небольшой отступ (5%), чтобы точки не касались границ
+            // 5% margin so points do not touch the edges
             float range = yMax - yMin;
-            if (range < 1e-6f) range = 1.0f; // защита от нулевого диапазона
+            if (range < 1e-6f) range = 1.0f; // guard against a zero range
             yMin -= range * 0.05f;
             yMax += range * 0.05f;
         }
 
-        // Построение графика
+        // Plot
         if (ImPlot::BeginPlot(text.c_str(), size, ImPlotFlags_Crosshairs)) {
             ImPlot::SetupAxes(nullptr, nullptr);
             ImPlot::SetupAxisLimits(ImAxis_X1, 0.0, (bufferSize - 1) * xScale, ImGuiCond_Always);
@@ -209,7 +209,7 @@ public:
                 const auto& line = lines[l];
                 const float* plotData = (smoothWindow > 0) ? smoothed[l].data() : data[l].data();
 
-                // Формируем подпись
+                // Label
                 char label[64];
                 if (!line.name.empty()) {
                     snprintf(label, sizeof(label), "%s", line.name.c_str());
@@ -219,7 +219,7 @@ public:
                     ui_safety::FormatScalar(label, sizeof(label), format.c_str(), avg);
                 }
 
-                // Преобразуем цвет в ImVec4
+                // Line color
                 ImPlotSpec spec;
                 spec.LineColor = ImGui::ColorConvertU32ToFloat4(line.color);
                 ImPlot::PlotLine(label, x.data(), plotData, bufferSize, spec);

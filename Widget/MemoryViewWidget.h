@@ -9,11 +9,11 @@ class MemoryViewWidget : public UIWidget {
     uint32_t baseAddress;
     uint16_t    numBytes;
     int       bytesPerLine;
-    bool      littleEndian; // не используется, оставлено для совместимости
+    bool      littleEndian; // unused, kept for compatibility
 
     std::vector<uint8_t> m_cache;
     double m_lastUpdateTime;
-    static constexpr double UPDATE_INTERVAL = 0.1; // обновление кэша 10 раз в секунду
+    static constexpr double UPDATE_INTERVAL = 0.1; // refresh the cache 10 times per second
 
 public:
     MemoryViewWidget(const char* lbl, uint32_t base, uint16_t bytes, int bpl = 16, bool le = true)
@@ -39,11 +39,11 @@ private:
         if (now - m_lastUpdateTime < UPDATE_INTERVAL)
             return;
 
-        // Запрашиваем чтение всего диапазона через пакетную операцию
+        // Request the whole range as one block
         DataReadWriteArray(ctx, nullptr, nullptr, &baseAddress, numBytes);
 
-        // После постановки запроса копируем текущее содержимое IOMAP_Data в кэш
-        // (оно может быть устаревшим, но будет обновлено в следующих кадрах)
+        // Then copy the current IOMAP_Data contents into the cache
+        // (it may be stale, later frames refresh it)
         SDL_LockMutex(ctx->Datalock);
         if (ui_safety::IsMappedRange(baseAddress, ctx->mcu_memory_base, numBytes, IOMAP_SIZE)) {
             uint32_t offset = baseAddress - ctx->mcu_memory_base;
@@ -59,15 +59,15 @@ private:
     void DrawMemoryView(MainContext* ctx) {
         ImGuiStyle& style = ImGui::GetStyle();
 
-        // Обновляем кэш при необходимости
+        // Refresh the cache when needed
         UpdateCache(ctx);
 
-        // Настройки размеров
+        // Sizes
         float addrWidth = ImGui::CalcTextSize("000000000 ").x;
         float cellWidth = 30.0f;
         float cellSpacing = style.ItemSpacing.x;
 
-        // Заголовок
+        // Header
         ImGui::Text(" Address    ");
         ImGui::SameLine(addrWidth);
         for (int i = 0; i < bytesPerLine; ++i) {
@@ -85,12 +85,12 @@ private:
         size_t numLines = (numBytes + bytesPerLine - 1) / bytesPerLine;
         for (size_t line = 0; line < numLines; ++line) {
             uint32_t lineAddr = baseAddress + (uint32_t)line * bytesPerLine;
-            uint32_t lineOffset = lineAddr - baseAddress; // смещение внутри кэша
+            uint32_t lineOffset = lineAddr - baseAddress; // offset within the cache
 
-            // Адрес строки
+            // Line address
             ImGui::Text("%04X", lineAddr);
 
-            // Колонки HEX (используем данные из кэша)
+            // HEX columns (from the cache)
             for (int col = 0; col < bytesPerLine; ++col) {
                 uint32_t byteOffset = lineOffset + col;
                 ImGui::SameLine(addrWidth + col * (cellWidth + cellSpacing));
@@ -106,9 +106,9 @@ private:
                         if (sscanf_s(inputBuf, "%02X", &newVal) == 1) {
                             uint8_t v = (uint8_t)newVal;
                             uint32_t physAddr = lineAddr + col;
-                            // Запись через обычную функцию (она поставит запрос в очередь)
+                            // Write through the regular function (it queues the write)
                             DataReadWriteU08(ctx, nullptr, &v, &physAddr);
-                            // Обновляем кэш сразу, чтобы отобразить новое значение
+                            // Update the cache at once to show the new value
                             m_cache[byteOffset] = v;
                         }
                     }
@@ -119,7 +119,7 @@ private:
                 }
             }
 
-            // ASCII колонки
+            // ASCII columns
             ImGui::SameLine(addrWidth + bytesPerLine * (cellWidth + cellSpacing) + cellSpacing);
             for (int col = 0; col < bytesPerLine; ++col) {
                 uint32_t byteOffset = lineOffset + col;

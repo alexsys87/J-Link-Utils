@@ -6,13 +6,13 @@
 
 struct SegmentItem {
     std::string text;
-    int value = 0;      // значение, которое будет записано при выборе этого сегмента
+    int value = 0;      // value written when this segment is selected
 };
 
 class SegmentButtonWidget : public LeafWidget {
     uint32_t address;
     std::vector<SegmentItem> segments;
-    int currentValue;           // кэшированное текущее значение
+    int currentValue;           // cached current value
     bool littleEndian;
 
 public:
@@ -23,7 +23,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        // Читаем текущее значение из памяти (16 бит)
+        // Read the current 16-bit value from memory
         uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
         currentValue = static_cast<int>(raw);
 
@@ -31,7 +31,7 @@ public:
         bool changed = DrawSegmentButtons(text.c_str(), segments, currentValue);
         ImGui::PopID();
 
-        // Если значение изменилось, записываем обратно в память
+        // Value changed: write it back to memory
         if (changed) {
             uint32_t writeAddr = addr;
             uint16_t v = static_cast<uint16_t>(currentValue);
@@ -51,7 +51,7 @@ private:
         bool disabled = (ImGui::GetItemFlags() & ImGuiItemFlags_Disabled) != 0;
         bool changed = false;
 
-        // Вычисляем общую ширину
+        // Total width
         float totalWidth = 0;
         float spacing = style.ItemSpacing.x;
         for (const auto& seg : segments) {
@@ -60,7 +60,7 @@ private:
         }
         totalWidth += spacing * (segments.size() - 1);
 
-        // Фон группы (лёгкая тень)
+        // Group background (light shadow)
         ImRect groupRect(pos, ImVec2(pos.x + totalWidth, pos.y + ImGui::GetFrameHeight()));
         draw->AddRectFilled(groupRect.Min, groupRect.Max, IM_COL32(0, 0, 0, 30), style.FrameRounding);
 
@@ -76,7 +76,7 @@ private:
             ImGui::SetCursorScreenPos(buttonRect.Min);
             ImGui::PushID(static_cast<int>(i));
 
-            // Цвета кнопки
+            // Button colors
             ImVec4 colBg, colHovered, colActive;
             if (isSelected) {
                 colBg = style.Colors[ImGuiCol_ButtonActive];
@@ -115,14 +115,14 @@ private:
             xOffset += buttonWidth + spacing;
         }
 
-        // Метка над группой
+        // Label above the group
         if (label && label[0] != '\0') {
             ImVec2 labelSize = ImGui::CalcTextSize(label);
             ImVec2 labelPos(pos.x + (totalWidth - labelSize.x) * 0.5f, pos.y - labelSize.y - 2);
             draw->AddText(labelPos, ImGui::GetColorU32(ImGuiCol_Text), label);
         }
 
-        // Занимаем место
+        // Reserve the space
         ImGui::Dummy(ImVec2(totalWidth, ImGui::GetFrameHeight() + (label ? ImGui::GetTextLineHeight() + 2 : 0)));
 
         return changed;

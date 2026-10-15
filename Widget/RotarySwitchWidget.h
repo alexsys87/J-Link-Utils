@@ -67,12 +67,12 @@ private:
         int oldValue = *p_value;
         const int numPos = max_pos - min_pos + 1;
         const float angle_step = 2.0f * M_PI_F / numPos;
-        const float start_angle = -M_PI_F / 2.0f; // начинаем с верхней точки
+        const float start_angle = -M_PI_F / 2.0f; // start at the top
 
         if (held && !disabled) {
             ImVec2 mouse_rel = ImVec2(io.MousePos.x - center.x, io.MousePos.y - center.y);
             float dist = sqrtf(mouse_rel.x * mouse_rel.x + mouse_rel.y * mouse_rel.y);
-            // Игнорируем слишком близко к центру, чтобы избежать случайных переключений
+            // Ignore clicks too close to the center to avoid accidental switching
             if (dist > radius_outer * 0.2f) {
                 float mouse_angle = atan2f(mouse_rel.y, mouse_rel.x);
                 if (mouse_angle < 0) mouse_angle += 2.0f * M_PI_F;

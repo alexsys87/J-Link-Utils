@@ -26,14 +26,14 @@ private:
     uint32_t doneAddr;
     bool littleEndian;
     bool autoSize;
-    float barWidth;                     // ширина одного столбца (в долях от шага по X)
+    float barWidth;                     // width of one bar (fraction of the X step)
 
     std::vector<LineConfig> lines;
-    std::vector<std::vector<float>> data;      // сырые данные после масштабирования
-    std::vector<std::vector<float>> smoothed;  // сглаженные данные
+    std::vector<std::vector<float>> data;      // raw data after scaling
+    std::vector<std::vector<float>> smoothed;  // smoothed data
     CaptureHandshake m_capture;           // DoneAddr handshake state
 
-    // Размер элемента в байтах для данного типа данных
+    // Element size in bytes for a data type
     static int GetElementSize(int dataType) {
         switch (dataType) {
         case BOOLEAN:
@@ -50,7 +50,7 @@ private:
         }
     }
 
-    // Преобразование сырых байт в float с учётом типа и порядка байт
+    // Converts raw bytes to float using the data type and byte order
     float RawToFloat(const uint8_t* bytes, int dataType, bool le) const {
         switch (dataType) {
         case BOOLEAN: return (bytes[0] & 1) ? 1.0f : 0.0f;
@@ -111,7 +111,7 @@ private:
     }
 
 public:
-    // Конструктор для одной линии (старый стиль)
+    // Single-line constructor (old format)
     HistogramWidget(const char* txt, const char* fmt, float minV, float maxV,
         float w, float h, float xs, int sz, int sm,
         uint32_t done, bool le, bool autoSz, float bw,
@@ -129,7 +129,7 @@ public:
         InitBuffers();
     }
 
-    // Конструктор для нескольких линий
+    // Multi-line constructor
     HistogramWidget(const char* txt, const char* fmt, float minV, float maxV,
         float w, float h, float xs, int sz, int sm,
         uint32_t done, bool le, bool autoSz, float bw,
@@ -169,20 +169,20 @@ public:
             }
         }
 
-        // Применяем сглаживание, если нужно
+        // Smoothing, if enabled
         if (smoothWindow > 0) {
             for (size_t l = 0; l < lines.size(); ++l) {
                 smoothed[l] = smooth(data[l], smoothWindow);
             }
         }
 
-        // Подготовка оси X
+        // X axis
         std::vector<double> x(bufferSize);
         for (int i = 0; i < bufferSize; i++) {
             x[i] = i * xScale;
         }
 
-        // Определяем пределы Y (если AutoSize)
+        // Y limits (with AutoSize)
         float plotMin = minVal, plotMax = maxVal;
         if (autoSize) {
             plotMin = FLT_MAX;
@@ -200,7 +200,7 @@ public:
             plotMax += range * 0.05f;
         }
 
-        // Построение гистограммы с группированными столбцами
+        // Grouped bar chart
         if (ImPlot::BeginPlot(text.c_str(), size, ImPlotFlags_Crosshairs)) {
             ImPlot::SetupAxes(nullptr, nullptr);
             ImPlot::SetupAxisLimits(ImAxis_X1, 0.0 - barWidth, (bufferSize - 1) * xScale + barWidth, ImGuiCond_Always);
@@ -211,23 +211,23 @@ public:
                 const auto& line = lines[l];
                 const float* plotData = (smoothWindow > 0) ? smoothed[l].data() : data[l].data();
 
-                // Вычисляем смещение для группировки
+                // Offset of this line within the group
                 double offset = (l - (nLines - 1) / 2.0) * barWidth;
 
-                // Формируем подпись
+                // Label
                 char label[64];
                 if (!line.name.empty()) {
                     snprintf(label, sizeof(label), "%s", line.name.c_str());
                 }
                 else {
-                    float avg = ::average({ plotData, plotData + bufferSize });  // если average принимает vector
+                    float avg = ::average({ plotData, plotData + bufferSize });  // average() takes a vector
                     ui_safety::FormatScalar(label, sizeof(label), format.c_str(), avg);
                 }
 
-                // Устанавливаем цвет
+                // Color
                 ImPlotSpec spec;
                 spec.LineColor = ImGui::ColorConvertU32ToFloat4(line.color);
-                // Рисуем столбцы
+                // Bars
                 ImPlot::PlotBars(label, plotData, bufferSize, barWidth, offset, spec);
             }
             ImPlot::EndPlot();

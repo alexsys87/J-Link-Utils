@@ -127,7 +127,7 @@ public:
             break;
         }
         default:
-            // fallback: читаем как 16-бит беззнаковое
+            // fallback: read as unsigned 16-bit
             uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
             if (hexMode) {
                 if (digits > 0)

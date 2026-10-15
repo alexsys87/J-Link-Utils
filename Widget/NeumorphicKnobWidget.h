@@ -10,7 +10,7 @@ class NeumorphicKnobWidget : public LeafWidget {
     float maxVal;
     float radius;
     bool littleEndian;
-    int dataType; // тип данных: FLOAT, S16_DEC, U16_HEX, S32_DEC, U32_HEX, и т.д.
+    int dataType; // data type: FLOAT, S16_DEC, U16_DEC, S32_DEC, U32_DEC, ...
 
 public:
     NeumorphicKnobWidget(const char* lbl, uint32_t addr, float minV, float maxV, float rad, bool le, int dtype = FLOAT)
@@ -22,7 +22,7 @@ public:
 
         float value = 0.0f;
 
-        // „тение данных в зависимости от типа
+        // Read the data according to the type
         if (dataType == FLOAT) {
             if (littleEndian) {
                 uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
@@ -35,7 +35,7 @@ public:
         else if (dataType == S16_DEC || dataType == U16_DEC) {
             uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
             if (littleEndian) {
-                // ничего не делаем, данные уже в little-endian
+                // nothing to do, the data is already little-endian
             }
             else {
                 raw = (raw >> 8) | (raw << 8); // swap 16-bit
@@ -74,7 +74,7 @@ public:
         else if (dataType == FLOAT_INV) {
             uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
             if (littleEndian) {
-                raw = SwapLeToBe32(raw); // преобразуем little->big, т.к. ожидаетс€ big
+                raw = SwapLeToBe32(raw); // little to big, big-endian is expected
             }
             value = *(float*)&raw;
         }
@@ -87,7 +87,7 @@ public:
 
         if (value != oldValue) {
             uint32_t writeAddr = addr;
-            // «апись обратно с учЄтом типа
+            // Write back according to the type
             if (dataType == FLOAT) {
                 if (littleEndian) {
                     uint32_t raw;

@@ -10,7 +10,7 @@ namespace WidgetTemplateFactory {
 
     using Creator = std::function<tinyxml2::XMLElement* (tinyxml2::XMLDocument* doc)>;
 
-    // ----- Функции создания корневых виджетов -----
+    // ----- Root widget templates -----
     tinyxml2::XMLElement* CreateNewWindow(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateText(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateTextColored(tinyxml2::XMLDocument* doc);
@@ -33,8 +33,8 @@ namespace WidgetTemplateFactory {
     tinyxml2::XMLElement* CreateTooltip(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreatePlotTooltip(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateComboBox(tinyxml2::XMLDocument* doc);
-    tinyxml2::XMLElement* CreateInputInt(tinyxml2::XMLDocument* doc);   // соответствует тегу "ImputInt"
-    tinyxml2::XMLElement* CreateInputFloat(tinyxml2::XMLDocument* doc); // соответствует тегу "ImputFloat"
+    tinyxml2::XMLElement* CreateInputInt(tinyxml2::XMLDocument* doc);   // creates the "ImputInt" tag
+    tinyxml2::XMLElement* CreateInputFloat(tinyxml2::XMLDocument* doc); // creates the "ImputFloat" tag
     tinyxml2::XMLElement* CreateFixedWidth(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateSetCursorPos(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateIndent(tinyxml2::XMLDocument* doc);
@@ -78,7 +78,7 @@ namespace WidgetTemplateFactory {
     tinyxml2::XMLElement* CreateGlossyButton(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateMemoryEditor(tinyxml2::XMLDocument* doc);
 
-    // ----- Функции создания простых дочерних элементов (параметры) -----
+    // ----- Simple child elements (parameters) -----
     tinyxml2::XMLElement* CreateTextElement(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateColorElement(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateWidthElement(tinyxml2::XMLDocument* doc);
@@ -132,7 +132,7 @@ namespace WidgetTemplateFactory {
     tinyxml2::XMLElement* CreateLine2AddressElement(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateLine2TextElement(tinyxml2::XMLDocument* doc);
 
-    // ----- Функции создания вложенных элементов (для контейнеров) -----
+    // ----- Nested elements (for containers) -----
     tinyxml2::XMLElement* CreateComboItem(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateRadioItem(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreateSegmentItem(tinyxml2::XMLDocument* doc);
@@ -141,14 +141,14 @@ namespace WidgetTemplateFactory {
     tinyxml2::XMLElement* CreateHistogramLine(tinyxml2::XMLDocument* doc);
     tinyxml2::XMLElement* CreatePlotLinesLine(tinyxml2::XMLDocument* doc);
 
-    // ----- Карта всех корневых виджетов (по имени) -----
+    // ----- Map of all root widgets by name -----
     const std::map<std::string, Creator>& GetRootCreators();
 
-    // ----- Карта допустимых дочерних элементов для конкретных родителей -----
+    // ----- Allowed child elements per parent -----
     using ChildCreatorMap = std::map<std::string, Creator>;
     const std::map<std::string, ChildCreatorMap>& GetChildCreators();
 
-    // Удобная функция для создания элемента по имени типа (использует корневую карту)
+    // Creates an element by type name (uses the root map)
     inline tinyxml2::XMLElement* Create(const std::string& type, tinyxml2::XMLDocument* doc) {
         auto it = GetRootCreators().find(type);
         if (it != GetRootCreators().end()) {

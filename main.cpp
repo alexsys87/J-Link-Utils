@@ -22,7 +22,7 @@ const char* defaultFontDir = "C:\\Windows\\Fonts\\";
 #else
 #include <unistd.h>
 #define ACCESS access
-const char* defaultFontDir = "/usr/share/fonts/"; // Базовый путь для Linux
+const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #endif
 
 #include <Main.h>
@@ -37,7 +37,7 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Базовый путь д�
 #include "widget_common.h"
 
 // ------------------------------------------------------------------
-// Вспомогательные функции
+// Helper functions
 // ------------------------------------------------------------------
 
 size_t getFileNameFromPath(const char* path)
@@ -54,7 +54,7 @@ size_t getFileNameFromPath(const char* path)
 }
 
 // ------------------------------------------------------------------
-// Инициализация и управление контекстом
+// Context initialization and management
 // ------------------------------------------------------------------
 
 MainContext* allocate_context() {
@@ -90,9 +90,9 @@ MainContext* allocate_context() {
     ctx->jlink_opened = false;
     ctx->StateMinimized = false;
     ctx->mcu_memory_base = 0x20000000;
-    ctx->auto_connect = true;   // по умолчанию автоподключение включено
+    ctx->auto_connect = true;   // auto-connect is enabled by default
 
-    // Выделяем 1 МБ (1048576 байт) с проверкой
+    // Allocate 1 MiB (1048576 bytes) and check the result
     ctx->IOMAP_Data = (uint8_t*)SDL_malloc(IOMAP_SIZE);
     if (!ctx->IOMAP_Data) {
         fprintf(stderr, "Failed to allocate 1MB IOMAP memory\n");
@@ -141,7 +141,7 @@ void free_context(MainContext* ctx)
 }
 
 // ------------------------------------------------------------------
-// Работа с диалогами открытия/сохранения файлов
+// Open/save file dialogs
 // ------------------------------------------------------------------
 
 // Not inline: WatchWidget.cpp calls these through the declarations in widget_common.h.
@@ -157,37 +157,37 @@ const char* file_save_dialog(const char* filters)
 
 bool NewFile(MainContext* ctx) {
     const char* s = file_save_dialog("XML(*.xml)\0*.XML\0");
-    if (!s) return false; // пользователь отменил диалог
+    if (!s) return false; // the user cancelled the dialog
 
-    // Закрываем текущий документ, если есть
+    // Close the current document, if any
     ResetXMLEditorState();
     if (ctx->CurrentXMLDoc) {
         delete ctx->CurrentXMLDoc;
         ctx->CurrentXMLDoc = nullptr;
     }
 
-    // Очищаем окна и сбрасываем состояние
+    // Clear the windows and reset the state
     ClearAllWindows();;
     ctx->file_loaded = false;
     ctx->xml_modified = false;
     ctx->show_xml_editor = true;
 
-    // Копируем новый путь
+    // Copy the new path
     SDL_strlcpy(ctx->File_path, s, MAX_PATH);
 
-    // Добавляем .xml, если нужно
+    // Append .xml if needed
     EnsureXmlExtension(ctx->File_path, sizeof(ctx->File_path));
 
-    // Обновляем заголовок главного окна
+    // Update the main window title
     SDL_snprintf(ctx->File_label, sizeof(ctx->File_label), "J-Link Utils - %s", &ctx->File_path[getFileNameFromPath(ctx->File_path)]);
 
-    // Сохраняем путь в INI
+    // Save the path to the INI file
     SaveIniSettings(ctx);
 
-    // Создаём новый пустой XML-документ
+    // Create a new empty XML document
     ctx->CurrentXMLDoc = new (std::nothrow) tinyxml2::XMLDocument();
     if (!ctx->CurrentXMLDoc) {
-        // Ошибка выделения памяти — можно показать сообщение
+        // Out of memory; a message could be shown here
         return false;
     }
 
@@ -197,7 +197,7 @@ bool NewFile(MainContext* ctx) {
 bool OpenFile(MainContext* ctx)
 {
     const char* s = file_open_dialog("XML(*.xml)\0*.XML\0");
-    if (!s) return false; // пользователь отменил диалог
+    if (!s) return false; // the user cancelled the dialog
 
     ctx->File_path[0] = '\0';
 
@@ -215,20 +215,20 @@ bool OpenFile(MainContext* ctx)
 
     ClearAllWindows();
 
-    // Копируем новый путь
+    // Copy the new path
     SDL_strlcpy(ctx->File_path, s, MAX_PATH);
 
-    // Обновляем заголовок главного окна
+    // Update the main window title
     SDL_snprintf(ctx->File_label, sizeof(ctx->File_label), "J-Link Utils - %s", &ctx->File_path[getFileNameFromPath(ctx->File_path)]);
 
-    // Сохраняем путь в INI
+    // Save the path to the INI file
     SaveIniSettings(ctx);
 
-    // Загружаем XML-документ для редактора
+    // Load the XML document for the editor
     if (ctx->CurrentXMLDoc) delete ctx->CurrentXMLDoc;
     ctx->CurrentXMLDoc = new tinyxml2::XMLDocument();
     if (ctx->CurrentXMLDoc->LoadFile(s) != tinyxml2::XML_SUCCESS) {
-        // Ошибка загрузки – можно показать всплывающее окно
+        // Load error; a popup could be shown here
         delete ctx->CurrentXMLDoc;
         ctx->CurrentXMLDoc = nullptr;
     }
@@ -254,7 +254,7 @@ bool CloseFile(MainContext* ctx)
 }
 
 // ------------------------------------------------------------------
-// DPI-масштабирование (Windows)
+// DPI scaling (Windows)
 // ------------------------------------------------------------------
 
 float GetDPIScale() {
@@ -273,14 +273,14 @@ float GetDPIScale() {
 }
 
 // ------------------------------------------------------------------
-// Загрузка системных шрифтов (исправлено предупреждение C4244)
+// Loading system fonts (C4244 warning fixed)
 // ------------------------------------------------------------------
 
 void LoadFonts(MainContext* ctx, float dpiScale) {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
 
-    // Список шрифтов (Windows и Linux аналоги)
+    // Font files (Windows and Linux equivalents)
     std::vector<std::string> fontFiles = {
         "consola.ttf", "arial.ttf", "verdana.ttf", // Windows
         "truetype/dejavu/DejaVuSansMono.ttf",      // Ubuntu/Debian
@@ -294,14 +294,14 @@ void LoadFonts(MainContext* ctx, float dpiScale) {
     for (const auto& fileName : fontFiles) {
         std::string fullPath = std::string(defaultFontDir) + fileName;
 
-        // Проверяем доступность файла (0 - проверка существования)
+        // Check that the file exists (mode 0 = existence check)
         if (ACCESS(fullPath.c_str(), 0) != 0) continue;
 
         for (int size = minSize; size <= maxSize; ++size) {
             float fontSize = size * dpiScale;
             ImFontConfig config;
 
-            // Формируем имя без расширения
+            // Name without the extension
             size_t lastDot = fileName.find_last_of(".");
             std::string displayName = (lastDot != std::string::npos) ? fileName.substr(0, lastDot) : fileName;
             snprintf(config.Name, sizeof(config.Name), "%s, %dpx", displayName.c_str(), size);
@@ -328,7 +328,7 @@ void LoadFonts(MainContext* ctx, float dpiScale) {
 }
 
 // ------------------------------------------------------------------
-// Функции для меню (File, Window, Help, Style)
+// Menu functions (File, Window, Help, Style)
 // ------------------------------------------------------------------
 
 int FontSelector(const char* label)
@@ -372,7 +372,7 @@ void ShowMenuFile(MainContext* ctx) {
 }
 
 // ------------------------------------------------------------------
-// Вспомогательные функции для сохранения/загрузки стиля в XML
+// Helpers to save/load the style as XML
 // ------------------------------------------------------------------
 bool SaveStyleToXML(const char* filename, const ImGuiStyle& style)
 {
@@ -380,7 +380,7 @@ bool SaveStyleToXML(const char* filename, const ImGuiStyle& style)
     tinyxml2::XMLElement* root = doc.NewElement("Style");
     doc.InsertFirstChild(root);
 
-    // Сохраняем скалярные параметры (float, int, ImVec2)
+    // Save scalar parameters (float, int, ImVec2)
     auto addFloat = [&](const char* name, float value) {
         tinyxml2::XMLElement* elem = doc.NewElement(name);
         elem->SetAttribute("value", value);
@@ -420,12 +420,12 @@ bool SaveStyleToXML(const char* filename, const ImGuiStyle& style)
     addFloat("GrabRounding", style.GrabRounding);
     addFloat("TabRounding", style.TabRounding);
     addVec2("WindowTitleAlign", style.WindowTitleAlign);
-    addInt("WindowMenuButtonPosition", style.WindowMenuButtonPosition); // ImGuiDir преобразуется в int неявно
+    addInt("WindowMenuButtonPosition", style.WindowMenuButtonPosition); // ImGuiDir converts to int implicitly
     addVec2("ButtonTextAlign", style.ButtonTextAlign);
     addVec2("SelectableTextAlign", style.SelectableTextAlign);
     addVec2("DisplaySafeAreaPadding", style.DisplaySafeAreaPadding);
 
-    // Сохраняем цвета
+    // Save colors
     tinyxml2::XMLElement* colorsElem = doc.NewElement("Colors");
     root->InsertEndChild(colorsElem);
     for (int i = 0; i < ImGuiCol_COUNT; i++)
@@ -451,7 +451,7 @@ bool LoadStyleFromXML(const char* filename, ImGuiStyle& style)
     tinyxml2::XMLElement* root = doc.FirstChildElement("Style");
     if (!root) return false;
 
-    // Загружаем скалярные параметры
+    // Load scalar parameters
     auto getFloat = [&](const char* name, float* out) -> bool {
         tinyxml2::XMLElement* elem = root->FirstChildElement(name);
         if (elem && elem->QueryAttribute("value", out) == tinyxml2::XML_SUCCESS)
@@ -499,7 +499,7 @@ bool LoadStyleFromXML(const char* filename, ImGuiStyle& style)
     getVec2("SelectableTextAlign", &style.SelectableTextAlign);
     getVec2("DisplaySafeAreaPadding", &style.DisplaySafeAreaPadding);
 
-    // Загружаем цвета
+    // Load colors
     tinyxml2::XMLElement* colorsElem = root->FirstChildElement("Colors");
     if (colorsElem)
     {
@@ -508,7 +508,7 @@ bool LoadStyleFromXML(const char* filename, ImGuiStyle& style)
         {
             const char* name = colorElem->Attribute("name");
             if (!name) continue;
-            // Находим индекс цвета по имени
+            // Find the color index by name
             int idx = -1;
             for (int i = 0; i < ImGuiCol_COUNT; i++)
             {
@@ -535,7 +535,7 @@ bool LoadStyleFromXML(const char* filename, ImGuiStyle& style)
 }
 
 // ------------------------------------------------------------------
-// Редактор стилей
+// Style editor
 // ------------------------------------------------------------------
 void ShowStyleEditor(bool* p_open)
 {
@@ -566,7 +566,7 @@ void ShowStyleEditor(bool* p_open)
                 {
                     if (LoadStyleFromXML(filename, ImGui::GetStyle()))
                     {
-                        // Обновляем сохранённый эталон
+                        // Update the saved reference style
                         ref_saved_style = ImGui::GetStyle();
                     }
                     else
@@ -589,7 +589,7 @@ void ShowStyleEditor(bool* p_open)
         ImGui::EndMenuBar();
     }
 
-    // Всплывающие окна ошибок
+    // Error popups
     if (ImGui::BeginPopupModal("Error##SaveStyle", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
         ImGui::Text("Failed to save style to XML file.");
@@ -694,7 +694,7 @@ void ShowStyleEditor(bool* p_open)
 
 void ShowMenuWindow(MainContext* ctx)
 {
-    // Используем глобальный вектор окон
+    // Use the global window list
     for (size_t i = 0; i < g_Windows.size(); i++)
     {
         ImGui::MenuItem(g_Windows[i].name.c_str(), "", &g_Windows[i].show);
@@ -713,7 +713,7 @@ void ShowMenuWindow(MainContext* ctx)
 
     ImGui::Separator();
 
-    // Обновлённый список стилей (добавлены 4 новых: Adobe Spectrum, Doug Binks Dark, Enemy Mouse, LED Synth Master)
+    // Style list (includes Adobe Spectrum, Doug Binks Dark, Enemy Mouse, LED Synth Master)
     if (ImGui::Combo("Style", &ctx->Style,
         "Classic\0Blue\0Light\0Soft\0Blender\0Cyberpunk\0Nord\0Black\0Green\0Red\0Embrace\0Dracula\0"
         "Visual Studio\0One Dark\0Light Classic\0Cherry\0Nord Light\0Matrix\0High Contrast\0"
@@ -749,7 +749,7 @@ void ShowMenuWindow(MainContext* ctx)
             ImGuiStyle& style = ImGui::GetStyle();
             if (!LoadStyleFromXML("custom.style.xml", style))
             {
-                // если файла нет, ничего не меняем
+                // if the file is missing, nothing changes
             }
         }
         break;
@@ -761,7 +761,7 @@ void ShowMenuWindow(MainContext* ctx)
 
     ImGui::Separator();
     if (ImGui::MenuItem("XML Editor", NULL, &ctx->show_xml_editor)) {
-        // ничего не делаем
+        // nothing to do
     }
 }
 
@@ -825,7 +825,7 @@ void ShowMenuSettings(MainContext* ctx)
     static char filter_buf[64] = "";
     static bool init_done = false;
 
-    // Инициализация списка устройств при первом вызове
+    // Build the device list on the first call
     if (!init_done) {
         int numDevices = JLINKARM_DEVICE_GetInfo(-1, NULL);
         if (numDevices > 0) {
@@ -840,7 +840,7 @@ void ShowMenuSettings(MainContext* ctx)
                 }
             }
         }
-        // Если список пуст, добавим текущее устройство
+        // If the list is empty, add the current device
         if (all_devices.empty()) {
             all_devices.push_back(ctx->jlink_device);
             std::string lower = ctx->jlink_device;
@@ -848,14 +848,14 @@ void ShowMenuSettings(MainContext* ctx)
             all_devices_lower.push_back(lower);
         }
 
-        // Инициализируем фильтр: показываем всё
+        // Initialize the filter: show everything
         filtered_indices.resize(all_devices.size());
         for (size_t i = 0; i < all_devices.size(); ++i) filtered_indices[i] = (int)i;
 
         init_done = true;
     }
 
-    // Фильтрация (регистронезависимая)
+    // Case-insensitive filtering
     static char prev_filter[64] = "";
     if (strcmp(filter_buf, prev_filter) != 0) {
         strcpy(prev_filter, filter_buf);
@@ -876,7 +876,7 @@ void ShowMenuSettings(MainContext* ctx)
         }
     }
 
-    // Отображаем текущее выбранное устройство
+    // Show the currently selected device
     ImGui::Text("%s", ctx->jlink_device);
     ImGui::SameLine();
     ImGui::TextDisabled("(current)");
@@ -901,14 +901,14 @@ void ShowMenuSettings(MainContext* ctx)
     ImGui::SameLine();
     ImGui::TextDisabled("(%d found)", (int)filtered_indices.size());
 
-    // Список устройств
+    // Device list
     if (ImGui::BeginListBox("##device_list", ImVec2(500, 250))) {
         for (int idx : filtered_indices) {
             const char* item = all_devices[idx].c_str();
             bool is_selected = (strcmp(item, ctx->jlink_device) == 0);
             if (ImGui::Selectable(item, is_selected)) {
                 if (!is_selected) StopCommunication(ctx);
-                // При клике сразу сохраняем выбранное устройство
+                // Save the selected device right away
                 strncpy(ctx->jlink_device, item, sizeof(ctx->jlink_device) - 1);
                 ctx->jlink_device[sizeof(ctx->jlink_device) - 1] = '\0';
                 SaveIniSettings(ctx);
@@ -1092,7 +1092,7 @@ static void MenuWindow(bool* p_open, MainContext* ctx)
 
 
 // ------------------------------------------------------------------
-// Печать информации о рендере (для отладки)
+// Renderer information output (for debugging)
 // ------------------------------------------------------------------
 
 static void SDL_snprintfcat(SDL_OUT_Z_CAP(maxlen) char* text, size_t maxlen, SDL_PRINTF_FORMAT_STRING const char* fmt, ...)
@@ -1157,7 +1157,7 @@ static void SDL_PrintRenderer(SDL_RendererInfo* info)
 }
 
 // ------------------------------------------------------------------
-// Главная функция программы
+// Program entry point
 // ------------------------------------------------------------------
 
 int main(int argc, char* argv[]) 
@@ -1171,7 +1171,7 @@ int main(int argc, char* argv[])
 
     LoadIniSettings(ctx);
 
-    // Проверяем, передан ли путь к XML в командной строке
+    // Was an XML path passed on the command line?
     if (argc >= 2 && argv[1] && argv[1][0] != '\0') {
         SDL_strlcpy(ctx->File_path, argv[1], MAX_PATH);
         printf("Loading XML from command line: %s\n", ctx->File_path);
@@ -1179,12 +1179,12 @@ int main(int argc, char* argv[])
 
     ctx->CurrentXMLDoc = new tinyxml2::XMLDocument();
     if (ctx->CurrentXMLDoc->LoadFile(ctx->File_path) != tinyxml2::XML_SUCCESS) {
-        // Ошибка загрузки – можно показать всплывающее окно
+        // Load error; a popup could be shown here
         delete ctx->CurrentXMLDoc;
         ctx->CurrentXMLDoc = nullptr;
     }
 
-    // Получаем масштаб DPI (используется для ограничения размеров окна и загрузки шрифтов)
+    // DPI scale (limits the window size and scales the fonts)
     float dpiScale = GetDPIScale();
 
 #if defined (_WIN32) || defined (_WIN64)
@@ -1265,10 +1265,10 @@ int main(int argc, char* argv[])
     ImGui_ImplSDLRenderer2_Init(ctx->Renderer);
     ImGui_ImplSDL2_InitForSDLRenderer(ctx->Wimdow, ctx->Renderer);
 
-    // Загружаем шрифты с учётом DPI
+    // Load fonts for the current DPI
     LoadFonts(ctx, dpiScale);
 
-    // Применяем сохранённый стиль
+    // Apply the saved style
     switch (ctx->Style)
     {
     case 0:  ImGui::StyleColorsClassic(); break;
@@ -1303,7 +1303,7 @@ int main(int argc, char* argv[])
     default: ImGui::StyleColorsNord(); break;
     }
 
-    // Переменные для поддержания FPS
+    // Frame rate limiting
     auto last_time = std::chrono::steady_clock::now();
     const double target_frame_time = 1.0 / 60.0;
 
@@ -1315,7 +1315,7 @@ int main(int argc, char* argv[])
     SDL_Rect rectangle = { 0, 0, ctx->Win_width, 50 };
     SDL_GetWindowPosition(ctx->Wimdow, &newWindowPos.x, &newWindowPos.y);
 
-    // Запуск потока связи, если Auto Connect включён
+    // Start the communication thread if Auto Connect is enabled
     if (ctx->auto_connect) {
         StartCommunication(ctx);
     }
@@ -1375,7 +1375,7 @@ int main(int argc, char* argv[])
             case SDL_KEYDOWN:
                 break;
             case SDL_KEYUP:
-                // Отладочный вывод можно убрать или оставить под #ifdef _DEBUG
+                // Debug output, only in _DEBUG builds
 #ifdef _DEBUG
                 printf("Physical %s key acting as %s key\r\n",
                     SDL_GetScancodeName(event.key.keysym.scancode),
@@ -1458,7 +1458,7 @@ int main(int argc, char* argv[])
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), ctx->Renderer);
         SDL_RenderPresent(ctx->Renderer);
 
-        // Поддержание стабильного FPS
+        // Keep a steady frame rate
         auto now = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration<double>(now - last_time).count();
         if (elapsed < target_frame_time) {
@@ -1468,7 +1468,7 @@ int main(int argc, char* argv[])
         last_time = std::chrono::steady_clock::now();
     }
 
-    // Остановка потока связи перед очисткой
+    // Stop the communication thread before cleanup
     StopCommunication(ctx);
 
     // Widgets own SDL textures: destroy them before their renderer and ImGui.

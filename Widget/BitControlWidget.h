@@ -17,7 +17,7 @@ class BitControlWidget : public LeafWidget {
     BitMode initialMode;
     bool littleEndian;
     bool allowModeSwitch;
-    BitMode currentMode; // текущий режим отображения (может меняться в UI)
+    BitMode currentMode; // current display mode (can change in the UI)
 
 public:
     BitControlWidget(const char* lbl, uint32_t addr, BitMode mode, bool le, bool switchable = true)
@@ -28,7 +28,7 @@ public:
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
         uint32_t value = 0;
-        // Чтение данных в соответствии с текущим режимом
+        // Read the data for the current mode
         if (currentMode & Bits8) {
             uint16_t raw = DataReadWriteU08(ctx, nullptr, nullptr, &addr);
             value = raw;
@@ -48,7 +48,7 @@ public:
         DrawBitControl(text.c_str(), &value, &currentMode, allowModeSwitch);
         ImGui::PopID();
 
-        // Если значение изменилось – записываем обратно с учётом текущего режима
+        // Value changed: write it back in the current mode
         if (value != oldValue) {
             uint32_t writeValue = value;
             if (currentMode & Bits8) {
@@ -65,7 +65,7 @@ public:
                 DataReadWriteU32(ctx, nullptr, &writeValue, &addr);
             }
         }
-        // Если изменился только режим – ничего не пишем, просто обновили currentMode
+        // Only the mode changed: nothing to write, currentMode is updated
     }
 
 private:
@@ -171,7 +171,7 @@ private:
                 draw->AddText(ImVec2(text_x, text_y), ImGui::GetColorU32(ImGuiCol_Text), text);
             }
 
-            // Подписи индексов битов под блоком
+            // Bit index labels under the block
             float label_x = block_x;
             for (int col = 0; col < 8; ++col) {
                 int bit_index = (blocks - 1 - b) * 8 + (7 - col);
@@ -189,7 +189,7 @@ private:
             x_offset += block_width + block_spacing;
         }
 
-        // Байтовые HEX-фреймы под каждым блоком
+        // Byte HEX frames under each block
         float frame_width = cell_size * 8 + 50;
         float frame_height = 20.0f;
         float frame_y = area_start.y + cell_size + text_offset_y + ImGui::GetTextLineHeight() + 15;

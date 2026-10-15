@@ -5,10 +5,10 @@
 
 void GlossyButtonWidget::DrawButton(ImDrawList* draw, ImVec2 center, float radius,
     bool state, bool hovered, bool held, bool momentaryActive) const {
-    // Базовый цвет в зависимости от состояния
+    // Base color for the state
     ImU32 baseColor = state ? m_onColor : m_offColor;
 
-    // Коррекция при наведении / нажатии
+    // Adjust for hover / press
     if (hovered || momentaryActive) {
         ImVec4 col4 = ImGui::ColorConvertU32ToFloat4(baseColor);
         col4.x *= 1.2f; col4.y *= 1.2f; col4.z *= 1.2f;
@@ -23,33 +23,33 @@ void GlossyButtonWidget::DrawButton(ImDrawList* draw, ImVec2 center, float radiu
         baseColor = ImGui::ColorConvertFloat4ToU32(col4);
     }
 
-    // Тень
+    // Shadow
     draw->AddCircleFilled(ImVec2(center.x + 2, center.y + 2), radius,
         IM_COL32(0, 0, 0, 80), 64);
 
-    // Металлический ободок
+    // Metal rim
     draw->AddCircleFilled(center, radius, IM_COL32(180, 180, 190, 255), 64);
     draw->AddCircle(center, radius, IM_COL32(80, 80, 90, 255), 64, 1.5f);
 
-    // Серое кольцо толщиной 5% от радиуса
+    // Grey ring, 5% of the radius thick
     float ringWidth = radius * 0.45f;
     draw->AddCircle(center, radius, IM_COL32(128, 128, 128, 200), 64, ringWidth);
 
-    // Основной цветной круг (чуть меньше радиуса)
+    // Main colored circle (slightly smaller than the radius)
     float innerRadius = radius - 2.0f;
     draw->AddCircleFilled(center, innerRadius, baseColor, 64);
 
-    // Блик
+    // Highlight
     draw->AddCircleFilled(ImVec2(center.x, center.y - radius * 0.25f),
         radius * 0.5f, IM_COL32(255, 255, 255, 40), 32);
 
-    // Текст (ON/OFF)
+    // Text (ON/OFF)
     const char* label = state ? "ON" : "OFF";
     ImVec2 textSize = ImGui::CalcTextSize(label);
-    // Тень текста
+    // Text shadow
     draw->AddText(ImVec2(center.x - textSize.x * 0.5f + 1, center.y - textSize.y * 0.5f + 1),
         IM_COL32(0, 0, 0, 100), label);
-    // Основной текст
+    // Main text
     draw->AddText(ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
         IM_COL32(255, 255, 255, 255), label);
 }
@@ -70,7 +70,7 @@ GlossyButtonWidget::GlossyButtonWidget(const char* label, uint32_t addr, bool le
 void GlossyButtonWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
     uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : m_addr;
 
-    // Всегда читаем значение (даже если адрес 0 – функции работы с памятью должны корректно обрабатывать)
+    // Always read the value (the memory functions handle address 0)
     uint16_t currentValue = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
 
     bool state = false;
@@ -121,12 +121,12 @@ void GlossyButtonWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         }
 
         if (writeNow) {
-            // При необходимости меняем порядок байт
+            // Swap the byte order if needed
             if (!m_le) {
                 valueToWrite = Swap16(valueToWrite);
             }
             DataReadWriteU16(ctx, nullptr, &valueToWrite, &addr);
-            // Обновляем состояние для отображения
+            // Update the displayed state
             if (m_mode == GLOSSY_BUTTON_TOGGLE) {
                 state = (valueToWrite & 1) != 0;
             }

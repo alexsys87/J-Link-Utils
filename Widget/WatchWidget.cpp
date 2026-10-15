@@ -3,18 +3,18 @@
 #include <Main.h>
 #include <string>
 #include <cstdint>
-#include <cstdlib> // для strtoull
+#include <cstdlib> // strtoull
 
 using namespace tinyxml2;
 
-// Определение статических членов
+// Static members
 std::vector<WatchWidget::WatchRow> WatchWidget::s_rows;
 bool WatchWidget::s_modified = false;
 float WatchWidget::s_updateInterval = 100.0f;
 float WatchWidget::s_opacity = 100.0f;
 double WatchWidget::s_refreshTime = 0.0;
-int WatchWidget::s_selectedRow = -1;      // для удаления
-int WatchWidget::s_highlightedRow = -1;   // для подсветки строки
+int WatchWidget::s_selectedRow = -1;      // row to delete
+int WatchWidget::s_highlightedRow = -1;   // highlighted row
 int WatchWidget::s_contextMenuRow = -1;
 char WatchWidget::s_xmlPath[MAX_PATH] = "watch.xml";
 
@@ -142,7 +142,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         float oldInterval = s_updateInterval;
         ImGui::DragFloat("Update Interval(ms)", &s_updateInterval, 1.0f, 1.0f, 10000.0f);
         if (oldInterval != s_updateInterval) {
-            // Сбрасываем таймер, чтобы новый интервал применился немедленно
+            // Reset the timer so that the new interval applies at once
             s_refreshTime = 0.0;
         }
         ImGui::SameLine();
@@ -150,14 +150,14 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         ImGui::PopItemWidth();
     }
 
-    // Применяем прозрачность к цветам таблицы
+    // Apply the opacity to the table colors
     float alpha = s_opacity / 100.0f;
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, alpha));
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.2f, alpha));
     ImGui::PushStyleColor(ImGuiCol_TableRowBg, ImVec4(0.1f, 0.1f, 0.1f, alpha));
     ImGui::PushStyleColor(ImGuiCol_TableBorderLight, ImVec4(0.5f, 0.5f, 0.5f, alpha));
 
-    // Подсказка о контекстных меню
+    // Context menu hint
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered())
@@ -175,7 +175,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
     ImGui::SameLine();
     ImGui::Text("Watch Table");
 
-    // Заголовки колонок
+    // Column headers
     ImGui::Columns(4, nullptr, true);
     float col0 = ImGui::GetColumnWidth(0);
     float col1 = ImGui::GetColumnWidth(1);
@@ -207,7 +207,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
 
         ImVec2 row_start = ImGui::GetCursorScreenPos();
 
-        // --- Колонка 0: Enabled + Address ---
+        // --- Column 0: Enabled + Address ---
         ImGui::PushID(i);
         ImGui::PushItemWidth(-1);
 
@@ -232,7 +232,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         ImGui::PopID();
         ImGui::NextColumn();
 
-        // --- Колонка 1: Name ---
+        // --- Column 1: Name ---
         ImGui::PushID(i + 1000);
         ImGui::PushItemWidth(-1);
         if (ImGui::InputText("##Name", row.name, MAX_STR_LEN)) {
@@ -247,13 +247,13 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         ImGui::PopID();
         ImGui::NextColumn();
 
-        // --- Колонка 2: Value ---
+        // --- Column 2: Value ---
         ImGui::PushID(i + 2000);
         ImGui::PushItemWidth(-1);
 
         bool valueChanged = false;
 
-        // Побитовый режим для целочисленных типов
+        // Bit view for integer types
         if (row.bitMode && IsIntegerType(row.dataType)) {
             int numBits = GetDataTypeBits(row.dataType);
             if (numBits > 0) {
@@ -299,7 +299,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         }
         else
         {
-            // Обычный редактор
+            // Regular editor
             switch (row.dataType) {
             case BOOLEAN: {
                 bool b = row.value != 0;
@@ -442,7 +442,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
             }
         }
 
-        // Контекстное меню строки
+        // Row context menu
         s_contextMenuRow = i;
         if (ImGui::BeginPopupContextItem("RowContextMenu")) {
             DrawRowContextMenu();
@@ -453,7 +453,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         ImGui::PopID();
         ImGui::NextColumn();
 
-        // --- Колонка 3: Description ---
+        // --- Column 3: Description ---
         ImGui::PushID(i + 3000);
         ImGui::PushItemWidth(-1);
         if (ImGui::InputText("##Desc", row.desc, MAX_STR_LEN)) {
@@ -468,7 +468,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         ImGui::PopID();
         ImGui::NextColumn();
 
-        // Подсветка строки
+        // Row highlight
         if (i == s_highlightedRow) {
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             ImVec2 row_end = ImGui::GetCursorScreenPos();
@@ -485,7 +485,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
     ImGui::Columns(1);
     ImGui::EndChild();
 
-    // --- Общее контекстное меню окна ---
+    // --- Window context menu ---
     if (ImGui::BeginPopupContextWindow("WatchMainMenu")) {
         if (ImGui::MenuItem("New Row")) {
             WatchRow newRow = {};
@@ -500,13 +500,13 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         if (ImGui::MenuItem("Export...")) {
             const char* f = file_save_dialog("XML(*.xml)\0*.XML\0");
             if (f) {
-                char path[MAX_PATH]; // Создаем локальный буфер нужного размера
-                SDL_strlcpy(path, f, MAX_PATH); // Копируем путь из диалога в наш буфер
+                char path[MAX_PATH]; // local buffer of the right size
+                SDL_strlcpy(path, f, MAX_PATH); // copy the path from the dialog
 
-                EnsureXmlExtension(path, MAX_PATH); // Добавляем .xml, если его нет
+                EnsureXmlExtension(path, MAX_PATH); // append .xml if missing
 
-                SaveToXML(path); // Сохраняем
-                // SDL_free(path) БОЛЬШЕ НЕ НУЖЕН, так как массив на стеке
+                SaveToXML(path); // save
+                // no SDL_free(path): the array is on the stack
             }
         }
         if (ImGui::MenuItem("Import...")) {
@@ -519,7 +519,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         ImGui::EndPopup();
     }
 
-    // Удаление строки
+    // Row removal
     if (s_selectedRow >= 0 && s_selectedRow < (int)s_rows.size()) {
         s_rows.erase(s_rows.begin() + s_selectedRow);
         if (s_contextMenuRow == s_selectedRow) s_contextMenuRow = -1;
@@ -530,13 +530,13 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         s_modified = true;
     }
 
-    // Автосохранение
+    // Autosave
     if (s_modified) {
         SaveToXML(s_xmlPath);
         s_modified = false;
     }
 
-    // Периодическое обновление
+    // Periodic refresh
     if (ctx->StartComunication && ImGui::GetTime() > s_refreshTime) {
         for (auto& row : s_rows) {
             if (!row.enabled) continue;
@@ -587,7 +587,7 @@ void WatchWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         s_refreshTime = ImGui::GetTime() + s_updateInterval / 1000.0;
     }
 
-    ImGui::PopStyleColor(4); // восстанавливаем исходные цвета
+    ImGui::PopStyleColor(4); // restore the original colors
 }
 
 void WatchWidget::DrawRowContextMenu() {

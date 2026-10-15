@@ -89,7 +89,7 @@ private:
         float x0 = pos.x, y0 = pos.y;
         float x1 = pos.x + size.x, y1 = pos.y + size.y;
 
-        // Корпус
+        // Body
         float frame_rounding = size.x * 0.1f;
         float shadow_offset = 3.0f;
         draw->AddRectFilled(ImVec2(x0 + 2, y0 + 2), ImVec2(x1 + shadow_offset, y1 + shadow_offset),
@@ -104,9 +104,9 @@ private:
             IM_COL32(120, 120, 120, 80), frame_rounding * 0.8f, 0, 1.0f);
         draw->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(20, 20, 20, 255), frame_rounding, 0, 1.5f);
 
-        // Внутренняя кнопка (качелька)
+        // Inner rocker
         float p = size.x * 0.15f;
-        int pressOffset = (active && !disabled) ? 2 : 0; // смещение при нажатии
+        int pressOffset = (active && !disabled) ? 2 : 0; // offset while pressed
 
         ImVec2 b0(x0 + p + pressOffset, y0 + p + pressOffset);
         ImVec2 b1(x1 - p + pressOffset, y1 - p + pressOffset);
@@ -118,7 +118,7 @@ private:
             draw->AddRectFilledMultiColor(b0, b1, col_button_bottom, col_button_bottom, col_button_top, col_button_top);
         }
 
-        // Тени и блики
+        // Shadows and highlights
         draw->AddRectFilled(ImVec2(b0.x - 2, b0.y + 2), ImVec2(b0.x, b1.y - 2), IM_COL32(0, 0, 0, 80));
         draw->AddRectFilled(ImVec2(b1.x, b0.y + 2), ImVec2(b1.x + 2, b1.y - 2), IM_COL32(255, 255, 255, 40));
         draw->AddRectFilled(ImVec2(b0.x + 2, b0.y - 2), ImVec2(b1.x - 2, b0.y), IM_COL32(0, 0, 0, 60));
@@ -127,11 +127,11 @@ private:
         draw->AddRectFilled(ImVec2(b0.x + 3, b0.y + 3), ImVec2(b1.x - 3, b0.y + size.y * 0.1f),
             IM_COL32(255, 255, 255, 40));
 
-        // Разделительная линия
+        // Divider line
         float mid_y = (b0.y + b1.y) * 0.5f;
         draw->AddLine(ImVec2(b0.x + 3, mid_y), ImVec2(b1.x - 3, mid_y), IM_COL32(0, 0, 0, 100), 1.5f);
 
-        // Символы I и O
+        // I and O symbols
         float mid_x = (b0.x + b1.x) * 0.5f;
         float sym_thickness = size.x * 0.08f;
         float sym_size = size.y * 0.18f;
@@ -152,7 +152,7 @@ private:
         draw->AddCircle(ImVec2(mid_x, o_y_center), sym_size * 0.4f,
             col_symbol, 0, sym_thickness);
 
-        // Блик на корпусе
+        // Body highlight
         draw->AddLine(ImVec2(x0 + 2, y0 + 2), ImVec2(x1 - 2, y0 + 2), IM_COL32(255, 255, 255, 50), 2.0f);
 
         return clicked && !disabled;

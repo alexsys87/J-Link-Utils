@@ -9,21 +9,21 @@ extern "C" {
     ImTextureID LoadTextureFromFile(SDL_Renderer* renderer, const char* filename, int* out_width, int* out_height) {
         if (!renderer || !filename) return (ImTextureID)0;
 
-        // 1. Получаем путь к папке с EXE
+        // 1. Folder of the EXE
         char* base_path = SDL_GetBasePath();
         if (!base_path) return (ImTextureID)0;
 
-        // 2. Создаем полный путь (base_path уже содержит слеш на конце)
+        // 2. Full path (base_path already ends with a slash)
         char full_path[1024];
         snprintf(full_path, sizeof(full_path), "%s%s", base_path, filename);
-        SDL_free(base_path); // Освобождаем память сразу после склейки
+        SDL_free(base_path); // free right after joining
 
-        // 3. Загружаем через stb_image
+        // 3. Load with stb_image
         int w, h, channels;
         unsigned char* pixels = stbi_load(full_path, &w, &h, &channels, 4);
         if (!pixels) return (ImTextureID)0;
 
-        // 4. Создаем текстуру SDL
+        // 4. Create the SDL texture
         SDL_Texture* texture = SDL_CreateTexture(renderer,
             SDL_PIXELFORMAT_RGBA8888,
             SDL_TEXTUREACCESS_STATIC,
