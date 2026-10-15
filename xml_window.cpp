@@ -1552,10 +1552,8 @@ int Draw_Window(MainContext* ctx) {
         if (ctx->File_path[0] != '\0' && !ctx->file_loaded) {
             LoadWindowsFromXML(ctx, ctx->File_path);
         }
-        if (g_Windows.empty()) {
-            ImGui::Text("No windows loaded. Check XML file.");
-            return -1;
-        }
+        // Nothing to draw: the main window shows the hint instead of an implicit "Debug" window.
+        if (g_Windows.empty()) return -1;
     }
 
     for (auto& win : g_Windows) {

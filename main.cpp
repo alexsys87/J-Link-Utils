@@ -107,6 +107,8 @@ MainContext* allocate_context() {
 
     SDL_memset(ctx->File_path, 0, sizeof(ctx->File_path));
     SDL_memset(ctx->File_label, 0, sizeof(ctx->File_label));
+    // The main window title must never be empty: ImGui asserts on an empty window name.
+    SDL_strlcpy(ctx->File_label, "J-Link Utils", sizeof(ctx->File_label));
     SDL_memset(ctx->jlink_device, 0, sizeof(ctx->jlink_device));
     strcpy(ctx->jlink_device, "Cortex-M0");
 
@@ -1023,7 +1025,10 @@ static void MenuWindow(bool* p_open, MainContext* ctx)
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2((float)ctx->Win_width, (float)ctx->Win_height), ImGuiCond_Once);
     ImGui::SetNextWindowBgAlpha(0.9f);
-    if (ImGui::Begin(ctx->File_label, p_open, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus))
+    // "###" keeps the window ID stable while the visible title follows the opened file.
+    char title[sizeof(ctx->File_label) + 16];
+    SDL_snprintf(title, sizeof(title), "%s###MainWindow", ctx->File_label[0] ? ctx->File_label : "J-Link Utils");
+    if (ImGui::Begin(title, p_open, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus))
     {
         ImVec2 size = ImGui::GetWindowSize();
         if (prev_size.x != size.x || prev_size.y != size.y)
@@ -1071,6 +1076,12 @@ static void MenuWindow(bool* p_open, MainContext* ctx)
                 if (CloseFile(ctx)) ctx->closefile = false;
 
             ImGui::EndMenuBar();
+        }
+
+        if (g_Windows.empty()) {
+            ImGui::TextDisabled("%s", ctx->File_path[0] != '\0'
+                ? "No windows loaded. Check the XML file."
+                : "No XML file loaded. Use File > New or File > Open.");
         }
     }
     else
