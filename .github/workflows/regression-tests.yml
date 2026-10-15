@@ -31,6 +31,8 @@ jobs:
         run: python3 tests/ui_regression/run.py
       - name: Check searchable User Guide with real ImGui
         run: python3 tests/user_guide/run.py
+      - name: Check English/Russian switching, stable IDs and unchanged XML
+        run: python3 tests/localization/run.py
       - name: Check atomic INI persistence and validation
         run: sh tests/settings/run.sh
       - name: Check restored window geometry
@@ -42,7 +44,12 @@ jobs:
   widgets:
     name: Every widget with real ImGui (ASan and UBSan)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [en, ru]
     steps:
       - uses: actions/checkout@v6
       - name: Load and draw every widget with missing and hostile properties
+        env:
+          SMOKE_LANGUAGE: ${{ matrix.language }}
         run: python3 tests/widget_smoke/run.py

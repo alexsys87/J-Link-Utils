@@ -61,6 +61,8 @@
 
 #pragma once
 
+#include "../Localization.h"
+
 #include <stdio.h>      // sprintf, scanf
 #include <stdint.h>     // uint8_t, etc.
 
@@ -542,17 +544,17 @@ struct MemoryEditor
         if (OptShowOptions)
             if (ImGui::IsMouseHoveringRect(contents_pos_start, contents_pos_end))
                 if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
-                    ImGui::OpenPopup("OptionsPopup");
+                    ImGui::OpenPopup(app_language::Label("OptionsPopup", "Параметры"));
 
-        if (ImGui::BeginPopup("OptionsPopup"))
+        if (ImGui::BeginPopup(app_language::Label("OptionsPopup", "Параметры")))
         {
             ImGui::SetNextItemWidth(s.GlyphWidth * 7 + style.FramePadding.x * 2.0f);
-            if (ImGui::DragInt("##cols", &Cols, 0.2f, 4, 32, "%d cols")) { ContentsWidthChanged = true; if (Cols < 1) Cols = 1; }
-            ImGui::Checkbox("Show Data Preview", &OptShowDataPreview);
-            ImGui::Checkbox("Show HexII", &OptShowHexII);
-            if (ImGui::Checkbox("Show Ascii", &OptShowAscii)) { ContentsWidthChanged = true; }
-            ImGui::Checkbox("Grey out zeroes", &OptGreyOutZeroes);
-            ImGui::Checkbox("Uppercase Hex", &OptUpperCaseHex);
+            if (ImGui::DragInt("##cols", &Cols, 0.2f, 4, 32, app_language::Tr("%d cols", "%d столб."))) { ContentsWidthChanged = true; if (Cols < 1) Cols = 1; }
+            ImGui::Checkbox(app_language::Label("Show Data Preview", "Предпросмотр данных"), &OptShowDataPreview);
+            ImGui::Checkbox(app_language::Label("Show HexII", "Показывать HexII"), &OptShowHexII);
+            if (ImGui::Checkbox(app_language::Label("Show Ascii", "Показывать ASCII"), &OptShowAscii)) { ContentsWidthChanged = true; }
+            ImGui::Checkbox(app_language::Label("Grey out zeroes", "Приглушать нули"), &OptGreyOutZeroes);
+            ImGui::Checkbox(app_language::Label("Uppercase Hex", "Заглавные буквы в Hex"), &OptUpperCaseHex);
 
             ImGui::EndPopup();
         }
@@ -562,11 +564,11 @@ struct MemoryEditor
     {
         IM_UNUSED(mem_data);
         ImGuiStyle& style = ImGui::GetStyle();
-        const char* format_range = OptUpperCaseHex ? "Range %0*" _PRISizeT "X..%0*" _PRISizeT "X" : "Range %0*" _PRISizeT "x..%0*" _PRISizeT "x";
+        const char* format_range = OptUpperCaseHex ? app_language::Tr("Range %0*" _PRISizeT "X..%0*" _PRISizeT "X", "Диапазон %0*" _PRISizeT "X..%0*" _PRISizeT "X") : app_language::Tr("Range %0*" _PRISizeT "x..%0*" _PRISizeT "x", "Диапазон %0*" _PRISizeT "x..%0*" _PRISizeT "x");
 
         // Options menu
-        if (ImGui::Button("Options"))
-            ImGui::OpenPopup("OptionsPopup");
+        if (ImGui::Button(app_language::Label("Options", "Параметры")))
+            ImGui::OpenPopup(app_language::Label("OptionsPopup", "Параметры"));
 
         ImGui::SameLine();
         ImGui::Text(format_range, s.AddrDigitsCount, base_display_addr, s.AddrDigitsCount, base_display_addr + mem_size - 1);
@@ -595,7 +597,7 @@ struct MemoryEditor
         ImU8* mem_data = (ImU8*)mem_data_void;
         ImGuiStyle& style = ImGui::GetStyle();
         ImGui::AlignTextToFramePadding();
-        ImGui::Text("Preview as:");
+        ImGui::TextUnformatted(app_language::Tr("Preview as:", "Просмотр как:"));
         ImGui::SameLine();
         ImGui::SetNextItemWidth((s.GlyphWidth * 10.0f) + style.FramePadding.x * 2.0f + style.ItemInnerSpacing.x);
 
@@ -619,14 +621,14 @@ struct MemoryEditor
         bool has_value = DataPreviewAddr != (size_t)-1;
         if (has_value)
             DrawPreviewData(DataPreviewAddr, mem_data, mem_size, PreviewDataType, DataFormat_Dec, buf, (size_t)IM_ARRAYSIZE(buf));
-        ImGui::Text("Dec"); ImGui::SameLine(x); ImGui::TextUnformatted(has_value ? buf : "N/A");
+        ImGui::TextUnformatted(app_language::Tr("Dec", "Дес.")); ImGui::SameLine(x); ImGui::TextUnformatted(has_value ? buf : app_language::Tr("N/A", "Н/Д"));
         if (has_value)
             DrawPreviewData(DataPreviewAddr, mem_data, mem_size, PreviewDataType, DataFormat_Hex, buf, (size_t)IM_ARRAYSIZE(buf));
-        ImGui::Text("Hex"); ImGui::SameLine(x); ImGui::TextUnformatted(has_value ? buf : "N/A");
+        ImGui::TextUnformatted(app_language::Tr("Hex", "Шестн.")); ImGui::SameLine(x); ImGui::TextUnformatted(has_value ? buf : app_language::Tr("N/A", "Н/Д"));
         if (has_value)
             DrawPreviewData(DataPreviewAddr, mem_data, mem_size, PreviewDataType, DataFormat_Bin, buf, (size_t)IM_ARRAYSIZE(buf));
         buf[IM_ARRAYSIZE(buf) - 1] = 0;
-        ImGui::Text("Bin"); ImGui::SameLine(x); ImGui::TextUnformatted(has_value ? buf : "N/A");
+        ImGui::TextUnformatted(app_language::Tr("Bin", "Двоич.")); ImGui::SameLine(x); ImGui::TextUnformatted(has_value ? buf : app_language::Tr("N/A", "Н/Д"));
     }
 
     // Utilities for Data Preview (since we don't access imgui_internal.h)

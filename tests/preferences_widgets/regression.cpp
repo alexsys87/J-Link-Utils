@@ -161,6 +161,7 @@ static void TestWatchExportAndDuplicateIds(const std::string& dir, const std::st
 
 int main(int argc, char** argv) {
     assert(argc == 2);
+    app_language::SetFromCode(std::getenv("TEST_LANGUAGE") ? std::getenv("TEST_LANGUAGE") : "en");
     const std::string dir = argv[1];
     const std::string ini = dir + "/settings.ini";
     assert(prefs::Load(ini));

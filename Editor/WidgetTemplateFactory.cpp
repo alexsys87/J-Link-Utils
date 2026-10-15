@@ -1,5 +1,6 @@
 // WidgetTemplateFactory.cpp
 #include "WidgetTemplateFactory.h"
+#include "Localization.h"
 #include "XMLSafety.h"
 #include <cctype>
 #include <cmath>
@@ -330,6 +331,129 @@ namespace WidgetTemplateFactory {
             return def && def->listTag && !def->itemTag && IsTag(e, def->listTag);
         }
     } // namespace
+
+    // Resolve display metadata at render time so language changes also affect static catalogs.
+    // Schema identifiers and serialized defaults deliberately remain language-independent.
+    const char* EditorText(const char* english) {
+        if (!english) return "";
+        if (std::strcmp(english, "Target address: 0x20000000, #20000000 or decimal") == 0) return app_language::Tr("Target address: 0x20000000, #20000000 or decimal", "Адрес в целевом устройстве: 0x20000000, #20000000 или десятичное число");
+        if (std::strcmp(english, "false swaps the bytes (big-endian data)") == 0) return app_language::Tr("false swaps the bytes (big-endian data)", "false меняет порядок байтов (данные big-endian)");
+        if (std::strcmp(english, "printf format for one value, e.g. %d or %.2f") == 0) return app_language::Tr("printf format for one value, e.g. %d or %.2f", "Формат printf для одного значения, например %d или %.2f");
+        if (std::strcmp(english, "FLOAT_INV (byte order swapped)") == 0) return app_language::Tr("FLOAT_INV (byte order swapped)", "FLOAT_INV (обратный порядок байтов)");
+        if (std::strcmp(english, "Set: write Value on click") == 0) return app_language::Tr("Set: write Value on click", "Set: записать Value при нажатии");
+        if (std::strcmp(english, "Toggle bit 0") == 0) return app_language::Tr("Toggle bit 0", "Переключить бит 0");
+        if (std::strcmp(english, "Write: write Value on click") == 0) return app_language::Tr("Write: write Value on click", "Write: записать Value при нажатии");
+        if (std::strcmp(english, "Momentary: Value while held, 0 on release") == 0) return app_language::Tr("Momentary: Value while held, 0 on release", "Momentary: Value при удержании, 0 при отпускании");
+        if (std::strcmp(english, "X distance between two samples") == 0) return app_language::Tr("X distance between two samples", "Расстояние по X между двумя отсчётами");
+        if (std::strcmp(english, "Number of array elements (1..4096)") == 0) return app_language::Tr("Number of array elements (1..4096)", "Количество элементов массива (1..4096)");
+        if (std::strcmp(english, "Moving average window, 0 = off") == 0) return app_language::Tr("Moving average window, 0 = off", "Окно скользящего среднего, 0 = выключено");
+        if (std::strcmp(english, "Flag set by the MCU when the array is full; 0 = read continuously") == 0) return app_language::Tr("Flag set by the MCU when the array is full; 0 = read continuously", "Флаг, устанавливаемый микроконтроллером при заполнении массива; 0 = непрерывное чтение");
+        if (std::strcmp(english, "Fit the Y axis to the data") == 0) return app_language::Tr("Fit the Y axis to the data", "Подстроить ось Y под данные");
+        if (std::strcmp(english, "16-bit value written by the button") == 0) return app_language::Tr("16-bit value written by the button", "16-битное значение, записываемое кнопкой");
+        if (std::strcmp(english, "true: 8-bit flag, false: 16-bit value") == 0) return app_language::Tr("true: 8-bit flag, false: 16-bit value", "true: 8-битный флаг, false: 16-битное значение");
+        if (std::strcmp(english, "-1 = default spacing") == 0) return app_language::Tr("-1 = default spacing", "-1 = интервал по умолчанию");
+        if (std::strcmp(english, "Address step from one cell to the next") == 0) return app_language::Tr("Address step from one cell to the next", "Шаг адреса между соседними ячейками");
+        if (std::strcmp(english, "Samples per second per line (up to 1000)") == 0) return app_language::Tr("Samples per second per line (up to 1000)", "Отсчётов в секунду на линию (до 1000)");
+        if (std::strcmp(english, "Points shown in the static plot (1..4096)") == 0) return app_language::Tr("Points shown in the static plot (1..4096)", "Количество точек на статическом графике (1..4096)");
+        if (std::strcmp(english, "Minimum history length in points") == 0) return app_language::Tr("Minimum history length in points", "Минимальная длина истории в точках");
+        if (std::strcmp(english, "Plot buffer 0..63") == 0) return app_language::Tr("Plot buffer 0..63", "Буфер графика 0..63");
+        if (std::strcmp(english, "X position") == 0) return app_language::Tr("X position", "Позиция X");
+        if (std::strcmp(english, "Y position") == 0) return app_language::Tr("Y position", "Позиция Y");
+        if (std::strcmp(english, "0 = continuous") == 0) return app_language::Tr("0 = continuous", "0 = непрерывно");
+        if (std::strcmp(english, "Number of columns (1..64)") == 0) return app_language::Tr("Number of columns (1..64)", "Количество столбцов (1..64)");
+        if (std::strcmp(english, "Leading zeros, 0 = none") == 0) return app_language::Tr("Leading zeros, 0 = none", "Ведущие нули, 0 = нет");
+        if (std::strcmp(english, "Digits after the point for FLOAT") == 0) return app_language::Tr("Digits after the point for FLOAT", "Знаков после запятой для FLOAT");
+        if (std::strcmp(english, "Old name of HexMode") == 0) return app_language::Tr("Old name of HexMode", "Старое имя HexMode");
+        if (std::strcmp(english, "Show Line1Text/Line2Text instead of memory") == 0) return app_language::Tr("Show Line1Text/Line2Text instead of memory", "Показывать Line1Text/Line2Text вместо содержимого памяти");
+        if (std::strcmp(english, "8 bits") == 0) return app_language::Tr("8 bits", "8 бит");
+        if (std::strcmp(english, "16 bits") == 0) return app_language::Tr("16 bits", "16 бит");
+        if (std::strcmp(english, "32 bits") == 0) return app_language::Tr("32 bits", "32 бита");
+        if (std::strcmp(english, "Allow switching the width at run time") == 0) return app_language::Tr("Allow switching the width at run time", "Разрешить переключение разрядности во время работы");
+        if (std::strcmp(english, "File next to the program") == 0) return app_language::Tr("File next to the program", "Файл рядом с программой");
+        if (std::strcmp(english, "0 = image size") == 0) return app_language::Tr("0 = image size", "0 = размер изображения");
+        if (std::strcmp(english, "float (32-bit)") == 0) return app_language::Tr("float (32-bit)", "float (32 бита)");
+        if (std::strcmp(english, "int16 (16-bit)") == 0) return app_language::Tr("int16 (16-bit)", "int16 (16 бит)");
+        if (std::strcmp(english, "Bytes between bands: 4 for float, 2 for int16") == 0) return app_language::Tr("Bytes between bands: 4 for float, 2 for int16", "Байт между полосами: 4 для float, 2 для int16");
+        if (std::strcmp(english, "horizontal") == 0) return app_language::Tr("horizontal", "горизонтально");
+        if (std::strcmp(english, "vertical") == 0) return app_language::Tr("vertical", "вертикально");
+        if (std::strcmp(english, "X position in the window, pixels. With PosX/PosY the widget is placed there instead of in the flow layout") == 0) return app_language::Tr("X position in the window, pixels. With PosX/PosY the widget is placed there instead of in the flow layout", "Позиция X в окне, в пикселях. PosX/PosY задают размещение вместо потоковой компоновки");
+        if (std::strcmp(english, "Y position in the window, pixels (0 is the top of the title bar)") == 0) return app_language::Tr("Y position in the window, pixels (0 is the top of the title bar)", "Позиция Y в окне, в пикселях (0 — верх заголовка окна)");
+        if (std::strcmp(english, "Width of the input field, pixels; 0 = default, negative = up to that distance from the right edge") == 0) return app_language::Tr("Width of the input field, pixels; 0 = default, negative = up to that distance from the right edge", "Ширина поля ввода, в пикселях; 0 = по умолчанию, отрицательное значение — отступ от правого края");
+        if (std::strcmp(english, "Window position on the screen, pixels; without PosX/PosY the last position is kept") == 0) return app_language::Tr("Window position on the screen, pixels; without PosX/PosY the last position is kept", "Позиция окна на экране, в пикселях; без PosX/PosY сохраняется последняя позиция");
+        if (std::strcmp(english, "Window position on the screen, pixels") == 0) return app_language::Tr("Window position on the screen, pixels", "Позиция окна на экране, в пикселях");
+        if (std::strcmp(english, "Window width, pixels; 0 = fit the content") == 0) return app_language::Tr("Window width, pixels; 0 = fit the content", "Ширина окна, в пикселях; 0 = по содержимому");
+        if (std::strcmp(english, "Window height, pixels; 0 = fit the content") == 0) return app_language::Tr("Window height, pixels; 0 = fit the content", "Высота окна, в пикселях; 0 = по содержимому");
+        return english;
+    }
+
+    const char* WidgetDescription(const char* tag) {
+        if (std::strcmp(tag, "Text") == 0) return app_language::Tr("Text", "Текст");
+        if (std::strcmp(tag, "TextColored") == 0) return app_language::Tr("Colored text", "Цветной текст");
+        if (std::strcmp(tag, "Button") == 0) return app_language::Tr("Button", "Кнопка");
+        if (std::strcmp(tag, "Checkbox") == 0) return app_language::Tr("Checkbox", "Флажок");
+        if (std::strcmp(tag, "Group") == 0) return app_language::Tr("Group", "Группа");
+        if (std::strcmp(tag, "TreeNode") == 0) return app_language::Tr("Tree node", "Узел дерева");
+        if (std::strcmp(tag, "SameLine") == 0) return app_language::Tr("Continue on the same line", "Продолжить на той же строке");
+        if (std::strcmp(tag, "Spacing") == 0) return app_language::Tr("Spacing", "Интервал");
+        if (std::strcmp(tag, "Separator") == 0) return app_language::Tr("Separator", "Разделитель");
+        if (std::strcmp(tag, "Dummy") == 0) return app_language::Tr("Empty space", "Пустое место");
+        if (std::strcmp(tag, "Grid") == 0) return app_language::Tr("Grid", "Сетка");
+        if (std::strcmp(tag, "PlotLines") == 0) return app_language::Tr("Line plot", "Линейный график");
+        if (std::strcmp(tag, "TextFormatted") == 0) return app_language::Tr("Formatted integer text", "Форматированный целочисленный текст");
+        if (std::strcmp(tag, "TextFormattedF") == 0) return app_language::Tr("Formatted floating-point text", "Форматированный вещественный текст");
+        if (std::strcmp(tag, "AlignTextToFramePadding") == 0) return app_language::Tr("Align text to frame padding", "Выровнять текст по отступам рамки");
+        if (std::strcmp(tag, "NewLine") == 0) return app_language::Tr("New line", "Новая строка");
+        if (std::strcmp(tag, "LabelText") == 0) return app_language::Tr("Labeled text", "Текст с подписью");
+        if (std::strcmp(tag, "RadioButton") == 0) return app_language::Tr("Radio buttons", "Переключатели");
+        if (std::strcmp(tag, "Tooltip") == 0) return app_language::Tr("Tooltip", "Подсказка");
+        if (std::strcmp(tag, "PlotTooltip") == 0) return app_language::Tr("Plot tooltip", "Подсказка с графиком");
+        if (std::strcmp(tag, "ComboBox") == 0) return app_language::Tr("Combo box", "Выпадающий список");
+        if (std::strcmp(tag, "ImputInt") == 0) return app_language::Tr("Integer input", "Ввод целого числа");
+        if (std::strcmp(tag, "ImputFloat") == 0) return app_language::Tr("Floating-point input", "Ввод вещественного числа");
+        if (std::strcmp(tag, "FixedWidth") == 0) return app_language::Tr("Fixed-width container", "Контейнер фиксированной ширины");
+        if (std::strcmp(tag, "SetCursorPos") == 0) return app_language::Tr("Set cursor position", "Задать позицию курсора");
+        if (std::strcmp(tag, "Indent") == 0) return app_language::Tr("Indent", "Отступ");
+        if (std::strcmp(tag, "Histogram") == 0) return app_language::Tr("Histogram", "Гистограмма");
+        if (std::strcmp(tag, "DataLog") == 0) return app_language::Tr("Data log", "Журнал данных");
+        if (std::strcmp(tag, "ProgressBar") == 0) return app_language::Tr("Progress bar", "Индикатор выполнения");
+        if (std::strcmp(tag, "SliderFloat") == 0) return app_language::Tr("Floating-point slider", "Вещественный ползунок");
+        if (std::strcmp(tag, "SliderInt") == 0) return app_language::Tr("Integer slider", "Целочисленный ползунок");
+        if (std::strcmp(tag, "TabBar") == 0) return app_language::Tr("Tab bar", "Панель вкладок");
+        if (std::strcmp(tag, "Tab") == 0) return app_language::Tr("Tab", "Вкладка");
+        if (std::strcmp(tag, "Column") == 0) return app_language::Tr("Columns", "Столбцы");
+        if (std::strcmp(tag, "SelectableText") == 0) return app_language::Tr("Selectable text", "Выделяемый текст");
+        if (std::strcmp(tag, "ChildWindow") == 0) return app_language::Tr("Child window", "Дочернее окно");
+        if (std::strcmp(tag, "Header") == 0) return app_language::Tr("Collapsing header", "Сворачиваемый заголовок");
+        if (std::strcmp(tag, "Popup") == 0) return app_language::Tr("Popup", "Всплывающее окно");
+        if (std::strcmp(tag, "HintBox") == 0) return app_language::Tr("Hint box", "Окно подсказки");
+        if (std::strcmp(tag, "HelpMarker") == 0) return app_language::Tr("Help marker", "Значок справки");
+        if (std::strcmp(tag, "Watch") == 0) return app_language::Tr("Watch", "Наблюдение");
+        if (std::strcmp(tag, "SevenSegment") == 0) return app_language::Tr("Seven-segment display", "Семисегментный индикатор");
+        if (std::strcmp(tag, "MechanicalSwitch2") == 0) return app_language::Tr("Mechanical switch", "Механический переключатель");
+        if (std::strcmp(tag, "Gauge") == 0) return app_language::Tr("Gauge", "Стрелочный прибор");
+        if (std::strcmp(tag, "GlossyDisplay") == 0) return app_language::Tr("Glossy display", "Глянцевый дисплей");
+        if (std::strcmp(tag, "LCD_HD44780") == 0) return app_language::Tr("HD44780 LCD", "ЖК-дисплей HD44780");
+        if (std::strcmp(tag, "VerticalGauge") == 0) return app_language::Tr("Vertical gauge", "Вертикальный индикатор");
+        if (std::strcmp(tag, "NeumorphicKnob") == 0) return app_language::Tr("Neumorphic knob", "Неоморфный регулятор");
+        if (std::strcmp(tag, "StyledKnob") == 0) return app_language::Tr("Styled knob", "Стилизованный регулятор");
+        if (std::strcmp(tag, "CustomVerticalSlider") == 0) return app_language::Tr("Vertical slider", "Вертикальный ползунок");
+        if (std::strcmp(tag, "BitControl8Bit") == 0) return app_language::Tr("8-bit control", "Управление 8 битами");
+        if (std::strcmp(tag, "BitControl") == 0) return app_language::Tr("Bit control", "Управление битами");
+        if (std::strcmp(tag, "RotarySwitch") == 0) return app_language::Tr("Rotary switch", "Поворотный переключатель");
+        if (std::strcmp(tag, "LedIndicator") == 0) return app_language::Tr("LED indicator", "Светодиодный индикатор");
+        if (std::strcmp(tag, "Image") == 0) return app_language::Tr("Image", "Изображение");
+        if (std::strcmp(tag, "Gif") == 0) return app_language::Tr("Animated GIF", "Анимированный GIF");
+        if (std::strcmp(tag, "RPMIndicator") == 0) return app_language::Tr("RPM indicator", "Тахометр");
+        if (std::strcmp(tag, "Keypad") == 0) return app_language::Tr("Numeric keypad", "Цифровая клавиатура");
+        if (std::strcmp(tag, "Equalizer") == 0) return app_language::Tr("Equalizer", "Эквалайзер");
+        if (std::strcmp(tag, "Tank") == 0) return app_language::Tr("Tank", "Резервуар");
+        if (std::strcmp(tag, "VUMeter") == 0) return app_language::Tr("VU meter", "Индикатор уровня");
+        if (std::strcmp(tag, "SegmentButton") == 0) return app_language::Tr("Segmented button", "Сегментированная кнопка");
+        if (std::strcmp(tag, "GlossyButton") == 0) return app_language::Tr("Glossy button", "Глянцевая кнопка");
+        if (std::strcmp(tag, "MemoryView") == 0) return app_language::Tr("Memory view", "Просмотр памяти");
+        if (std::strcmp(tag, "MemoryEditor") == 0) return app_language::Tr("Memory editor", "Редактор памяти");
+        return tag;
+    }
 
     const std::vector<NodeDef>& Widgets() {
         static const std::vector<NodeDef> widgets = BuildWidgets();

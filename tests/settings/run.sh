@@ -4,7 +4,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 build=$(mktemp -d /tmp/settings-tests.XXXXXX)
 trap 'rm -rf "$build"' EXIT HUP INT TERM
-cp "$root/Preferences.h" "$root/iniConfig.cpp" "$build/"
+cp "$root/Preferences.h" "$root/Localization.h" "$root/iniConfig.cpp" "$build/"
 cp "$root/tests/settings/"*.cpp "$root/tests/settings/Main.h" "$build/"
 ${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic -I"$build" \
     "$build/settings_test.cpp" "$build/other_translation_unit.cpp" "$build/iniConfig.cpp" -o "$build/settings_test"

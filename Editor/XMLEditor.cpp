@@ -1,5 +1,6 @@
 ﻿// XMLEditor.cpp
 #include "XMLEditor.h"
+#include "Localization.h"
 #include "Main.h"
 #include "imgui.h"
 #include "tinyxml2/tinyxml2.h"
@@ -123,7 +124,7 @@ static const wtf::NodeDef* ListOwner(const XMLElement* e) {
 }
 
 static void HelpTooltip(const wtf::PropDef* prop) {
-    if (prop && prop->help && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", prop->help);
+    if (prop && prop->help && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", wtf::EditorText(prop->help));
 }
 
 // ------------------------------------------------------------------
@@ -150,7 +151,7 @@ bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& 
         int value = 0;
         if (!text || !XMLUtil::ToInt(text, &value)) {
             const bool changed = EditText(text, out);
-            InvalidNote("not an integer, the default is used");
+            InvalidNote(app_language::Tr("not an integer, the default is used", "не целое число; используется значение по умолчанию"));
             return changed;
         }
         if (!ImGui::InputInt("##value", &value)) return false;
@@ -161,7 +162,7 @@ bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& 
         float value = 0.0f;
         if (!text || !XMLUtil::ToFloat(text, &value) || !std::isfinite(value)) {
             const bool changed = EditText(text, out);
-            InvalidNote("not a number, the default is used");
+            InvalidNote(app_language::Tr("not a number, the default is used", "не число; используется значение по умолчанию"));
             return changed;
         }
         if (!ImGui::InputFloat("##value", &value, 0.0f, 0.0f, "%g")) return false;
@@ -173,7 +174,7 @@ bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& 
         bool value = false;
         if (!text || !XMLUtil::ToBool(text, &value)) {
             const bool changed = EditText(text, out);
-            InvalidNote("expected true or false");
+            InvalidNote(app_language::Tr("expected true or false", "ожидается true или false"));
             return changed;
         }
         if (!ImGui::Checkbox("##value", &value)) return false;
@@ -185,7 +186,7 @@ bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& 
         float rgba[4];
         if (!wtf::ParseColor(text, rgba)) {
             const bool changed = EditText(text, out);
-            InvalidNote("expected #RRGGBB or #AARRGGBB");
+            InvalidNote(app_language::Tr("expected #RRGGBB or #AARRGGBB", "ожидается #RRGGBB или #AARRGGBB"));
             return changed;
         }
         const bool rgbOnly = prop.kind == wtf::PropKind::ColorRGB;
@@ -205,7 +206,7 @@ bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& 
         buf[sizeof(buf) - 1] = '\0';
         const bool edited = ImGui::InputText("##value", buf, sizeof(buf), ImGuiInputTextFlags_CharsNoBlank);
         uint32_t address = 0;
-        if (!wtf::ParseAddress(text, &address)) InvalidNote("invalid address, 0 is used");
+        if (!wtf::ParseAddress(text, &address)) InvalidNote(app_language::Tr("invalid address, 0 is used", "недопустимый адрес; используется 0"));
         else {
             ImGui::SameLine();
             ImGui::TextDisabled("= 0x%08X", address);
@@ -218,18 +219,19 @@ bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& 
         const char* preview = nullptr;
         std::string unknown;
         for (const wtf::EnumOption& o : prop.options) {
-            if (text && std::strcmp(o.value, text) == 0) preview = o.label;
+            if (text && std::strcmp(o.value, text) == 0) preview = wtf::EditorText(o.label);
         }
         if (!preview) {
-            unknown = std::string(text ? text : "") + " (unknown)";
+            unknown = std::string(text ? text : "") + app_language::Tr(" (unknown)", " (неизвестно)");
             preview = unknown.c_str();
         }
         bool changed = false;
         if (ImGui::BeginCombo("##value", preview)) {
             for (const wtf::EnumOption& o : prop.options) {
                 const bool selected = text && std::strcmp(o.value, text) == 0;
-                std::string label = std::string(o.value) + " - " + o.label;
-                if (ImGui::Selectable(label.c_str(), selected)) {
+                std::string label = std::string(o.value) + " - " + wtf::EditorText(o.label);
+                const std::string english = std::string(o.value) + " - " + o.label;
+                if (ImGui::Selectable(app_language::Label(english.c_str(), label.c_str()), selected)) {
                     out = o.value;
                     changed = true;
                 }
@@ -242,7 +244,7 @@ bool EditPropertyValue(const wtf::PropDef& prop, const char* text, std::string& 
         float xy[2] = { 0.0f, 0.0f };
         if (!text || sscanf(text, "%f,%f", &xy[0], &xy[1]) != 2) {
             const bool changed = EditText(text, out);
-            InvalidNote("expected x,y");
+            InvalidNote(app_language::Tr("expected x,y", "ожидается x,y"));
             return changed;
         }
         if (!ImGui::InputFloat2("##value", xy, "%g")) return false;
@@ -300,7 +302,7 @@ const wtf::NodeDef* WidgetPickerPopup(const char* popupId) {
     if (!ImGui::BeginPopup(popupId)) return nullptr;
     if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
     ImGui::SetNextItemWidth(220.0f);
-    ImGui::InputTextWithHint("##filter", "filter", g_widgetFilter, sizeof(g_widgetFilter));
+    ImGui::InputTextWithHint("##filter", app_language::Tr("filter", "фильтр"), g_widgetFilter, sizeof(g_widgetFilter));
     std::string filter;
     for (const char* p = g_widgetFilter; *p; ++p) filter.push_back((char)std::tolower(static_cast<unsigned char>(*p)));
     if (ImGui::BeginChild("##widgets", ImVec2(260, 320))) {
@@ -309,10 +311,12 @@ const wtf::NodeDef* WidgetPickerPopup(const char* popupId) {
             std::string name;
             for (const char* p = def.tag; *p; ++p) name.push_back((char)std::tolower(static_cast<unsigned char>(*p)));
             if (!filter.empty() && name.find(filter) == std::string::npos) continue;
-            if (ImGui::Selectable(def.tag)) {
+            const std::string description = std::string(def.tag) + " — " + wtf::WidgetDescription(def.tag);
+            if (ImGui::Selectable(app_language::Label(def.tag, description.c_str()))) {
                 chosen = &def;
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", wtf::WidgetDescription(def.tag));
         }
     }
     ImGui::EndChild();
@@ -393,7 +397,7 @@ static void ShowXMLNode(XMLNode* node, int depth) {
 // Attributes: typed controls for the ones the table knows, free editing for the rest.
 // Returns true when the panel must stop drawing this frame.
 static bool ShowAttributes(XMLElement* element, const wtf::NodeDef* def, MainContext* ctx) {
-    if (!ImGui::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) return false;
+    if (!ImGui::CollapsingHeader(app_language::Label("Attributes", "Атрибуты"), ImGuiTreeNodeFlags_DefaultOpen)) return false;
     std::vector<std::pair<std::string, std::string>> attrs;
     for (const tinyxml2::XMLAttribute* attr = element->FirstAttribute(); attr; attr = attr->Next()) {
         attrs.emplace_back(attr->Name(), attr->Value());
@@ -445,12 +449,12 @@ static bool ShowAttributes(XMLElement* element, const wtf::NodeDef* def, MainCon
 
     // New attribute
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputTextWithHint("##newAttrName", "name", g_newAttrName, sizeof(g_newAttrName));
+    ImGui::InputTextWithHint("##newAttrName", app_language::Tr("name", "имя"), g_newAttrName, sizeof(g_newAttrName));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f);
-    ImGui::InputTextWithHint("##newAttrValue", "value", g_newAttrValue, sizeof(g_newAttrValue));
+    ImGui::InputTextWithHint("##newAttrValue", app_language::Tr("value", "значение"), g_newAttrValue, sizeof(g_newAttrValue));
     ImGui::SameLine();
-    if (ImGui::Button("Add") && IsValidTagName(g_newAttrName)) {
+    if (ImGui::Button(app_language::Label("Add", "Добавить")) && IsValidTagName(g_newAttrName)) {
         element->SetAttribute(g_newAttrName, g_newAttrValue);
         g_newAttrName[0] = g_newAttrValue[0] = '\0';
         MarkXMLModified(ctx);
@@ -470,7 +474,7 @@ static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElemen
     ImGui::AlignTextToFramePadding();
     if (def && !prop && !HasChildElements(child) && !(def->listTag && std::strcmp(def->listTag, childName) == 0)) {
         ImGui::TextColored(kWarningColor, "%s:", childName);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("<%s> does not use <%s>; the loader ignores it.", def->tag, childName);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(app_language::Tr("<%s> does not use <%s>; the loader ignores it.", "<%s> не использует <%s>; загрузчик его игнорирует."), def->tag, childName);
     }
     else {
         ImGui::Text("%s:", childName);
@@ -486,9 +490,9 @@ static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElemen
         if (!caption && childDef) caption = ui_safety::XmlChildText(child, "Name", nullptr);
         if (!caption && childDef) caption = ui_safety::XmlChildText(child, "Label", nullptr);
         if (caption) ImGui::Text("%s", caption);
-        else ImGui::TextDisabled("%d element(s)", CountChildElements(child));
+        else ImGui::TextDisabled(app_language::Tr("%d element(s)", "Элементов: %d"), CountChildElements(child));
         ImGui::SameLine();
-        if (ImGui::SmallButton("Open")) {
+        if (ImGui::SmallButton(app_language::Label("Open", "Открыть"))) {
             g_selectedNode = child;
             restart = true;
         }
@@ -538,7 +542,7 @@ static bool ShowChildRow(XMLElement* element, const wtf::NodeDef* def, XMLElemen
 
 static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainContext* ctx) {
     if (!node) {
-        ImGui::Text("No node selected");
+        ImGui::Text("%s", app_language::Tr("No node selected", "Узел не выбран"));
         return;
     }
 
@@ -555,20 +559,20 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         const wtf::PropDef* ownProp = (!def && parentDef) ? wtf::FindProp(parentDef, element->Name()) : nullptr;
 
         // What this element is
-        if (def == &wtf::WindowDef()) ImGui::Text("Window");
+        if (def == &wtf::WindowDef()) ImGui::Text("%s", app_language::Tr("Window", "Окно"));
         else if (def && parent && ListOwner(parent) && ListOwner(parent)->itemTag)
-            ImGui::Text("Item <%s> of <%s>", element->Name(), ListOwner(parent)->tag);
-        else if (def) ImGui::Text("Widget <%s>", element->Name());
-        else if (listOwner) ImGui::Text("List of <%s>", listOwner->tag);
-        else if (ownProp) ImGui::Text("Property <%s> of <%s>", element->Name(), parentDef->tag);
-        else ImGui::TextColored(kWarningColor, "<%s> is not a known widget, list or property here", element->Name());
+            ImGui::Text(app_language::Tr("Item <%s> of <%s>", "Элемент <%s> в <%s>"), element->Name(), ListOwner(parent)->tag);
+        else if (def) ImGui::Text(app_language::Tr("Widget <%s>", "Виджет <%s>"), element->Name());
+        else if (listOwner) ImGui::Text(app_language::Tr("List of <%s>", "Список <%s>"), listOwner->tag);
+        else if (ownProp) ImGui::Text(app_language::Tr("Property <%s> of <%s>", "Свойство <%s> в <%s>"), element->Name(), parentDef->tag);
+        else ImGui::TextColored(kWarningColor, app_language::Tr("<%s> is not a known widget, list or property here", "<%s> здесь не является известным виджетом, списком или свойством"), element->Name());
         ImGui::Separator();
 
         // Element name
         char elemName[256];
         strncpy(elemName, element->Name(), sizeof(elemName) - 1);
         elemName[sizeof(elemName) - 1] = '\0';
-        if (ImGui::InputText("Tag name", elemName, sizeof(elemName), ImGuiInputTextFlags_EnterReturnsTrue)) {
+        if (ImGui::InputText(app_language::Label("Tag name", "Имя тега"), elemName, sizeof(elemName), ImGuiInputTextFlags_EnterReturnsTrue)) {
             if (IsValidTagName(elemName)) {
                 element->SetName(elemName);
                 MarkXMLModified(ctx);
@@ -578,7 +582,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         if (ownProp && !HasChildElements(element) && !ownProp->attribute) {
             // A single property: the same typed control as in its widget
             ImGui::PushID(element);
-            ImGui::Text("Value:");
+            ImGui::Text("%s", app_language::Tr("Value:", "Значение:"));
             HelpTooltip(ownProp);
             ImGui::SameLine(140.0f);
             std::string value;
@@ -596,7 +600,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         XMLNode* first = element->FirstChild();
         tinyxml2::XMLText* textChild = first ? first->ToText() : nullptr;
         if (((!def && !listOwner && !ownProp) || textChild) && !HasChildElements(element)) {
-            if (ImGui::CollapsingHeader("Text content", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::CollapsingHeader(app_language::Label("Text content", "Текстовое содержимое"), ImGuiTreeNodeFlags_DefaultOpen)) {
                 char textBuf[1024];
                 strncpy(textBuf, textChild ? textChild->Value() : "", sizeof(textBuf) - 1);
                 textBuf[sizeof(textBuf) - 1] = '\0';
@@ -608,7 +612,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         }
 
         // Child elements
-        if (HasChildElements(element) && ImGui::CollapsingHeader("Child Elements", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (HasChildElements(element) && ImGui::CollapsingHeader(app_language::Label("Child Elements", "Дочерние элементы"), ImGuiTreeNodeFlags_DefaultOpen)) {
             std::vector<XMLElement*> children;
             for (XMLElement* child = element->FirstChildElement(); child; child = child->NextSiblingElement()) {
                 children.push_back(child);
@@ -624,13 +628,14 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         if (def) {
             const std::vector<const wtf::PropDef*> missing = wtf::MissingProperties(element, *def);
             if (!missing.empty()) {
-                if (ImGui::Button("Add property")) ImGui::OpenPopup("AddPropertyPopup");
+                if (ImGui::Button(app_language::Label("Add property", "Добавить свойство"))) ImGui::OpenPopup(app_language::Label("AddPropertyPopup", "AddPropertyPopup"));
                 ImGui::SameLine();
             }
-            if (ImGui::BeginPopup("AddPropertyPopup")) {
+            if (ImGui::BeginPopup(app_language::Label("AddPropertyPopup", "AddPropertyPopup"))) {
                 for (const wtf::PropDef* prop : missing) {
-                    std::string label = std::string(prop->name) + (prop->inTemplate ? "" : "  (old format)");
-                    if (ImGui::Selectable(label.c_str())) {
+                    std::string label = std::string(prop->name) + (prop->inTemplate ? "" : app_language::Tr("  (old format)", "  (старый формат)"));
+                    const std::string english = std::string(prop->name) + (prop->inTemplate ? "" : "  (old format)");
+                    if (ImGui::Selectable(app_language::Label(english.c_str(), label.c_str()))) {
                         wtf::AddProperty(element, *prop);
                         MarkXMLModified(ctx);
                     }
@@ -645,8 +650,9 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         if (owner) {
             XMLElement* ownerElement = (owner == def) ? element : parent;
             if (owner->itemTag) {
-                std::string label = std::string("Add ") + owner->itemTag;
-                if (ImGui::Button(label.c_str())) {
+                std::string label = std::string(app_language::Tr("Add ", "Добавить ")) + owner->itemTag;
+                const std::string english = std::string("Add ") + owner->itemTag;
+                if (ImGui::Button(app_language::Label(english.c_str(), label.c_str()))) {
                     XMLElement* item = wtf::CreateItem(doc, *owner);
                     if (item) {
                         wtf::EnsureList(ownerElement, *owner)->InsertEndChild(item);
@@ -655,11 +661,11 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
                 }
             }
             else {
-                if (ImGui::Button("Add child widget")) {
+                if (ImGui::Button(app_language::Label("Add child widget", "Добавить дочерний виджет"))) {
                     g_widgetFilter[0] = '\0';
-                    ImGui::OpenPopup("AddChildWidgetPopup");
+                    ImGui::OpenPopup(app_language::Label("AddChildWidgetPopup", "AddChildWidgetPopup"));
                 }
-                if (const wtf::NodeDef* chosen = WidgetPickerPopup("AddChildWidgetPopup")) {
+                if (const wtf::NodeDef* chosen = WidgetPickerPopup(app_language::Label("AddChildWidgetPopup", "AddChildWidgetPopup"))) {
                     XMLElement* widget = wtf::CreateNode(doc, *chosen);
                     wtf::EnsureList(ownerElement, *owner)->InsertEndChild(widget);
                     g_selectedNode = widget;
@@ -670,7 +676,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
             ImGui::SameLine();
         }
 
-        if (ImGui::Button("Add comment")) {
+        if (ImGui::Button(app_language::Label("Add comment", "Добавить комментарий"))) {
             tinyxml2::XMLComment* newComment = doc->NewComment("New comment");
             XMLElement* container = (def && def->listTag) ? wtf::EnsureList(element, *def) : element;
             container->InsertEndChild(newComment);
@@ -678,7 +684,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         }
         ImGui::SameLine();
 
-        if (ImGui::Button("Delete this node")) {
+        if (ImGui::Button(app_language::Label("Delete this node", "Удалить этот узел"))) {
             XMLNode* parentNode = node->Parent();
             if (parentNode)
                 parentNode->DeleteChild(node);
@@ -692,11 +698,11 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         char textBuf[1024];
         strncpy(textBuf, textNode->Value(), sizeof(textBuf) - 1);
         textBuf[sizeof(textBuf) - 1] = '\0';
-        if (ImGui::InputTextMultiline("Text", textBuf, sizeof(textBuf))) {
+        if (ImGui::InputTextMultiline(app_language::Label("Text", "Текст"), textBuf, sizeof(textBuf))) {
             textNode->SetValue(textBuf);
             MarkXMLModified(ctx);
         }
-        if (ImGui::Button("Delete this node")) {
+        if (ImGui::Button(app_language::Label("Delete this node", "Удалить этот узел"))) {
             XMLNode* parentNode = node->Parent();
             if (parentNode)
                 parentNode->DeleteChild(node);
@@ -707,7 +713,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
     }
     else if (commentNode) {
         // Comment
-        ImGui::Text("Comment");
+        ImGui::Text("%s", app_language::Tr("Comment", "Комментарий"));
         char commentBuf[1024];
         strncpy(commentBuf, commentNode->Value(), sizeof(commentBuf) - 1);
         commentBuf[sizeof(commentBuf) - 1] = '\0';
@@ -715,7 +721,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
             commentNode->SetValue(commentBuf);
             MarkXMLModified(ctx);
         }
-        if (ImGui::Button("Delete this comment")) {
+        if (ImGui::Button(app_language::Label("Delete this comment", "Удалить этот комментарий"))) {
             XMLNode* parentNode = node->Parent();
             if (parentNode)
                 parentNode->DeleteChild(node);
@@ -725,7 +731,7 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
         }
     }
     else if (declNode) {
-        ImGui::Text("XML Declaration (cannot be edited)");
+        ImGui::Text("%s", app_language::Tr("XML Declaration (cannot be edited)", "Объявление XML (нельзя редактировать)"));
     }
 }
 
@@ -734,10 +740,10 @@ static void ShowNodeProperties(XMLNode* node, tinyxml2::XMLDocument* doc, MainCo
 // ------------------------------------------------------------------
 void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
     if (!ctx->CurrentXMLDoc) {
-        ImGui::OpenPopup("No XML loaded");
-        if (ImGui::BeginPopupModal("No XML loaded", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Please open an XML file first.");
-            if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+        ImGui::OpenPopup(app_language::Label("No XML loaded", "XML не загружен"));
+        if (ImGui::BeginPopupModal(app_language::Label("No XML loaded", "XML не загружен"), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("%s", app_language::Tr("Please open an XML file first.", "Сначала откройте XML-файл."));
+            if (ImGui::Button(app_language::Label("OK", "ОК"))) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
         return;
@@ -748,7 +754,7 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
     }
 
     ImGui::SetNextWindowSize(ImVec2(900, 600), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Widget Editor", p_open)) {
+    if (!ImGui::Begin(app_language::Label("Widget Editor", "Редактор виджетов"), p_open)) {
         ImGui::End();
         return;
     }
@@ -766,13 +772,13 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
     ImGui::SameLine();
 
     // Right panel: properties
-    if (ImGui::BeginChild("Properties", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 30), ImGuiChildFlags_Borders)) {
+    if (ImGui::BeginChild(app_language::Label("Properties", "Свойства"), ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 30), ImGuiChildFlags_Borders)) {
         ShowNodeProperties(g_selectedNode, ctx->CurrentXMLDoc, ctx);
     }
     ImGui::EndChild();
 
     // Bottom toolbar
-    if (ImGui::Button("Add Window", ImVec2(120, 0))) {
+    if (ImGui::Button(app_language::Label("Add Window", "Добавить окно"), ImVec2(120, 0))) {
         XMLElement* newWindow = wtf::CreateNewWindow(ctx->CurrentXMLDoc);
         ctx->CurrentXMLDoc->InsertEndChild(newWindow);
         g_selectedNode = newWindow;
@@ -780,27 +786,27 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
     }
     ImGui::SameLine();
 
-    if (ImGui::Button("Add Widget", ImVec2(120, 0))) {
+    if (ImGui::Button(app_language::Label("Add Widget", "Добавить виджет"), ImVec2(120, 0))) {
         g_widgetFilter[0] = '\0';
-        ImGui::OpenPopup("AddWidgetPopup");
+        ImGui::OpenPopup(app_language::Label("AddWidgetPopup", "AddWidgetPopup"));
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Into the selected container, after the selected widget, or into the first window");
+        ImGui::SetTooltip("%s", app_language::Tr("Into the selected container, after the selected widget, or into the first window", "В выбранный контейнер, после выбранного виджета или в первое окно"));
     ImGui::SameLine();
 
-    if (ImGui::Button("Save", ImVec2(120, 0))) {
+    if (ImGui::Button(app_language::Label("Save", "Сохранить"), ImVec2(120, 0))) {
         if (ctx->CurrentXMLDoc->SaveFile(ctx->File_path) == tinyxml2::XML_SUCCESS) {
             ClearAllWindows();
             LoadWindowsFromXML(ctx, ctx->File_path);
             ctx->xml_modified = false;
-            ImGui::OpenPopup("Saved");
+            ImGui::OpenPopup(app_language::Label("Saved", "Сохранено"));
         }
         else {
-            ImGui::OpenPopup("Save Error");
+            ImGui::OpenPopup(app_language::Label("Save Error", "Ошибка сохранения"));
         }
     }
 
-    if (const wtf::NodeDef* chosen = WidgetPickerPopup("AddWidgetPopup")) {
+    if (const wtf::NodeDef* chosen = WidgetPickerPopup(app_language::Label("AddWidgetPopup", "AddWidgetPopup"))) {
         XMLElement* selected = g_selectedNode ? g_selectedNode->ToElement() : nullptr;
         if (!selected && g_selectedNode) selected = ParentElement(g_selectedNode);
         XMLElement* widget = wtf::CreateNode(ctx->CurrentXMLDoc, *chosen);
@@ -810,25 +816,25 @@ void ShowWidgetEditor(bool* p_open, MainContext* ctx) {
         }
         else {
             ctx->CurrentXMLDoc->DeleteNode(widget);
-            ImGui::OpenPopup("No Window");
+            ImGui::OpenPopup(app_language::Label("No Window", "Нет окна"));
         }
     }
 
     // Notification popups
-    if (ImGui::BeginPopupModal("No Window", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Add a window first.");
-        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+    if (ImGui::BeginPopupModal(app_language::Label("No Window", "Нет окна"), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", app_language::Tr("Add a window first.", "Сначала добавьте окно."));
+        if (ImGui::Button(app_language::Label("OK", "ОК"))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    if (ImGui::BeginPopupModal("Saved", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("File saved successfully.");
-        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+    if (ImGui::BeginPopupModal(app_language::Label("Saved", "Сохранено"), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", app_language::Tr("File saved successfully.", "Файл успешно сохранён."));
+        if (ImGui::Button(app_language::Label("OK", "ОК"))) ImGui::CloseCurrentPopup();
         ctx->file_loaded = false; // reload the file the next time it is opened
         ImGui::EndPopup();
     }
-    if (ImGui::BeginPopupModal("Save Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Error saving file.");
-        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+    if (ImGui::BeginPopupModal(app_language::Label("Save Error", "Ошибка сохранения"), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", app_language::Tr("Error saving file.", "Ошибка сохранения файла."));
+        if (ImGui::Button(app_language::Label("OK", "ОК"))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 

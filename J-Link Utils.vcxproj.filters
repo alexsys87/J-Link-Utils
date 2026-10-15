@@ -39,6 +39,12 @@
     <ClInclude Include="Main.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Localization.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LocalizedDiagnostics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Preferences.h">
       <Filter>Header Files</Filter>
     </ClInclude>

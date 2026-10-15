@@ -1,4 +1,5 @@
 // GlossyButtonWidget.cpp
+#include "../Localization.h"
 #include "GlossyButtonWidget.h"
 #include "imgui_internal.h"
 #include <cmath>
@@ -44,7 +45,7 @@ void GlossyButtonWidget::DrawButton(ImDrawList* draw, ImVec2 center, float radiu
         radius * 0.5f, IM_COL32(255, 255, 255, 40), 32);
 
     // Text (ON/OFF)
-    const char* label = state ? "ON" : "OFF";
+    const char* label = state ? app_language::Tr("ON", "ВКЛ") : app_language::Tr("OFF", "ВЫКЛ");
     ImVec2 textSize = ImGui::CalcTextSize(label);
     // Text shadow
     draw->AddText(ImVec2(center.x - textSize.x * 0.5f + 1, center.y - textSize.y * 0.5f + 1),

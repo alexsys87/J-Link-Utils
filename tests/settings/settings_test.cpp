@@ -1,4 +1,5 @@
 #include "Preferences.h"
+#include "Localization.h"
 #include <Main.h>
 #include <cassert>
 #include <iostream>
@@ -32,6 +33,27 @@ int main() {
     MainContext firstLaunch; LoadIniSettings(&firstLaunch);
     assert(firstLaunch.auto_connect && firstLaunch.Style == 3 && prefs::Error().empty());
     assert(!prefs::Dirty() && !fs::exists(path));
+    // Missing/old configs retain English. Persist both choices through the
+    // production SaveIniSettings/LoadIniSettings functions, not just the store.
+    assert(!app_language::IsRussian());
+    for (const auto language : {app_language::Language::Russian, app_language::Language::English}) {
+        app_language::Set(language);
+        SaveIniSettings(&firstLaunch);
+        assert(prefs::Flush());
+        app_language::Set(language == app_language::Language::Russian
+            ? app_language::Language::English : app_language::Language::Russian);
+        LoadIniSettings(&firstLaunch);
+        assert(app_language::current == language);
+        assert(prefs::ReadString("SETTINGS.Language") == app_language::Code());
+    }
+    prefs::WriteString("SETTINGS.Language", "unknown-language");
+    assert(prefs::Flush());
+    app_language::Set(app_language::Language::Russian);
+    LoadIniSettings(&firstLaunch);
+    assert(!app_language::IsRussian());
+    assert(prefs::Error().find("SETTINGS.Language") != std::string::npos);
+    SaveIniSettings(&firstLaunch);
+    assert(prefs::Flush() && prefs::Error().empty());
     prefs::WriteString("unknown.a.b", "preserved");
     prefs::WriteString("paths.unicode", u8"C:\\данные\\dashboard.xml");
     const std::string escaped = "  quoted\"\n\\text\r  ";

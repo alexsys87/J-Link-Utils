@@ -1,5 +1,6 @@
 // Settings are loaded once, then staged in the shared UI preference store.
 #include "Preferences.h"
+#include "Localization.h"
 #include <cassert>
 #include <cstring>
 #include <Main.h>
@@ -52,6 +53,8 @@ void LoadIniSettings(void* arg)
         ctx->auto_connect = false;
         return; // Preserve the load diagnostic and leave the other context fields untouched.
     }
+    if (!app_language::SetFromCode(prefs::ReadString("SETTINGS.Language", "en")))
+        prefs::detail::Invalid("SETTINGS.Language");
     ctx->Style = prefs::ReadInt("WINDOW.Style", ctx->Style, 0, 23);
     ctx->TopMost = prefs::ReadBool("WINDOW.TopMost", ctx->TopMost);
     ctx->FontSize = prefs::ReadInt("WINDOW.FontSize", ctx->FontSize, 0, 4095);
@@ -78,6 +81,7 @@ void SaveIniSettings(void* arg)
 {
     assert(arg != nullptr);
     const auto* ctx = static_cast<const MainContext*>(arg);
+    prefs::WriteString("SETTINGS.Language", app_language::Code());
     prefs::WriteInt("WINDOW.Style", ctx->Style);
     prefs::WriteBool("WINDOW.TopMost", ctx->TopMost);
     prefs::WriteInt("WINDOW.FontSize", ctx->FontSize);

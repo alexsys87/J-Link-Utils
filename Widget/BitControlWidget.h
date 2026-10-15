@@ -1,5 +1,6 @@
 ﻿// BitControlWidget.h
 #pragma once
+#include "../Localization.h"
 #include "widget_common.h"
 #include <string>
 #include <vector>
@@ -201,18 +202,18 @@ private:
 
         if (switchable) {
             ImGui::SetCursorScreenPos(ImVec2(area_start.x, frame_y + frame_height + 12));
-            ImGui::Text("Mode:");
+            ImGui::Text(app_language::Tr("Mode:", "Режим:"));
             ImGui::SameLine();
             int mode_int = static_cast<int>(*mode);
-            if (ImGui::RadioButton("8 bit", &mode_int, Bits8)) {
+            if (ImGui::RadioButton(app_language::Label("8 bit", "8 бит"), &mode_int, Bits8)) {
                 *mode = Bits8;
             }
             ImGui::SameLine();
-            if (ImGui::RadioButton("16 bit", &mode_int, Bits16)) {
+            if (ImGui::RadioButton(app_language::Label("16 bit", "16 бит"), &mode_int, Bits16)) {
                 *mode = Bits16;
             }
             ImGui::SameLine();
-            if (ImGui::RadioButton("32 bit", &mode_int, Bits32)) {
+            if (ImGui::RadioButton(app_language::Label("32 bit", "32 бита"), &mode_int, Bits32)) {
                 *mode = Bits32;
             }
         }

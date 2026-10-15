@@ -54,6 +54,10 @@ namespace WidgetTemplateFactory {
         bool itemWidth = false;             // takes <ItemWidth>: a standard input field with a label
     };
 
+    // Localized display text only; never use these for XML names or values.
+    const char* EditorText(const char* english);
+    const char* WidgetDescription(const char* tag);
+
     // All widget types the loader supports.
     const std::vector<NodeDef>& Widgets();
     const NodeDef* FindWidget(const char* tag);

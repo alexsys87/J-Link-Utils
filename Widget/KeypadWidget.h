@@ -1,4 +1,5 @@
 #pragma once
+#include "../Localization.h"
 #include "widget_common.h"
 #include <cctype>
 #include <string>
@@ -139,7 +140,9 @@ private:
                         style.Colors[ImGuiCol_Button].w));
                 }
 
-                if (ImGui::Button(btn, ImVec2(buttonSize, buttonSize))) {
+                const char* buttonLabel = isClear ? app_language::Label("C", "Сбр.")
+                    : isEnter ? app_language::Label("E", "Ввод") : btn;
+                if (ImGui::Button(buttonLabel, ImVec2(buttonSize, buttonSize))) {
                     if (!disabled) {
                         if (isDigit) {
                             if ((int)inputBuffer.size() < maxDigits) {
