@@ -6,6 +6,15 @@ on:
 permissions:
   contents: read
 jobs:
+  fonts:
+    name: FreeType fonts and DPI (ASan and UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install font test dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libfreetype-dev fonts-dejavu-core
+      - name: Check production font loading and dynamic DPI rasterization
+        run: python3 tests/font_rendering/run.py
   transport:
     name: J-Link transport (ASan and UBSan)
     runs-on: ubuntu-latest
