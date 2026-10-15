@@ -96,7 +96,8 @@ static bool ParseTextColor(const char* str, unsigned int* rgba) {
     return true;
 }
 
-// Recursive widget loading from XML
+// Recursive widget loading from XML.
+// <LittleEndian> defaults to true for every widget: Cortex-M targets are little-endian.
 static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     if (!elem) return nullptr;
     std::string name = elem->Name();
@@ -237,7 +238,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
                     line.address = AddressFromHex(lineElem->FirstChildElement("Address"));
                 if (lineElem->FirstChildElement("DataType"))
                     lineElem->FirstChildElement("DataType")->QueryIntText(&line.dataType);
-                bool le = false;
+                bool le = true;
                 if (lineElem->FirstChildElement("LittleEndian"))
                     lineElem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
                 line.littleEndian = le;
@@ -293,7 +294,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             }
             line.dataType = dtype;
 
-            bool le = false;
+            bool le = true;
             if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
             line.littleEndian = le;
 
@@ -350,7 +351,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         unsigned int hexColor = 0;
         bool useColor = false;
@@ -372,7 +373,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian")) elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<LabelTextWidget>(lbl, fmt, addr, le);
     }
@@ -403,7 +404,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         const char* fmt = XmlChildText(elem, "Format", "");
         float minV = 0, maxV = 0;
         int sz = 100, id = 0;
-        bool le = false;
+        bool le = true;
         uint32_t addr = 0;
         int dtype = FLOAT;
         bool autoSz = false;
@@ -455,7 +456,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             addr = AddressFromHex(elem->FirstChildElement("Address"));
         float minV = 0, maxV = 0, step = 1, fast = 100;
         const char* fmt = "%.3f";
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
         if (elem->FirstChildElement("Max")) elem->FirstChildElement("Max")->QueryFloatText(&maxV);
         if (elem->FirstChildElement("Step")) elem->FirstChildElement("Step")->QueryFloatText(&step);
@@ -494,7 +495,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         float minV = 0, maxV = 0, w = 0, h = 0, xs = 1.0f;
         int sz = 100, sm = 0;
         uint32_t done = 0;
-        bool le = false;
+        bool le = true;
         bool autoSz = false;
         float barWidth = 0.8f; // default
 
@@ -581,7 +582,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         float minV = 0, maxV = 0, w = 0, h = 0, xs = 1;
         int sz = 100, sm = 0;
         uint32_t done = 0;
-        bool le = false;
+        bool le = true;
         bool autoSz = false;
 
         if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
@@ -660,7 +661,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
     else if (name == "ProgressBar") {
         float w = 0, h = 0;
         uint32_t addr = 0;
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("Width")) elem->FirstChildElement("Width")->QueryFloatText(&w);
         if (elem->FirstChildElement("Height")) elem->FirstChildElement("Height")->QueryFloatText(&h);
         if (elem->FirstChildElement("Address"))
@@ -673,7 +674,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         uint32_t addr = 0;
         float minV = 0, maxV = 0, step = 0;
         const char* fmt = "%.3f";
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
         if (elem->FirstChildElement("Min")) elem->FirstChildElement("Min")->QueryFloatText(&minV);
@@ -808,7 +809,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* heightElem = elem->FirstChildElement("Height");
         if (!heightElem) heightElem = elem->FirstChildElement("Height");
         if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<SevenSegmentWidget>(lbl, addr, w, h, le);
@@ -824,7 +825,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* heightElem = elem->FirstChildElement("Height");
         if (!heightElem) heightElem = elem->FirstChildElement("Height");
         if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<MechanicalSwitch2Widget>(lbl, addr, w, h, le);
@@ -844,7 +845,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             elem->FirstChildElement("Radius")->QueryFloatText(&rad);
         if (elem->FirstChildElement("Unit"))
             unit = XmlChildText(elem, "Unit");
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<GaugeWidget>(lbl, addr, minV, maxV, rad, unit, le);
@@ -860,7 +861,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* heightElem = elem->FirstChildElement("Height");
         if (!heightElem) heightElem = elem->FirstChildElement("Height");
         if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
 
@@ -906,7 +907,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("PixelSize"))
             elem->FirstChildElement("PixelSize")->QueryFloatText(&pSize);
 
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
 
@@ -932,7 +933,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* heightElem = elem->FirstChildElement("Height");
         if (!heightElem) heightElem = elem->FirstChildElement("Height");
         if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         int dataType = FLOAT;
@@ -953,7 +954,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         float rad = 50.0f;
         if (elem->FirstChildElement("Radius"))
             elem->FirstChildElement("Radius")->QueryFloatText(&rad);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         int dataType = S16_DEC;
@@ -974,7 +975,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         float radius = 50.0f;
         if (elem->FirstChildElement("Radius"))
             elem->FirstChildElement("Radius")->QueryFloatText(&radius);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         int dataType = S16_DEC;
@@ -998,7 +999,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         XMLElement* heightElem = elem->FirstChildElement("Height");
         if (!heightElem) heightElem = elem->FirstChildElement("Height");
         if (heightElem) heightElem->QueryFloatText(&h);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         int dataType = FLOAT;
@@ -1011,7 +1012,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
 
@@ -1030,7 +1031,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         if (elem->FirstChildElement("Mode"))
             elem->FirstChildElement("Mode")->QueryIntText(&modeInt);
         BitMode mode = static_cast<BitMode>(modeInt);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         bool switchable = true;
@@ -1051,7 +1052,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         float rad = 40.0f;
         if (elem->FirstChildElement("Radius"))
             elem->FirstChildElement("Radius")->QueryFloatText(&rad);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<RotarySwitchWidget>(lbl, addr, minPos, maxPos, rad, le);
@@ -1095,7 +1096,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
             }
         }
 
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
 
@@ -1190,7 +1191,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         const char* unit = "rpm";
         if (elem->FirstChildElement("Unit"))
             unit = XmlChildText(elem, "Unit");
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
 
@@ -1236,7 +1237,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         int digits = 4;
         if (elem->FirstChildElement("Digits"))
             elem->FirstChildElement("Digits")->QueryIntText(&digits);
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         return std::make_unique<KeypadWidget>(lbl, addr, minV, maxV, digits, le);
@@ -1262,7 +1263,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         const char* typeStr = XmlChildText(elem, "DataType", "float");
         EqDataType dtype = EQ_FLOAT;
         if (strcmp(typeStr, "int16") == 0) dtype = EQ_INT16;
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         // Byte distance between neighbouring bands: one float or one int16 by default.
@@ -1340,7 +1341,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         const char* unit = "";
         if (elem->FirstChildElement("Unit"))
             unit = XmlChildText(elem, "Unit");
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
         bool peak = false;
@@ -1353,7 +1354,7 @@ static std::unique_ptr<UIWidget> LoadWidgetFromXML(XMLElement* elem) {
         uint32_t addr = 0;
         if (elem->FirstChildElement("Address"))
             addr = AddressFromHex(elem->FirstChildElement("Address"));
-        bool le = false;
+        bool le = true;
         if (elem->FirstChildElement("LittleEndian"))
             elem->FirstChildElement("LittleEndian")->QueryBoolText(&le);
 

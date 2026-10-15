@@ -35,79 +35,12 @@ private:
 
     // Element size in bytes for a data type
     static int GetElementSize(int dataType) {
-        switch (dataType) {
-        case BOOLEAN:
-        case S08_DEC:
-        case U08_DEC:   return 1;
-        case S16_DEC:
-        case U16_DEC:   return 2;
-        case S32_DEC:
-        case U32_DEC:
-        case FLOAT:     return 4;
-        case S64_DEC:
-        case U64_DEC:   return 8;
-        default:        return 4;
-        }
+        return typed_value::Size(dataType);
     }
 
     // Converts raw bytes to float using the data type and byte order
     float RawToFloat(const uint8_t* bytes, int dataType, bool le) const {
-        switch (dataType) {
-        case BOOLEAN: return (bytes[0] & 1) ? 1.0f : 0.0f;
-        case S08_DEC: return static_cast<float>(static_cast<int8_t>(bytes[0]));
-        case U08_DEC: return static_cast<float>(bytes[0]);
-        case S16_DEC: {
-            uint16_t v = le ? (bytes[0] | (bytes[1] << 8)) : (bytes[1] | (bytes[0] << 8));
-            return static_cast<float>(static_cast<int16_t>(v));
-        }
-        case U16_DEC: {
-            uint16_t v = le ? (bytes[0] | (bytes[1] << 8)) : (bytes[1] | (bytes[0] << 8));
-            return static_cast<float>(v);
-        }
-        case S32_DEC: {
-            uint32_t v;
-            if (le) v = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
-            else    v = bytes[3] | (bytes[2] << 8) | (bytes[1] << 16) | (bytes[0] << 24);
-            return static_cast<float>(static_cast<int32_t>(v));
-        }
-        case U32_DEC: {
-            uint32_t v;
-            if (le) v = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
-            else    v = bytes[3] | (bytes[2] << 8) | (bytes[1] << 16) | (bytes[0] << 24);
-            return static_cast<float>(v);
-        }
-        case FLOAT: {
-            uint32_t v;
-            if (le) v = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
-            else    v = bytes[3] | (bytes[2] << 8) | (bytes[1] << 16) | (bytes[0] << 24);
-            return *reinterpret_cast<float*>(&v);
-        }
-        case S64_DEC: {
-            uint64_t v;
-            if (le) {
-                v = (uint64_t)bytes[0] | ((uint64_t)bytes[1] << 8) | ((uint64_t)bytes[2] << 16) | ((uint64_t)bytes[3] << 24) |
-                    ((uint64_t)bytes[4] << 32) | ((uint64_t)bytes[5] << 40) | ((uint64_t)bytes[6] << 48) | ((uint64_t)bytes[7] << 56);
-            }
-            else {
-                v = (uint64_t)bytes[7] | ((uint64_t)bytes[6] << 8) | ((uint64_t)bytes[5] << 16) | ((uint64_t)bytes[4] << 24) |
-                    ((uint64_t)bytes[3] << 32) | ((uint64_t)bytes[2] << 40) | ((uint64_t)bytes[1] << 48) | ((uint64_t)bytes[0] << 56);
-            }
-            return static_cast<float>(static_cast<int64_t>(v));
-        }
-        case U64_DEC: {
-            uint64_t v;
-            if (le) {
-                v = (uint64_t)bytes[0] | ((uint64_t)bytes[1] << 8) | ((uint64_t)bytes[2] << 16) | ((uint64_t)bytes[3] << 24) |
-                    ((uint64_t)bytes[4] << 32) | ((uint64_t)bytes[5] << 40) | ((uint64_t)bytes[6] << 48) | ((uint64_t)bytes[7] << 56);
-            }
-            else {
-                v = (uint64_t)bytes[7] | ((uint64_t)bytes[6] << 8) | ((uint64_t)bytes[5] << 16) | ((uint64_t)bytes[4] << 24) |
-                    ((uint64_t)bytes[3] << 32) | ((uint64_t)bytes[2] << 40) | ((uint64_t)bytes[1] << 48) | ((uint64_t)bytes[0] << 56);
-            }
-            return static_cast<float>(v);
-        }
-        default: return 0.0f;
-        }
+        return (float)typed_value::DecodeBytes(bytes, dataType, le);
     }
 
 public:

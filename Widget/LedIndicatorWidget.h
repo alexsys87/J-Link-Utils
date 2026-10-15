@@ -18,7 +18,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
+        uint16_t raw = (uint16_t)ReadTypedValue(ctx, addr, U16_DEC, littleEndian);
         bool state = (raw != 0);
 
         ImGui::PushID(addr);

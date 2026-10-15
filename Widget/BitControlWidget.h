@@ -24,22 +24,16 @@ public:
         : LeafWidget(lbl), address(addr), initialMode(mode), littleEndian(le), allowModeSwitch(switchable), currentMode(mode) {
     }
 
+    static int ModeType(BitMode mode) {
+        if (mode & Bits8) return U08_DEC;
+        if (mode & Bits16) return U16_DEC;
+        return U32_DEC;
+    }
+
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        uint32_t value = 0;
-        // Read the data for the current mode
-        if (currentMode & Bits8) {
-            uint16_t raw = DataReadWriteU08(ctx, nullptr, nullptr, &addr);
-            value = raw;
-        }
-        else if (currentMode & Bits16) {
-            uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-            value = raw;
-        }
-        else { // Bits32
-            value = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-        }
+        uint32_t value = (uint32_t)ReadTypedValue(ctx, addr, ModeType(currentMode), littleEndian);
 
         uint32_t oldValue = value;
         BitMode oldMode = currentMode;
@@ -49,22 +43,8 @@ public:
         ImGui::PopID();
 
         // Value changed: write it back in the current mode
-        if (value != oldValue) {
-            uint32_t writeValue = value;
-            if (currentMode & Bits8) {
-                writeValue &= 0xFF;
-                uint8_t v8 = static_cast<uint8_t>(writeValue);
-                DataReadWriteU08(ctx, nullptr, &v8, &addr);
-            }
-            else if (currentMode & Bits16) {
-                writeValue &= 0xFFFF;
-                uint16_t v16 = static_cast<uint16_t>(writeValue);
-                DataReadWriteU16(ctx, nullptr, &v16, &addr);
-            }
-            else {
-                DataReadWriteU32(ctx, nullptr, &writeValue, &addr);
-            }
-        }
+        if (value != oldValue)
+            WriteTypedValue(ctx, addr, ModeType(currentMode), littleEndian, value);
         // Only the mode changed: nothing to write, currentMode is updated
     }
 

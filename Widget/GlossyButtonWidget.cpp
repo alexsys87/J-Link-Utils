@@ -71,7 +71,7 @@ void GlossyButtonWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
     uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : m_addr;
 
     // Always read the value (the memory functions handle address 0)
-    uint16_t currentValue = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
+    uint16_t currentValue = (uint16_t)ReadTypedValue(ctx, addr, U16_DEC, m_le);
 
     bool state = false;
     if (m_mode == GLOSSY_BUTTON_TOGGLE) {
@@ -121,11 +121,7 @@ void GlossyButtonWidget::Draw(MainContext* ctx, uint32_t* dynamicAddr) {
         }
 
         if (writeNow) {
-            // Swap the byte order if needed
-            if (!m_le) {
-                valueToWrite = Swap16(valueToWrite);
-            }
-            DataReadWriteU16(ctx, nullptr, &valueToWrite, &addr);
+            WriteTypedValue(ctx, addr, U16_DEC, m_le, valueToWrite);
             // Update the displayed state
             if (m_mode == GLOSSY_BUTTON_TOGGLE) {
                 state = (valueToWrite & 1) != 0;

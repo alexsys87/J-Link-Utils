@@ -19,39 +19,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        float value = 0.0f;
-
-        // Read the data according to the type
-        if (dataType == FLOAT) {
-            if (littleEndian) {
-                uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-                value = *(float*)&raw;
-            }
-            else {
-                value = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
-            }
-        }
-        else if (dataType == S16_DEC || dataType == U16_DEC) {
-            uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-            if (dataType == S16_DEC) {
-                int16_t signedVal = (int16_t)raw;
-                value = (float)signedVal;
-            }
-            else {
-                value = (float)raw;
-            }
-        }
-        else if (dataType == S32_DEC || dataType == U32_DEC) {
-            uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            if (dataType == S32_DEC) {
-                int32_t signedVal = (int32_t)raw;
-                value = (float)signedVal;
-            }
-            else {
-                value = (float)raw;
-            }
-        }
-        // More types (S08_DEC, U08_DEC, BOOLEAN) could be added here
+        float value = (float)ReadTypedValue(ctx, addr, dataType, littleEndian);
 
         ImGui::PushID(addr);
         DrawVerticalGauge(label.c_str(), value, minVal, maxVal, width, height);

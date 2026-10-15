@@ -53,7 +53,7 @@ struct PlotLineConfig {
     int smoothPos, smoothCount; // moving average ring position and fill
     double smoothSum;
 
-    PlotLineConfig() : address(0), dataType(U32_DEC), littleEndian(false), scale(1.0f),
+    PlotLineConfig() : address(0), dataType(U32_DEC), littleEndian(true), scale(1.0f),
         bufferId(-1), color(IM_COL32_WHITE), weight(1.0f),
         nextSampleTime(0), smoothPos(0), smoothCount(0), smoothSum(0) {
     }
@@ -89,43 +89,12 @@ class PlotLinesWidget : public UIWidget {
     double m_timeOrigin = -1.0;                    // DataTimeNow() at the first draw
 
     static int SampleSize(int dataType) {
-        switch (dataType) {
-        case BOOLEAN: case S08_DEC: case U08_DEC: return 1;
-        case S16_DEC: case U16_DEC: return 2;
-        case S64_DEC: case U64_DEC: return 8;
-        default: return 4;
-        }
+        return typed_value::Size(dataType);
     }
 
     // Converts raw target bytes (memory order) like the typed readers do.
     static float DecodeSample(const uint8_t* bytes, int dataType, bool le) {
-        uint64_t raw = 0;
-        for (int i = 0; i < SampleSize(dataType); ++i) raw |= (uint64_t)bytes[i] << (8 * i);
-        switch (dataType) {
-        case BOOLEAN: return (raw & 1) ? 1.0f : 0.0f;
-        case S08_DEC: return (float)(int8_t)raw;
-        case U08_DEC: return (float)(uint8_t)raw;
-        case S16_DEC: case U16_DEC: {
-            uint16_t v = (uint16_t)raw;
-            if (!le) v = Swap16(v);
-            return dataType == S16_DEC ? (float)(int16_t)v : (float)v;
-        }
-        case S32_DEC: case U32_DEC: case FLOAT: case FLOAT_INV: {
-            uint32_t v = (uint32_t)raw;
-            if ((dataType == FLOAT_INV) == le) v = SwapLeToBe32(v);
-            if (dataType == S32_DEC) return (float)(int32_t)v;
-            if (dataType == U32_DEC) return (float)v;
-            float f;
-            memcpy(&f, &v, sizeof(f));
-            return f;
-        }
-        case S64_DEC: case U64_DEC: {
-            uint64_t v = raw;
-            if (!le) v = SwapLeToBe64(v);
-            return dataType == S64_DEC ? (float)(int64_t)v : (float)v;
-        }
-        default: return 0.0f;
-        }
+        return (float)typed_value::DecodeBytes(bytes, dataType, le);
     }
 
     // Trailing moving average over the last smoothWindow points.

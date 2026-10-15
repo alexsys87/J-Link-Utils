@@ -14,48 +14,7 @@ class PlotTooltipWidget : public UIWidget {
     std::vector<float> m_displayBuf; // ˜˜˜˜˜ ˜ ˜˜˜˜
 
     float ReadValue(MainContext* ctx, uint32_t addr) const {
-        switch (dataType) {
-        case BOOLEAN: {
-            uint8_t v = DataReadWriteU08(ctx, nullptr, nullptr, &addr);
-            return v ? 1.0f : 0.0f;
-        }
-        case S08_DEC: {
-            uint8_t v = DataReadWriteU08(ctx, nullptr, nullptr, &addr);
-            return static_cast<float>(static_cast<int8_t>(v));
-        }
-        case U08_DEC: {
-            uint8_t v = DataReadWriteU08(ctx, nullptr, nullptr, &addr);
-            return static_cast<float>(v);
-        }
-        case S16_DEC: {
-            uint16_t v = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-            if (!littleEndian) v = Swap16(v);
-            return static_cast<float>(static_cast<int16_t>(v));
-        }
-        case U16_DEC: {
-            uint16_t v = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-            if (!littleEndian) v = Swap16(v);
-            return static_cast<float>(v);
-        }
-        case S32_DEC: {
-            uint32_t v = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            if (!littleEndian) v = SwapLeToBe32(v);
-            return static_cast<float>(static_cast<int32_t>(v));
-        }
-        case U32_DEC: {
-            uint32_t v = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            if (!littleEndian) v = SwapLeToBe32(v);
-            return static_cast<float>(v);
-        }
-        case FLOAT:
-        default: {
-            uint32_t tmp = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            if (!littleEndian) tmp = SwapLeToBe32(tmp);
-            float f;
-            memcpy(&f, &tmp, sizeof(f));
-            return f;
-        }
-        }
+        return (float)ReadTypedValue(ctx, addr, dataType, littleEndian);
     }
 
 public:

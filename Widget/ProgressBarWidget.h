@@ -12,14 +12,7 @@ public:
     }
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
-        float value;
-        if (littleEndian) {
-            uint32_t tmp = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            value = *(float*)&tmp;
-        }
-        else {
-            value = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
-        }
+        float value = (float)ReadTypedValue(ctx, addr, FLOAT, littleEndian);
         ImGui::ProgressBar(value, size);
     }
 };

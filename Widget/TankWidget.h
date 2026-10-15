@@ -32,37 +32,21 @@ public:
         width(w), height(h), unit(u ? u : ""), liquidColor(liqCol), metalColor(metCol), littleEndian(le), dataType(dtype) {
     }
 
+    // Tank keeps its own type codes (TankDataType) for compatibility.
+    static int ToDataType(int tankType) {
+        switch (tankType) {
+        case TANK_U16: return U16_DEC;
+        case TANK_S16: return S16_DEC;
+        case TANK_U32: return U32_DEC;
+        case TANK_S32: return S32_DEC;
+        default: return FLOAT;
+        }
+    }
+
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        float value = 0.0f;
-
-        // Read according to the data type
-        if (dataType == TANK_FLOAT) {
-            if (littleEndian) {
-                uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-                value = *(float*)&raw;
-            }
-            else {
-                value = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
-            }
-        }
-        else if (dataType == TANK_U16) {
-            uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-            value = (float)raw;
-        }
-        else if (dataType == TANK_S16) {
-            uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-            value = (float)(int16_t)raw;
-        }
-        else if (dataType == TANK_U32) {
-            uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            value = (float)raw;
-        }
-        else if (dataType == TANK_S32) {
-            uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            value = (float)(int32_t)raw;
-        }
+        float value = (float)ReadTypedValue(ctx, addr, ToDataType(dataType), littleEndian);
 
         ImGui::PushID(addr);
         DrawTank(label.c_str(), value, minVal, maxVal, width, height, unit.c_str(), liquidColor, metalColor);
