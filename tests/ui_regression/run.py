@@ -15,7 +15,7 @@ import tempfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-SRC = ROOT / 'J-Link Utils'
+SRC = ROOT
 
 def function(source, signature):
     start = source.index(signature)
