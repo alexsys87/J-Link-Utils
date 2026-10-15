@@ -63,33 +63,39 @@ For the **Media** window, copy `demo_logo.png` and `demo_spinner.gif` next to `J
 
 ## Building on Windows
 
-The open-source Windows libraries are built locally by a pinned vcpkg manifest,
-with a separate dependency-only Windows CI build. From PowerShell 7.2+:
+For the **full Release executable**, install Visual Studio 2022 C++ build tools,
+a Windows SDK, Git, CMake 3.25+ and PowerShell 7.2+, then run:
+
+```powershell
+pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x64
+pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x86
+```
+
+These commands build the pinned open-source dependencies, run their independent
+link probes, then compile/link the full app with static CRT `/MT`. The package is
+in `out/package/J-Link-Utils-<arch>-Release/`. The **Windows application** Actions
+workflow produces the same x64/x86 packages. See [full build and runtime
+instructions](docs/windows-app.md).
+
+The exact supplied `vendor/jlink/JLink_x64.lib` and `JLink.lib` are static DLL-loader
+wrappers, deliberately linked under their original names. `JLinkARM.lib` is a
+different x86 import library, retained but not linked. All remain subject to
+SEGGER licensing. **No proprietary runtime DLL is bundled or downloaded.** Supply
+compatible `JLink_x64.dll` (x64) or `JLinkARM.dll` (x86) beside the exe, or install
+the matching SEGGER software. Missing runtime produces an error and exit 2 rather
+than attempting SDK operations. Hardware operation remains **not verified**.
+
+The script selects `v143` on the command line; the IDE project's default `v145`
+and C++17 settings are preserved. The supplied wrappers use Release `/MT`;
+full `/MTd` Debug builds are not supported by this automation.
+
+The separate [dependency build](docs/windows-dependencies.md) still builds/tests
+both Debug and Release without J-Link or the full application:
 
 ```powershell
 pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x64
-# Optional: both Debug and Release for the Win32 project configurations:
 pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x86
 ```
-
-Install Visual Studio C++ build tools and a Windows SDK, Git and CMake 3.25+
-first. Nothing is installed globally by the script. See
-[Windows dependency builds](docs/windows-dependencies.md) for prerequisites,
-pinning, cache/artifact layout, library resolution and updating the lock.
-
-Then supply the proprietary J-Link import library and matching runtime DLL
-under the SEGGER license; these are **not** downloaded, generated or included
-in the dependency build. For x64 place `JLinkARM_x64.lib` in `lib/x64/` for
-Release and `lib/x64/debug/` for Debug. For Win32 use `JLinkARM.lib` in
-`lib/x86/` and `lib/x86/debug/`. Put the matching DLL next to the application
-executable or on its DLL search path.
-
-Open `J-Link Utils.sln` in Visual Studio. The application uses C++17, static
-CRT (`/MTd` or `/MT`) and the `v145` toolset; install that toolset or
-explicitly retarget the application yourself. The dependency CI uses VS 2022
-`v143` without changing the application's toolset. A full application link
-without the J-Link import library is not expected to succeed. Full Windows
-application operation with a physical J-Link remains **not verified**.
 
 Generated dependency headers take precedence in the Visual Studio project.
 Vendored SDL2 and FreeType headers in `include` remain untouched for the Linux

@@ -38,6 +38,13 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 #include "widget_common.h"
 #include "res/app_icon.h"
 
+#ifdef _WIN32
+// The supplied JLink.lib/JLink_x64.lib expose a cdecl, explicit DLL loader.
+// Its return value is 0 on success, -1 on failure. The SDK API declarations
+// intentionally have no dllimport attribute; calls go through these wrappers.
+extern "C" int __cdecl JLINKARMDLL_LIB_LoadLibrary(void);
+#endif
+
 // ------------------------------------------------------------------
 // Helper functions
 // ------------------------------------------------------------------
@@ -1212,6 +1219,23 @@ static void SDL_PrintRenderer(SDL_RendererInfo* info)
 
 int main(int argc, char* argv[]) 
 {
+#ifdef _WIN32
+    // Load once, before any SDK call or worker thread. Otherwise individual
+    // wrapper calls can show repeated dialogs or return unusable fallback data.
+    const bool checkRuntimeOnly = argc == 2 && strcmp(argv[1], "--check-jlink-runtime") == 0;
+    if (JLINKARMDLL_LIB_LoadLibrary() != 0) {
+#ifdef _WIN64
+        const char* message = "J-Link runtime could not be loaded. Place a licensed, compatible JLink_x64.dll next to this executable, or install the matching SEGGER J-Link software. No DLL is bundled.";
+#else
+        const char* message = "J-Link runtime could not be loaded. Place a licensed, compatible JLinkARM.dll next to this executable, or install the matching SEGGER J-Link software. No DLL is bundled.";
+#endif
+        fprintf(stderr, "%s\n", message);
+        if (!checkRuntimeOnly)
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "J-Link runtime missing", message, nullptr);
+        return 2;
+    }
+    if (checkRuntimeOnly) return 0; // Loader check only, not a hardware test.
+#endif
     SDL_Point mousePos = { 0,0 }, newWindowPos = { 0,0 }, mWindowSizeOffset = { 0,0 };
 
     int window_flag = 0;

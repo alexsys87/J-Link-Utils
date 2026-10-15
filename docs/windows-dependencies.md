@@ -145,24 +145,14 @@ checkout, extract its `installed/` and `msbuild/` folders **under
 artifact `CMakeCache-*.txt` records the producing runner's absolute paths and
 is informational, not meant for reuse as a local CMake cache.
 
-## Add J-Link later, separately
+## Full app and J-Link runtime, separately
 
-After obtaining the import library under the SEGGER license, use the existing
-project search directories:
-
-| Project configuration | Import library path |
-| --- | --- |
-| x64 Release | `lib/x64/JLinkARM_x64.lib` |
-| x64 Debug | `lib/x64/debug/JLinkARM_x64.lib` |
-| Win32 Release | `lib/x86/JLinkARM.lib` |
-| Win32 Debug | `lib/x86/debug/JLinkARM.lib` |
-
-The same vendor import library can normally be copied to both configuration
-directories for its architecture; it is a DLL import library, not one of the
-static CRT libraries built here. Obtain and deploy the matching architecture's
-J-Link DLL next to the application executable (or through an appropriate DLL
-search path), and install the SEGGER drivers as required. Do not upload
-proprietary libraries to this dependency workflow's artifacts.
+The [full application build](windows-app.md) now links the exact supplied
+`vendor/jlink/JLink_x64.lib` (x64) or `JLink.lib` (x86) DLL-loader wrappers.
+They are Release `/MT` static wrappers, not import libraries; `JLinkARM.lib`
+is retained separately but not linked. No proprietary DLL is included or fetched.
+Supply the matching licensed runtime DLL separately before normal app use.
+Do not add proprietary libraries to this dependency-only workflow's artifacts.
 
 **Validation boundary:** the dependency workflow is designed to compile, link
 and run only the two dependency probes. It does not verify the full GUI app,
