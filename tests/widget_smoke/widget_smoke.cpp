@@ -466,8 +466,11 @@ int main(int argc, char** argv) {
     ctx->Sync = true;
 
     int windows = 0;
-    // 0. The demo configuration: loads, draws, and uses only properties the editor knows
-    {
+    // 0. Every demo widget/editor interaction stays in logical coordinates at
+    // different framebuffer densities, including a return to 100%.
+    // The separate SDL DPI test verifies actual physical rendering and fonts.
+    for (float density : {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 1.0f}) {
+        io.DisplayFramebufferScale = ImVec2(density, density);
         tinyxml2::XMLDocument doc;
         const char* demo = std::getenv("SMOKE_DEMO");
         CHECK(demo && doc.LoadFile(demo) == tinyxml2::XML_SUCCESS);
@@ -475,8 +478,10 @@ int main(int argc, char** argv) {
         for (tinyxml2::XMLElement* w = doc.FirstChildElement("Window"); w; w = w->NextSiblingElement("Window"))
             unknown += CountUnknown(w, &wtf::WindowDef());
         CHECK(unknown == 0);
-        windows += RunCase(ctx, "examples/demo.xml", doc);
+        const std::string name = "examples/demo.xml at density " + std::to_string(density);
+        windows += RunCase(ctx, name.c_str(), doc);
     }
+    io.DisplayFramebufferScale = ImVec2(1, 1);
     // 1. No properties at all
     {
         tinyxml2::XMLDocument doc;

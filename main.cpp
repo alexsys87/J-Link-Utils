@@ -27,9 +27,6 @@ const char* defaultFontDir = "/usr/share/fonts/"; // Base font path on Linux
 
 #include <Main.h>
 #include <misc/freetype/imgui_freetype.h>
-#ifdef _WIN32
-#include <SDL_syswm.h>
-#endif
 
 #define NOC_FILE_DIALOG_IMPLEMENTATION
 #define NOC_FILE_DIALOG_WIN32
@@ -300,35 +297,51 @@ bool CloseFile(MainContext* ctx)
 }
 
 // ------------------------------------------------------------------
-// DPI scaling (Windows)
+// DPI-independent UI coordinates
 // ------------------------------------------------------------------
 
-float GetDPIScale(SDL_Window* window) {
-    float dpiScale = 1.0f;
-#if defined(_WIN32) || defined(_WIN64)
-    typedef UINT(WINAPI* GetDpiForWindowFunc)(HWND);
-    typedef UINT(WINAPI* GetDpiForSystemFunc)(void);
-    HMODULE user32 = GetModuleHandleW(L"user32.dll");
-    if (user32 && user32 != INVALID_HANDLE_VALUE) {
-        // The system DPI belongs to the primary display, not necessarily to
-        // this window. Query the HWND so moving between monitors stays sharp.
-        GetDpiForWindowFunc getDpiForWindow = (GetDpiForWindowFunc)GetProcAddress(user32, "GetDpiForWindow");
-        SDL_SysWMinfo wmInfo = {};
-        SDL_VERSION(&wmInfo.version);
-        if (getDpiForWindow && SDL_GetWindowWMInfo(window, &wmInfo)) {
-            const UINT dpi = getDpiForWindow(wmInfo.info.win.window);
-            if (dpi != 0)
-                return static_cast<float>(dpi) / 96.0f;
-        }
-        GetDpiForSystemFunc getDpiForSystem = (GetDpiForSystemFunc)GetProcAddress(user32, "GetDpiForSystem");
-        if (getDpiForSystem) {
-            dpiScale = getDpiForSystem() / 96.0f;
-        }
-    }
-#else
-    (void)window;
+void ConfigureDpiAwareness() {
+    SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
+#ifdef _WIN32
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+    // SDL sizes, mouse events and display bounds use 96-DPI logical points.
+    // SDL also resizes the native window when its monitor DPI changes. This
+    // scales ALL geometry, including explicit XML sizes and custom draw lists.
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
 #endif
-    return dpiScale;
+}
+
+void PrepareUiFrame(SDL_Renderer* renderer) {
+    ImGui_ImplSDLRenderer2_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
+    // The SDL backend supplies logical DisplaySize and physical/logical
+    // DisplayFramebufferScale. The renderer scales geometry ONCE, and ImGui
+    // 1.92 uses that density to rasterize fonts sharply at the physical size.
+    // FontScaleDpi or ScaleAllSizes here would apply DPI a second time.
+    ImGui::GetStyle().FontScaleDpi = 1.0f;
+    ImGuiIO& io = ImGui::GetIO();
+    // The SDL renderer backend projects clip rectangles, but passes vertices
+    // through unchanged. SDL must scale both geometry and clipping together.
+    // It detects this renderer scale and avoids multiplying clips twice.
+    SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+    if (io.FontDefault)
+        ImGui::GetStyle().FontSizeBase = io.FontDefault->LegacySize;
+    ImGui::NewFrame();
+}
+
+static SDL_HitTestResult SDLCALL MainWindowHitTest(SDL_Window* window, const SDL_Point* point, void*) {
+    if (!ImGui::GetCurrentContext()) return SDL_HITTEST_NORMAL;
+    int width;
+    SDL_GetWindowSize(window, &width, nullptr);
+    const float titleHeight = ImGui::GetFrameHeight();
+    // Keep the collapse/close buttons and the menu bar interactive. Let the OS
+    // move the title bar: adding client deltas to desktop coordinates is not
+    // valid across SDL's mixed-DPI monitor origins. Native dragging also lets
+    // Windows apply WM_DPICHANGED continuously while crossing monitors.
+    if (point->y >= 0 && point->y < titleHeight &&
+        point->x > titleHeight && point->x < width - titleHeight)
+        return SDL_HITTEST_DRAGGABLE;
+    return SDL_HITTEST_NORMAL;
 }
 
 // ------------------------------------------------------------------
@@ -363,7 +376,7 @@ void LoadFonts(MainContext* ctx) {
 
         for (int size = minSize; size <= maxSize; ++size) {
             // Keep logical sizes stable. ImGui 1.92 bakes glyphs at the current
-            // FontScaleDpi/FramebufferScale, rather than stretching old bitmaps.
+            // FramebufferScale, rather than stretching old bitmaps.
             float fontSize = static_cast<float>(size);
             ImFontConfig config;
 
@@ -1102,11 +1115,14 @@ static void MenuWindow(bool* p_open, MainContext* ctx)
     if (ImGui::Begin(title, p_open, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus))
     {
         ImVec2 size = ImGui::GetWindowSize();
+        // Persist logical dimensions, never physical pixels from a monitor.
+        ctx->Win_width = (int)size.x;
+        ctx->Win_height = (int)size.y;
+        ctx->StateMinimized = 0;
         if (prev_size.x != size.x || prev_size.y != size.y)
         {
             SDL_SetWindowSize(ctx->Wimdow, (int)size.x, (int)size.y);
             prev_size = size;
-            ctx->StateMinimized = 0;
         }
 
         if (ImGui::BeginMenuBar())
@@ -1157,14 +1173,13 @@ static void MenuWindow(bool* p_open, MainContext* ctx)
     }
     else
     {
-        static ImVec2 size = ImGui::GetWindowSize();
+        const ImVec2 size = ImGui::GetWindowSize();
         if (prev_size.x != size.x || prev_size.y != size.y)
         {
-            prev_size.y = 20;
-            SDL_SetWindowSize(ctx->Wimdow, (int)prev_size.x, (int)prev_size.y);
-            size = prev_size;
-            ctx->StateMinimized = 1;
+            prev_size = size;
+            SDL_SetWindowSize(ctx->Wimdow, (int)size.x, (int)size.y);
         }
+        ctx->StateMinimized = 1;
     }
 
     ImGui::End();
@@ -1242,6 +1257,9 @@ static void SDL_PrintRenderer(SDL_RendererInfo* info)
 
 int main(int argc, char* argv[]) 
 {
+    // Also precede any error dialog: SDL_ShowSimpleMessageBox can initialize
+    // video before the normal SDL_Init path.
+    ConfigureDpiAwareness();
 #ifdef _WIN32
     // Load once, before any SDK call or worker thread. Otherwise individual
     // wrapper calls can show repeated dialogs or return unusable fallback data.
@@ -1259,8 +1277,6 @@ int main(int argc, char* argv[])
     }
     if (checkRuntimeOnly) return 0; // Loader check only, not a hardware test.
 #endif
-    SDL_Point mousePos = { 0,0 }, newWindowPos = { 0,0 }, mWindowSizeOffset = { 0,0 };
-
     int window_flag = 0;
 
     MainContext* ctx = allocate_context();
@@ -1281,20 +1297,6 @@ int main(int argc, char* argv[])
         ctx->CurrentXMLDoc = nullptr;
     }
 
-#if defined (_WIN32) || defined (_WIN64)
-    int width = GetSystemMetrics(SM_CXSCREEN);
-    int height = GetSystemMetrics(SM_CYSCREEN);
-
-    if (ctx->Win_width > width)  ctx->Win_width = width;
-    if (ctx->Win_height > height) ctx->Win_height = height;
-#endif
-
-    SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
-#ifdef _WIN32
-    // Must precede SDL_Init/window creation: otherwise Windows can bitmap-scale
-    // the entire application, blurring text even with a correctly baked atlas.
-    SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
-#endif
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "1");
     SDL_SetHint(SDL_HINT_TIMER_RESOLUTION, "1");
 
@@ -1306,6 +1308,14 @@ int main(int argc, char* argv[])
     }
 
     SDL_Log("SDL Initialized successfully");
+
+    // GetSystemMetrics would mix physical desktop pixels with logical UI sizes.
+    // SDL display bounds use the same coordinate system as SDL_CreateWindow.
+    SDL_Rect usableBounds;
+    if (SDL_GetDisplayUsableBounds(0, &usableBounds) == 0) {
+        if (ctx->Win_width > usableBounds.w) ctx->Win_width = usableBounds.w;
+        if (ctx->Win_height > usableBounds.h) ctx->Win_height = usableBounds.h;
+    }
 
     if (ctx->TopMost)
         window_flag = SDL_WINDOW_ALWAYS_ON_TOP;
@@ -1407,6 +1417,9 @@ int main(int argc, char* argv[])
     default: ImGui::StyleColorsNord(); break;
     }
 
+    if (SDL_SetWindowHitTest(ctx->Wimdow, MainWindowHitTest, nullptr) != 0)
+        SDL_Log("Native title-bar dragging is unavailable: %s", SDL_GetError());
+
     // Frame rate limiting
     auto last_time = std::chrono::steady_clock::now();
     const double target_frame_time = 1.0 / 60.0;
@@ -1416,25 +1429,20 @@ int main(int argc, char* argv[])
         sprintf(ctx->File_label, "J-Link Utils - %s", &ctx->File_path[getFileNameFromPath(ctx->File_path)]);
     }
 
-    SDL_Rect rectangle = { 0, 0, ctx->Win_width, 50 };
-    SDL_GetWindowPosition(ctx->Wimdow, &newWindowPos.x, &newWindowPos.y);
-
     // Start the communication thread if Auto Connect is enabled
     if (ctx->auto_connect) {
         StartCommunication(ctx);
     }
 
     bool show = true;
-    static bool mw;
     while (!ctx->IsClosing)
     {
-        ImGuiIO& io = ImGui::GetIO();
-
-        int wheel = 0;
-
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
+            // A single input path: the backend consumes SDL's logical mouse
+            // coordinates, precise wheel events and its own frame timing.
+            ImGui_ImplSDL2_ProcessEvent(&event);
             switch (event.type)
             {
             case SDL_QUIT:
@@ -1442,39 +1450,12 @@ int main(int argc, char* argv[])
                 ctx->IsClosing = true;
                 break;
             case SDL_WINDOWEVENT:
-                if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                    io.DisplaySize.x = static_cast<float>(event.window.data1);
-                    io.DisplaySize.y = static_cast<float>(event.window.data2);
+                if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && !ctx->StateMinimized) {
+                    // Keep the root window aligned after a native resize/snap;
+                    // SDL event dimensions are already in logical points.
+                    ImGui::SetWindowSize("###MainWindow",
+                        ImVec2((float)event.window.data1, (float)event.window.data2));
                 }
-                break;
-            case SDL_MOUSEWHEEL:
-                wheel = event.wheel.y;
-                break;
-            case SDL_MOUSEBUTTONDOWN:
-
-                SDL_GetMouseState(&mWindowSizeOffset.x, &mWindowSizeOffset.y);
-                if ((mWindowSizeOffset.x > rectangle.x) && (mWindowSizeOffset.x < rectangle.x + rectangle.w) &&
-                    (mWindowSizeOffset.y > rectangle.y) && (mWindowSizeOffset.y < rectangle.y + rectangle.h))
-                {
-                    mw = true;
-                }
-
-                break;
-            case SDL_MOUSEBUTTONUP:
-
-                mw = false;
-
-                break;
-            case SDL_MOUSEMOTION:
-
-                if (mw)
-                {
-                    SDL_GetMouseState(&mousePos.x, &mousePos.y);
-                    newWindowPos.x = (newWindowPos.x + mousePos.x) - mWindowSizeOffset.x;
-                    newWindowPos.y = (newWindowPos.y + mousePos.y) - mWindowSizeOffset.y;
-                    SDL_SetWindowPosition(ctx->Wimdow, newWindowPos.x, newWindowPos.y);
-                }
-
                 break;
             case SDL_KEYDOWN:
                 break;
@@ -1508,30 +1489,10 @@ int main(int argc, char* argv[])
                 break;
             }
 
-            int mouseX, mouseY;
-            const int buttons = SDL_GetMouseState(&mouseX, &mouseY);
-
-            io.DeltaTime = 1.0f / 60.0f;
-            io.MousePos = ImVec2(static_cast<float>(mouseX), static_cast<float>(mouseY));
-            io.MouseDown[0] = buttons & SDL_BUTTON(SDL_BUTTON_LEFT);
-            io.MouseDown[1] = buttons & SDL_BUTTON(SDL_BUTTON_RIGHT);
-            io.MouseWheel = static_cast<float>(wheel);
-
-            ImGui_ImplSDL2_ProcessEvent(&event);
-
-
-            if (!show)
-                ctx->IsClosing = true;
-
         }
 
-        ImGui_ImplSDLRenderer2_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-        ImGui::GetStyle().FontScaleDpi = GetDPIScale(ctx->Wimdow);
-        // In ImGui 1.92 changing FontDefault alone does not change the base size.
-        if (io.FontDefault)
-            ImGui::GetStyle().FontSizeBase = io.FontDefault->LegacySize;
-        ImGui::NewFrame();
+        if (!show) ctx->IsClosing = true;
+        PrepareUiFrame(ctx->Renderer);
 
 
         if (!ctx->StateMinimized)
