@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  J-Link Utils demo: every widget the XML loader supports.
+
+  The variables live in one struct at 0x20001000, see demo_firmware.c for the
+  layout and for a firmware module that animates them. All values are
+  little-endian, as on every Cortex-M.
+
+  Image and Gif load demo_logo.png and demo_spinner.gif from the folder of
+  J-Link Utils.exe; copy both files there.
+
+  Offset map (address = 0x20001000 + offset):
+    000 u32 counter     004 f32 sine        008 f32 cosine      00C f32 speed
+    010 f32 rpm         014 f32 level       018 f32 temperature 01C f32 progress
+    020 f32 setpoint    024 f32 audio       028 u16 combo       02A u16 radio
+    02C u16 segment     02E u16 rotary      030 u16 check       032 u8  power
+    033 u8  select      034 u16 toggle      036 u16 momentary   038 u16 slider_int
+    03A u16 input_int   03C u16 keypad      03E u16 display     040 u16 leds[8]
+    050 u8  bits8       054 u32 bits32      058 s16 knob        05A u16 glossy
+    05C f32 vslider     060 chr lcd1[16]    070 chr lcd2[16]    080 f32 eq[8]
+    0A0 u32 capture_ready                   0A4 u32 hist_ready
+    0B0 f32 capture[128]                    2B0 u16 histogram[16]
+-->
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Overview</Text>
+  <!-- Optional one-time read of a range when the window is loaded. -->
+  <IOMap>
+    <Items>
+      <Item><Address>0x20001000</Address><Size>64</Size></Item>
+    </Items>
+  </IOMap>
+  <Items>
+    <Text><Text>Values from the demo firmware (demo_firmware.c)</Text></Text>
+    <SameLine/>
+    <HelpMarker><Text>All variables are in one struct at 0x20001000. Hover the other widgets for hints.</Text></HelpMarker>
+    <TextColored><Text>Text in color: #RRGGBB or #AARRGGBB</Text><Color>#40C0FF</Color></TextColored>
+    <Separator/>
+
+    <LabelText><Label>sine</Label><Format>%.2f</Format><Address>0x20001004</Address><LittleEndian>true</LittleEndian></LabelText>
+    <TextFormattedF><Format>cosine = %.3f</Format><Address>0x20001008</Address><LittleEndian>true</LittleEndian><Color>#80FF80</Color></TextFormattedF>
+    <Tooltip><Text>TextFormattedF: a float with a printf format</Text></Tooltip>
+    <TextFormatted><Format>display = %d</Format><Address>0x2000103E</Address><Color>#FFD060</Color></TextFormatted>
+    <Text><Text>Hover here for the sine history (PlotTooltip)</Text></Text>
+    <PlotTooltip>
+      <Text>sine</Text><Format>%.1f</Format><Min>-110</Min><Max>110</Max><Size>200</Size>
+      <BufferId>1</BufferId><Address>0x20001004</Address><DataType>7</DataType>
+      <LittleEndian>true</LittleEndian><AutoSize>false</AutoSize>
+    </PlotTooltip>
+    <Spacing/>
+
+    <LCD_HD44780>
+      <Text>LCD</Text>
+      <Line1Address>0x20001060</Line1Address><Line2Address>0x20001070</Line2Address>
+      <Line1Text>J-Link Utils</Line1Text><Line2Text>demo</Line2Text>
+      <PixelSize>2.5</PixelSize><LittleEndian>true</LittleEndian><UseFixed>false</UseFixed>
+    </LCD_HD44780>
+    <SameLine/>
+    <SevenSegment><Text>display</Text><Address>0x2000103E</Address><Width>160</Width><Height>60</Height><LittleEndian>true</LittleEndian></SevenSegment>
+    <GlossyDisplay>
+      <Text>display</Text><Address>0x2000103E</Address><Width>220</Width><Height>50</Height>
+      <LittleEndian>true</LittleEndian><DataType>4</DataType><HexMode>false</HexMode><Digits>5</Digits><DecimalPlaces>0</DecimalPlaces>
+    </GlossyDisplay>
+    <SameLine/>
+    <GlossyDisplay>
+      <Text>counter (hex)</Text><Address>0x20001000</Address><Width>220</Width><Height>50</Height>
+      <LittleEndian>true</LittleEndian><DataType>6</DataType><HexMode>true</HexMode><Digits>8</Digits><DecimalPlaces>0</DecimalPlaces>
+    </GlossyDisplay>
+
+    <Text><Text>progress</Text></Text>
+    <ProgressBar><Width>300</Width><Height>20</Height><Address>0x2000101C</Address><LittleEndian>true</LittleEndian></ProgressBar>
+
+    <Text><Text>Running light: a Grid repeats its items, one AddressInc apart</Text></Text>
+    <Grid>
+      <Row>2</Row><Column>4</Column><Address>0x20001040</Address><AddressInc>2</AddressInc>
+      <Items>
+        <LedIndicator>
+          <Text></Text><Address>0x20001040</Address><Radius>12</Radius>
+          <ColorOn>#30FF30</ColorOn><ColorOff>#103010</ColorOff><LittleEndian>true</LittleEndian>
+        </LedIndicator>
+      </Items>
+    </Grid>
+  </Items>
+</Window>
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Gauges</Text>
+  <Items>
+    <Gauge><Text>Speed</Text><Address>0x2000100C</Address><Min>0</Min><Max>200</Max><Radius>110</Radius><Unit>km/h</Unit><LittleEndian>true</LittleEndian></Gauge>
+    <SameLine/>
+    <RPMIndicator>
+      <Text>Engine</Text><Address>0x20001010</Address><Min>0</Min><Max>8000</Max><Radius>110</Radius><Unit>rpm</Unit><LittleEndian>true</LittleEndian>
+      <Zones>
+        <Zone start="0" end="5000" color="#60C850"/>
+        <Zone start="5000" end="6500" color="#F0E040"/>
+        <Zone start="6500" end="8000" color="#E04040"/>
+      </Zones>
+    </RPMIndicator>
+    <Tank>
+      <Text>Level</Text><Address>0x20001014</Address><Min>0</Min><Max>100</Max><Width>140</Width><Height>240</Height>
+      <Unit>%</Unit><LittleEndian>true</LittleEndian><LiquidColor>#40A0DF</LiquidColor><MetalColor>#A0A0AA</MetalColor><DataType>0</DataType>
+    </Tank>
+    <SameLine/>
+    <VerticalGauge><Text>Temperature</Text><Address>0x20001018</Address><Min>-20</Min><Max>100</Max><Width>120</Width><Height>240</Height><LittleEndian>true</LittleEndian><DataType>7</DataType></VerticalGauge>
+    <SameLine/>
+    <VUMeter><Text>Audio</Text><Address>0x20001024</Address><Min>0</Min><Max>100</Max><Orientation>vertical</Orientation><Width>40</Width><Height>240</Height><Unit>dB</Unit><LittleEndian>true</LittleEndian><ShowPeak>true</ShowPeak></VUMeter>
+    <VUMeter><Text>Audio</Text><Address>0x20001024</Address><Min>0</Min><Max>100</Max><Orientation>horizontal</Orientation><Width>320</Width><Height>30</Height><Unit>dB</Unit><LittleEndian>true</LittleEndian><ShowPeak>true</ShowPeak></VUMeter>
+  </Items>
+</Window>
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Controls</Text>
+  <Items>
+    <TabBar>
+      <Text>controls</Text>
+      <Items>
+        <Tab>
+          <Text>Buttons</Text>
+          <Items>
+            <!-- Mode: 0 set value, 1 toggle bit 0, 2 write value, 3 momentary (value while held, 0 on release) -->
+            <Button><Text>Toggle</Text><Width>100</Width><Height>30</Height><Address>0x20001034</Address><Mode>1</Mode><Value>1</Value><LittleEndian>true</LittleEndian></Button>
+            <SameLine/>
+            <Button><Text>Hold me</Text><Width>100</Width><Height>30</Height><Address>0x20001036</Address><Mode>3</Mode><Value>1</Value><LittleEndian>true</LittleEndian></Button>
+            <SameLine/>
+            <Button><Text>Write 1234</Text><Width>100</Width><Height>30</Height><Address>0x2000103C</Address><Mode>2</Mode><Value>1234</Value><LittleEndian>true</LittleEndian></Button>
+            <Popup>
+              <Items>
+                <Text><Text>Popup: right-click on the button above</Text></Text>
+                <Button><Text>Clear keypad</Text><Width>120</Width><Height>24</Height><Address>0x2000103C</Address><Mode>2</Mode><Value>0</Value><LittleEndian>true</LittleEndian></Button>
+              </Items>
+            </Popup>
+            <GlossyButton><Text>Power</Text><Address>0x2000105A</Address><LittleEndian>true</LittleEndian><Mode>1</Mode><Value>1</Value><Radius>24</Radius></GlossyButton>
+            <SameLine/>
+            <MechanicalSwitch2><Text>Main</Text><Address>0x20001032</Address><Width>60</Width><Height>90</Height><LittleEndian>true</LittleEndian></MechanicalSwitch2>
+            <Checkbox><Text>Checkbox, 16-bit</Text><Address>0x20001030</Address><AddrBool>false</AddrBool></Checkbox>
+            <Checkbox><Text>Checkbox on the same byte as the switch</Text><Address>0x20001032</Address><AddrBool>true</AddrBool></Checkbox>
+            <SelectableText><Format>Selectable: %d</Format><Address>0x20001033</Address><AddrBool>true</AddrBool></SelectableText>
+          </Items>
+        </Tab>
+        <Tab>
+          <Text>Values</Text>
+          <Items>
+            <SliderFloat><Text>setpoint</Text><Address>0x20001020</Address><Min>0</Min><Max>100</Max><Step>0</Step><Format>%.1f</Format><LittleEndian>true</LittleEndian></SliderFloat>
+            <ImputFloat><Text>setpoint</Text><Address>0x20001020</Address><Min>0</Min><Max>100</Max><Step>0.5</Step><Fast>10</Fast><Format>%.2f</Format><LittleEndian>true</LittleEndian></ImputFloat>
+            <SliderInt><Text>slider_int</Text><Address>0x20001038</Address><Min>0</Min><Max>1000</Max><Format>%d</Format></SliderInt>
+            <ImputInt><Text>input_int</Text><Address>0x2000103A</Address><Min>0</Min><Max>65535</Max><Step>1</Step><Fast>100</Fast></ImputInt>
+            <ComboBox>
+              <Text>combo</Text><Address>0x20001028</Address>
+              <Items>
+                <Combo><Label>Off</Label><Value>0</Value></Combo>
+                <Combo><Label>Slow</Label><Value>1</Value></Combo>
+                <Combo><Label>Fast</Label><Value>2</Value></Combo>
+              </Items>
+            </ComboBox>
+            <RadioButton>
+              <Address>0x2000102A</Address><InSameLine>true</InSameLine>
+              <Items>
+                <Radio><Label>A</Label><Value>0</Value></Radio>
+                <Radio><Label>B</Label><Value>1</Value></Radio>
+                <Radio><Label>C</Label><Value>2</Value></Radio>
+              </Items>
+            </RadioButton>
+            <SegmentButton>
+              <Text>segment</Text><Address>0x2000102C</Address><LittleEndian>true</LittleEndian>
+              <Items>
+                <Segment><Text>Low</Text><Value>0</Value></Segment>
+                <Segment><Text>Med</Text><Value>1</Value></Segment>
+                <Segment><Text>High</Text><Value>2</Value></Segment>
+              </Items>
+            </SegmentButton>
+            <RotarySwitch><Text>rotary</Text><Address>0x2000102E</Address><Min>0</Min><Max>5</Max><Radius>40</Radius><LittleEndian>true</LittleEndian></RotarySwitch>
+            <SameLine/>
+            <Keypad><Text>keypad</Text><Address>0x2000103C</Address><Min>0</Min><Max>9999</Max><Digits>4</Digits><LittleEndian>true</LittleEndian></Keypad>
+          </Items>
+        </Tab>
+        <Tab>
+          <Text>Knobs</Text>
+          <Items>
+            <StyledKnob><Text>setpoint</Text><Address>0x20001020</Address><Min>0</Min><Max>100</Max><Radius>45</Radius><LittleEndian>true</LittleEndian><DataType>7</DataType></StyledKnob>
+            <SameLine/>
+            <NeumorphicKnob><Text>knob</Text><Address>0x20001058</Address><Min>-100</Min><Max>100</Max><Radius>45</Radius><LittleEndian>true</LittleEndian><DataType>3</DataType></NeumorphicKnob>
+            <SameLine/>
+            <CustomVerticalSlider><Text>vslider</Text><Address>0x2000105C</Address><Min>0</Min><Max>1</Max><Width>30</Width><Height>150</Height><LittleEndian>true</LittleEndian><DataType>7</DataType></CustomVerticalSlider>
+            <Equalizer>
+              <Text>Equalizer</Text><Address>0x20001080</Address><Bands>8</Bands><Min>0</Min><Max>100</Max>
+              <BandWidth>24</BandWidth><Height>140</Height><DataType>float</DataType><LittleEndian>true</LittleEndian><AddressStep>4</AddressStep>
+            </Equalizer>
+          </Items>
+        </Tab>
+        <Tab>
+          <Text>Bits</Text>
+          <Items>
+            <BitControl8Bit><Text>bits8</Text><Address>0x20001050</Address><LittleEndian>true</LittleEndian><Scale>0.8</Scale></BitControl8Bit>
+            <!-- Mode: 1 = 8 bit, 2 = 16 bit, 4 = 32 bit -->
+            <BitControl><Text>bits32</Text><Address>0x20001054</Address><Mode>4</Mode><LittleEndian>true</LittleEndian><Switchable>true</Switchable></BitControl>
+          </Items>
+        </Tab>
+      </Items>
+    </TabBar>
+  </Items>
+</Window>
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Plots</Text>
+  <Items>
+    <!-- Points come from the communication thread, one per polling cycle; Freq thins them out. -->
+    <PlotLines>
+      <Text>sine and cosine</Text><Min>-110</Min><Max>110</Max><Width>-1</Width><Height>220</Height>
+      <Freq>200</Freq><Size>100</Size><Smooth>0</Smooth><MaxSize>2000</MaxSize><AutoSize>false</AutoSize>
+      <Items>
+        <Line><Name>sine</Name><Address>0x20001004</Address><DataType>7</DataType><LittleEndian>true</LittleEndian><Scale>1.0</Scale><BufferId>0</BufferId><LineColor>#FFFF6040</LineColor><LineWeight>1.5</LineWeight></Line>
+        <Line><Name>cosine</Name><Address>0x20001008</Address><DataType>7</DataType><LittleEndian>true</LittleEndian><Scale>1.0</Scale><BufferId>2</BufferId><LineColor>#FF40A0FF</LineColor><LineWeight>1.5</LineWeight></Line>
+      </Items>
+    </PlotLines>
+    <!-- DataLog with DoneAddr: the firmware samples 128 points at 1 kHz and sets capture_ready;
+         the program reads the whole array and only then clears the flag. -->
+    <DataLog>
+      <Text>capture (1 kHz, MCU side)</Text><Format>%.1f</Format><Min>-110</Min><Max>110</Max><Width>-1</Width><Height>200</Height>
+      <ScaleX>1</ScaleX><Size>128</Size><Smooth>0</Smooth><DoneAddr>0x200010A0</DoneAddr><LittleEndian>true</LittleEndian><AutoSize>false</AutoSize>
+      <Items>
+        <Line><Name>capture</Name><Address>0x200010B0</Address><ScaleY>1.0</ScaleY><DataType>7</DataType><Color>#FFFFC040</Color></Line>
+      </Items>
+    </DataLog>
+    <Histogram>
+      <Text>histogram</Text><Format>%.0f</Format><Min>0</Min><Max>0</Max><Width>-1</Width><Height>160</Height>
+      <ScaleX>1</ScaleX><Size>16</Size><Smooth>0</Smooth><DoneAddr>0x200010A4</DoneAddr><LittleEndian>true</LittleEndian><AutoSize>true</AutoSize><BarWidth>0.8</BarWidth>
+      <Items>
+        <Line><Name>counts</Name><Address>0x200012B0</Address><ScaleY>1.0</ScaleY><DataType>4</DataType><Color>#FF60D060</Color></Line>
+      </Items>
+    </Histogram>
+  </Items>
+</Window>
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Layout</Text>
+  <Items>
+    <TreeNode>
+      <Text>TreeNode</Text>
+      <Items>
+        <Text><Text>Nested items</Text></Text>
+        <Indent><Width>20</Width></Indent>
+        <Text><Text>Indented by 20 px</Text></Text>
+      </Items>
+    </TreeNode>
+    <Header>
+      <Text>Header (collapsing)</Text>
+      <Items>
+        <Group>
+          <Items>
+            <Text><Text>A Group keeps its items together;</Text></Text>
+            <Text><Text>SameLine after it places the next item to the right.</Text></Text>
+          </Items>
+        </Group>
+        <SameLine><OffsetX>0</OffsetX><Spacing>40</Spacing></SameLine>
+        <Text><Text>Right of the group</Text></Text>
+      </Items>
+    </Header>
+    <Column>
+      <Count>3</Count>
+      <Items>
+        <LabelText><Label>speed</Label><Format>%.0f</Format><Address>0x2000100C</Address><LittleEndian>true</LittleEndian></LabelText>
+        <LabelText><Label>rpm</Label><Format>%.0f</Format><Address>0x20001010</Address><LittleEndian>true</LittleEndian></LabelText>
+        <LabelText><Label>level</Label><Format>%.1f</Format><Address>0x20001014</Address><LittleEndian>true</LittleEndian></LabelText>
+      </Items>
+    </Column>
+    <ChildWindow>
+      <Text>child</Text><Width>0</Width><Height>90</Height>
+      <Items>
+        <Text><Text>ChildWindow: a scrollable region</Text></Text>
+        <FixedWidth>
+          <Width>200</Width>
+          <Items>
+            <SliderInt><Text>FixedWidth 200 px</Text><Address>0x20001038</Address><Min>0</Min><Max>1000</Max><Format>%d</Format></SliderInt>
+          </Items>
+        </FixedWidth>
+      </Items>
+    </ChildWindow>
+    <Dummy><Width>0</Width><Height>10</Height></Dummy>
+    <AlignTextToFramePadding/>
+    <Text><Text>Aligned with the button:</Text></Text>
+    <SameLine/>
+    <Button><Text>Hover me</Text><Width>100</Width><Height>0</Height><Address>0x20001034</Address><Mode>1</Mode><Value>1</Value><LittleEndian>true</LittleEndian></Button>
+    <HintBox>
+      <Items>
+        <Text><Text>HintBox: shown while the button above is hovered</Text></Text>
+      </Items>
+    </HintBox>
+    <NewLine/>
+    <Text><Text>NewLine above, SetCursorPos below moves the cursor inside the window</Text></Text>
+    <SetCursorPos><Width>300</Width><Height>420</Height></SetCursorPos>
+    <TextColored><Text>at x=300, y=420</Text><Color>#C0C0C0</Color></TextColored>
+  </Items>
+</Window>
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Memory</Text>
+  <Items>
+    <MemoryView><Text>demo struct</Text><BaseAddress>0x20001000</BaseAddress><NumBytes>256</NumBytes><BytesPerLine>16</BytesPerLine><LittleEndian>true</LittleEndian></MemoryView>
+    <MemoryEditor>
+      <Text>editor</Text><BaseAddress>0x20001000</BaseAddress><Size>1024</Size><Cols>16</Cols>
+      <ReadOnly>false</ReadOnly><ShowAscii>true</ShowAscii><ShowHexII>false</ShowHexII><ShowOptions>true</ShowOptions>
+      <ShowPreview>true</ShowPreview><GreyZero>true</GreyZero><UpperHex>true</UpperHex><LittleEndian>true</LittleEndian>
+      <UseExternal>true</UseExternal><UseCache>true</UseCache>
+    </MemoryEditor>
+  </Items>
+</Window>
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Media</Text>
+  <Items>
+    <Image><Text>Image</Text><File>demo_logo.png</File><Scale>1.0</Scale><Width>0</Width><Height>0</Height><Tint>#FFFFFFFF</Tint><Border>#00000000</Border><UV0>0,0</UV0><UV1>1,1</UV1></Image>
+    <Gif><Text>Gif</Text><File>demo_spinner.gif</File><Scale>1.0</Scale><Width>0</Width><Height>0</Height><Loop>true</Loop><Speed>1.0</Speed></Gif>
+  </Items>
+</Window>
+
+<!-- ===================================================================== -->
+<Window>
+  <Text>Watch</Text>
+  <Items>
+    <!-- The rows are kept in watch.xml next to the program; right-click for the menu. -->
+    <Watch/>
+  </Items>
+</Window>
