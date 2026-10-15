@@ -109,6 +109,9 @@ extern uint32_t DataCompletedCycles(void);
 // Seconds on the clock used for DataSample::time.
 extern double DataTimeNow(void);
 
+// Typed reads/writes with byte order (ReadTypedValue, WriteTypedValue)
+#include "TypedValue.h"
+
 // Inline helpers
 
 struct ColorRGBA {

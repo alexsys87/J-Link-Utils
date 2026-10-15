@@ -15,7 +15,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
         // Read a 16-bit value
-        uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
+        uint16_t raw = (uint16_t)ReadTypedValue(ctx, addr, U16_DEC, littleEndian);
         int value = static_cast<int>(raw);
         if (value < 0) value = 0;
         if (value > 9999) value = 9999;

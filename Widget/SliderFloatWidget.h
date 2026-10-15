@@ -15,21 +15,8 @@ public:
     }
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
-        union { uint32_t hex; float real; } value;
-        if (littleEndian) {
-            value.hex = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-        }
-        else {
-            value.real = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
-        }
-        if (ImGui::SliderFloat(label.c_str(), &value.real, minVal, maxVal, format.c_str(), 0)) {
-            if (littleEndian) {
-                uint32_t v = SwapBeToLe32(value.hex);
-                DataReadWriteU32(ctx, nullptr, &v, &addr);
-            }
-            else {
-                DataReadWriteFT32(ctx, nullptr, &value.real, &addr);
-            }
-        }
+        float value = (float)ReadTypedValue(ctx, addr, FLOAT, littleEndian);
+        if (ImGui::SliderFloat(label.c_str(), &value, minVal, maxVal, format.c_str(), 0))
+            WriteTypedValue(ctx, addr, FLOAT, littleEndian, value);
     }
 };

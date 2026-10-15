@@ -31,25 +31,16 @@ public:
         values(bands, 0.0f) {
     }
 
+    // EQ_INT16 values have always been read and written as unsigned 16-bit.
+    int ValueType() const { return dataType == EQ_INT16 ? U16_DEC : FLOAT; }
+
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addrBase = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : baseAddress;
 
         // Read the values from memory
         for (int i = 0; i < numBands; ++i) {
             uint32_t addr = addrBase + i * addressStep;
-            if (dataType == EQ_FLOAT) {
-                if (littleEndian) {
-                    uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-                    values[i] = *(float*)&raw;
-                }
-                else {
-                    values[i] = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
-                }
-            }
-            else { // EQ_INT16
-                uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-                values[i] = static_cast<float>(raw);
-            }
+            values[i] = (float)ReadTypedValue(ctx, addr, ValueType(), littleEndian);
             // Clamp
             if (values[i] < minVal) values[i] = minVal;
             if (values[i] > maxVal) values[i] = maxVal;
@@ -63,20 +54,7 @@ public:
         if (changed) {
             for (int i = 0; i < numBands; ++i) {
                 uint32_t addr = addrBase + i * addressStep;
-                if (dataType == EQ_FLOAT) {
-                    if (littleEndian) {
-                        uint32_t raw;
-                        memcpy(&raw, &values[i], sizeof(float));
-                        DataReadWriteU32(ctx, nullptr, &raw, &addr);
-                    }
-                    else {
-                        DataReadWriteFT32(ctx, nullptr, &values[i], &addr);
-                    }
-                }
-                else { // EQ_INT16
-                    uint16_t v = static_cast<uint16_t>(values[i]);
-                    DataReadWriteU16(ctx, nullptr, &v, &addr);
-                }
+                WriteTypedValue(ctx, addr, ValueType(), littleEndian, values[i]);
             }
         }
     }

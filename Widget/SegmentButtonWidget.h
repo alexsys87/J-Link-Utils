@@ -24,7 +24,7 @@ public:
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
         // Read the current 16-bit value from memory
-        uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
+        uint16_t raw = (uint16_t)ReadTypedValue(ctx, addr, U16_DEC, littleEndian);
         currentValue = static_cast<int>(raw);
 
         ImGui::PushID(addr);
@@ -35,7 +35,7 @@ public:
         if (changed) {
             uint32_t writeAddr = addr;
             uint16_t v = static_cast<uint16_t>(currentValue);
-            DataReadWriteU16(ctx, nullptr, &v, &writeAddr);
+            WriteTypedValue(ctx, writeAddr, U16_DEC, littleEndian, v);
         }
     }
 

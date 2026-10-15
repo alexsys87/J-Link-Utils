@@ -34,6 +34,7 @@ with tempfile.TemporaryDirectory(prefix='ui-regression-') as directory:
     shutil.copyfile(SRC / 'Widget/MemoryBounds.h', build / 'MemoryBounds.h')
     shutil.copyfile(SRC / 'Editor/XMLSafety.h', build / 'XMLSafety.h')
     shutil.copyfile(SRC / 'Widget/CaptureHandshake.h', build / 'CaptureHandshake.h')
+    shutil.copyfile(SRC / 'Widget/TypedValue.h', build / 'TypedValue.h')
     # Read the list of actual test includes, instead of maintaining a second list.
     test_source = (HERE / 'ui_regression.cpp').read_bytes()
     for name in re.findall(rb'#include "([^"]+Widget\.h)"', test_source):

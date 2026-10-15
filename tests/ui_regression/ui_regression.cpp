@@ -139,6 +139,48 @@ static void TestPlotHistory() {
     graph.Draw(&ctx,nullptr);
 }
 
+// TypedValue: every type in both byte orders, read and write.
+static void TestTypedValues() {
+    using namespace typed_value;
+    struct Case { int type; uint64_t le, be; double value; };
+    const Case cases[]={
+        {BOOLEAN,0x01,0x01,1},{S08_DEC,0xFE,0xFE,-2},{U08_DEC,0xC8,0xC8,200},
+        {S16_DEC,0xFF85,0x85FF,-123},{U16_DEC,0x1234,0x3412,0x1234},
+        {S32_DEC,0xFFFE1DC0,0xC01DFEFF,-123456},{U32_DEC,0xEE6B2800,0x00286BEE,4000000000.0},
+        {S64_DEC,0xFFFFFEE08E04FB35ull,0x35FB048EE0FEFFFFull,-1234567890123.0},
+        {U64_DEC,0xF9CCD8A1C5080000ull,0x000008C5A1D8CCF9ull,18000000000000000000.0},
+        {FLOAT,0xC2F70000,0x0000F7C2,-123.5},
+        {FLOAT_INV,0x0000F7C2,0xC2F70000,-123.5},  // stored in the opposite byte order
+    };
+    for(const auto& c:cases) {
+        assert(Decode(c.le,c.type,true)==c.value);
+        assert(Decode(c.be,c.type,false)==c.value);
+        assert(Encode(c.value,c.type,true)==c.le);
+        assert(Encode(c.value,c.type,false)==c.be);
+        uint8_t bytes[8];
+        for(int i=0;i<8;++i) bytes[i]=static_cast<uint8_t>(c.be>>(8*i));
+        assert(DecodeBytes(bytes,c.type,false)==c.value);
+    }
+    // Bytes beyond the type size are ignored.
+    assert(Decode(0xABCD0012,U08_DEC,true)==0x12);
+    // Writes round to the nearest integer and clamp to the type range.
+    assert(Encode(2.6,U16_DEC,true)==3 && Encode(-5,U16_DEC,true)==0 && Encode(70000,U16_DEC,true)==65535);
+    assert(Encode(-40000,S16_DEC,true)==0x8000 && Encode(1e30,S64_DEC,true)==0x7FFFFFFFFFFFFC00ull);
+    assert(Encode(std::nan(""),S32_DEC,true)==0);
+    // Through the widget helpers: a big-endian float and a big-endian S16 write.
+    MainContext ctx;
+    rawValue=0x0000F7C2;  // memory bytes C2 F7 00 00 in big-endian order
+    assert(ReadTypedValue(&ctx,0x20000010,FLOAT,false)==-123.5 && lastAddress==0x20000010);
+    WriteTypedValue(&ctx,0x20000020,S16_DEC,false,-123);
+    assert(lastWriteRaw==0x85FF && lastWriteSize==2 && lastAddress==0x20000020);
+    // A float widget honours LittleEndian=false now.
+    rawValue=0x00004841;  // 12.5f stored big-endian
+    LabelTextWidget label("v","%.1f",0x20000030,false);
+    label.Draw(&ctx,nullptr);
+    assert(drawnText=="12.5");
+    rawValue=0;
+}
+
 // Plot points come from timestamped samples, thinned out to the plot frequency.
 static void TestPlotSampling() {
     MainContext ctx;
@@ -254,7 +296,7 @@ static void TestMappedMemoryBounds() {
 
 int main() {
     TestFormats(); TestXML(); TestParsing(); TestTooltipBounds();
-    TestPlotHistory(); TestPlotSampling(); TestCaptureHandshake(); TestGlossyDisplay();
+    TestPlotHistory(); TestTypedValues(); TestPlotSampling(); TestCaptureHandshake(); TestGlossyDisplay();
     TestMappedMemoryBounds();
     std::puts("UI regression tests passed");
 }

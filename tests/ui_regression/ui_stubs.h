@@ -133,13 +133,24 @@ inline void SDL_UnlockMutex(void*){}
 struct FT32 {union {uint32_t hex;float real;};};
 inline uint64_t rawValue=0;
 inline uint32_t lastAddress=0;
-inline uint8_t DataReadWriteU08(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return static_cast<uint8_t>(rawValue);}
-inline uint16_t DataReadWriteU16(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return static_cast<uint16_t>(rawValue);}
+// Last write through the typed stubs: raw value and size in bytes.
+inline uint64_t lastWriteRaw=0;
+inline int lastWriteSize=0;
+inline uint8_t DataReadWriteU08(MainContext*,void*,void* v,uint32_t* a){
+    lastAddress=*a;
+    if(v){lastWriteRaw=*static_cast<uint8_t*>(v);lastWriteSize=1;}
+    return static_cast<uint8_t>(rawValue);
+}
+inline uint16_t DataReadWriteU16(MainContext*,void*,void* v,uint32_t* a){
+    lastAddress=*a;
+    if(v){lastWriteRaw=*static_cast<uint16_t*>(v);lastWriteSize=2;}
+    return static_cast<uint16_t>(rawValue);
+}
 inline uint32_t lastWrite32=0;
 inline int writes32=0;
 inline uint32_t DataReadWriteU32(MainContext*,void*,void* v,uint32_t* a){
     lastAddress=*a;
-    if(v){lastWrite32=*static_cast<uint32_t*>(v);++writes32;}
+    if(v){lastWrite32=*static_cast<uint32_t*>(v);++writes32;lastWriteRaw=lastWrite32;lastWriteSize=4;}
     return static_cast<uint32_t>(rawValue);
 }
 struct DataSample { double time; uint8_t bytes[8]; };
@@ -151,7 +162,11 @@ inline uint32_t completedCycles=0;
 inline uint32_t DataCompletedCycles(){return completedCycles;}
 inline double timeNow=0;
 inline double DataTimeNow(){return timeNow;}
-inline uint64_t DataReadWriteU64(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return rawValue;}
+inline uint64_t DataReadWriteU64(MainContext*,void*,void* v,uint32_t* a){
+    lastAddress=*a;
+    if(v){lastWriteRaw=*static_cast<uint64_t*>(v);lastWriteSize=8;}
+    return rawValue;
+}
 inline uint16_t DataReadWriteArray(MainContext*,void*,void*,uint32_t*,uint16_t size){return size;}
 inline bool DataReadWriteBoolean(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;return rawValue!=0;}
 inline float DataReadWriteFT32(MainContext*,void*,void*,uint32_t* a){lastAddress=*a;uint32_t r=static_cast<uint32_t>(rawValue);float f;std::memcpy(&f,&r,4);return f;}
@@ -164,6 +179,7 @@ inline std::vector<float> smooth(const std::vector<float>& v,int){return v;}
 inline float VirtualBuffer[MAX_BUFF][BUFF_SIZE]={};
 struct ColorRGBA {float R,G,B,A;};
 inline ColorRGBA ColorConverter(int){return {1,1,1,1};}
+#include "TypedValue.h"
 class UIWidget {public:virtual ~UIWidget()=default;virtual void Draw(MainContext*,uint32_t* = nullptr)=0;};
 class LeafWidget:public UIWidget {protected:std::string text;public:LeafWidget(const char* s=""):text(s?s:""){} };
 #endif

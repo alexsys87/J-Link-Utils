@@ -33,14 +33,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        float value;
-        if (littleEndian) {
-            uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            value = *(float*)&raw;
-        }
-        else {
-            value = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
-        }
+        float value = (float)ReadTypedValue(ctx, addr, FLOAT, littleEndian);
 
         ImGui::PushID(addr);
         DrawRPMIndicator(label.c_str(), value, minVal, maxVal, radius, unit.c_str(), zones);

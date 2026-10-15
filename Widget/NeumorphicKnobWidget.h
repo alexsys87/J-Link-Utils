@@ -20,64 +20,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        float value = 0.0f;
-
-        // Read the data according to the type
-        if (dataType == FLOAT) {
-            if (littleEndian) {
-                uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-                value = *(float*)&raw;
-            }
-            else {
-                value = DataReadWriteFT32(ctx, nullptr, nullptr, &addr);
-            }
-        }
-        else if (dataType == S16_DEC || dataType == U16_DEC) {
-            uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
-            if (littleEndian) {
-                // nothing to do, the data is already little-endian
-            }
-            else {
-                raw = (raw >> 8) | (raw << 8); // swap 16-bit
-            }
-            if (dataType == S16_DEC) {
-                int16_t signedVal = (int16_t)raw;
-                value = (float)signedVal;
-            }
-            else {
-                value = (float)raw;
-            }
-        }
-        else if (dataType == S32_DEC || dataType == U32_DEC) {
-            uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            if (!littleEndian) {
-                raw = SwapLeToBe32(raw);
-            }
-            if (dataType == S32_DEC) {
-                int32_t signedVal = (int32_t)raw;
-                value = (float)signedVal;
-            }
-            else {
-                value = (float)raw;
-            }
-        }
-        else if (dataType == S08_DEC || dataType == U08_DEC) {
-            uint16_t raw = DataReadWriteU08(ctx, nullptr, nullptr, &addr);
-            if (dataType == S08_DEC) {
-                int8_t signedVal = (int8_t)raw;
-                value = (float)signedVal;
-            }
-            else {
-                value = (float)(raw & 0xFF);
-            }
-        }
-        else if (dataType == FLOAT_INV) {
-            uint32_t raw = DataReadWriteU32(ctx, nullptr, nullptr, &addr);
-            if (littleEndian) {
-                raw = SwapLeToBe32(raw); // little to big, big-endian is expected
-            }
-            value = *(float*)&raw;
-        }
+        float value = (float)ReadTypedValue(ctx, addr, dataType, littleEndian);
 
         float oldValue = value;
 
@@ -85,74 +28,8 @@ public:
         bool held = DrawKnob(text.c_str(), &value, minVal, maxVal, radius);
         ImGui::PopID();
 
-        if (value != oldValue) {
-            uint32_t writeAddr = addr;
-            // Write back according to the type
-            if (dataType == FLOAT) {
-                if (littleEndian) {
-                    uint32_t raw;
-                    memcpy(&raw, &value, sizeof(float));
-                    DataReadWriteU32(ctx, nullptr, &raw, &writeAddr);
-                }
-                else {
-                    DataReadWriteFT32(ctx, nullptr, &value, &writeAddr);
-                }
-            }
-            else if (dataType == S16_DEC || dataType == U16_DEC) {
-                uint16_t v;
-                if (dataType == S16_DEC) {
-                    int32_t intVal = (int32_t)value;
-                    if (intVal < -32768) intVal = -32768;
-                    if (intVal > 32767) intVal = 32767;
-                    v = (uint16_t)(int16_t)intVal;
-                }
-                else {
-                    uint32_t intVal = (uint32_t)(value + 0.5f);
-                    if (intVal > 65535) intVal = 65535;
-                    v = (uint16_t)intVal;
-                }
-                if (!littleEndian) {
-                    v = (v >> 8) | (v << 8);
-                }
-                DataReadWriteU16(ctx, nullptr, &v, &writeAddr);
-            }
-            else if (dataType == S32_DEC || dataType == U32_DEC) {
-                uint32_t v;
-                if (dataType == S32_DEC) {
-                    v = (uint32_t)(int32_t)value;
-                }
-                else {
-                    v = (uint32_t)(value + 0.5f);
-                }
-                if (!littleEndian) {
-                    v = SwapLeToBe32(v);
-                }
-                DataReadWriteU32(ctx, nullptr, &v, &writeAddr);
-            }
-            else if (dataType == S08_DEC || dataType == U08_DEC) {
-                uint8_t v;
-                if (dataType == S08_DEC) {
-                    int32_t intVal = (int32_t)value;
-                    if (intVal < -128) intVal = -128;
-                    if (intVal > 127) intVal = 127;
-                    v = (uint16_t)(uint8_t)(int8_t)intVal;
-                }
-                else {
-                    uint32_t intVal = (uint32_t)(value + 0.5f);
-                    if (intVal > 255) intVal = 255;
-                    v = (uint8_t)intVal;
-                }
-                DataReadWriteU08(ctx, nullptr, &v, &writeAddr);
-            }
-            else if (dataType == FLOAT_INV) {
-                uint32_t v;
-                memcpy(&v, &value, sizeof(float));
-                if (littleEndian) {
-                    v = SwapBeToLe32(v);
-                }
-                DataReadWriteU32(ctx, nullptr, &v, &writeAddr);
-            }
-        }
+        if (value != oldValue)
+            WriteTypedValue(ctx, addr, dataType, littleEndian, value);
     }
 
 private:

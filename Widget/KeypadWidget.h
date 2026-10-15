@@ -20,7 +20,7 @@ public:
     void Draw(MainContext* ctx, uint32_t* dynamicAddr) override {
         uint32_t addr = (dynamicAddr && *dynamicAddr) ? *dynamicAddr : address;
 
-        uint16_t raw = DataReadWriteU16(ctx, nullptr, nullptr, &addr);
+        uint16_t raw = (uint16_t)ReadTypedValue(ctx, addr, U16_DEC, littleEndian);
         int memValue = static_cast<int>(raw);
         if (memValue < minVal) memValue = minVal;
         if (memValue > maxVal) memValue = maxVal;
@@ -51,7 +51,7 @@ public:
                 if (newVal >= minVal && newVal <= maxVal) {
                     uint16_t writeVal = static_cast<uint16_t>(newVal);
                     uint32_t writeAddr = addr;
-                    DataReadWriteU16(ctx, nullptr, &writeVal, &writeAddr);
+                    WriteTypedValue(ctx, writeAddr, U16_DEC, littleEndian, writeVal);
                     inputBuffer.clear();
                 }
             }
