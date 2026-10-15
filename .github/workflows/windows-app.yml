@@ -25,7 +25,7 @@ jobs:
       - name: Prepare binary cache
         shell: pwsh
         run: New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         id: restore-cache
         with:
           path: .dependencies/binary-cache
@@ -41,20 +41,20 @@ jobs:
           # not GUI, device connectivity, or hardware behavior.
           $process = Start-Process -FilePath './out/app/${{ matrix.arch }}/Release/J-Link Utils.exe' -ArgumentList '--check-jlink-runtime' -Wait -PassThru
           if ($process.ExitCode -ne 2) { throw "Expected missing-runtime exit 2; got $($process.ExitCode)" }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: J-Link-Utils-${{ matrix.arch }}-Release
           path: out/package/J-Link-Utils-${{ matrix.arch }}-Release/
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: windows-app-build-log-${{ matrix.arch }}
           path: out/app/${{ matrix.arch }}/Release/build.binlog
           if-no-files-found: ignore
           retention-days: 7
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v5
         if: ${{ always() && steps.restore-cache.outcome == 'success' && steps.restore-cache.outputs.cache-hit != 'true' }}
         with:
           path: .dependencies/binary-cache
