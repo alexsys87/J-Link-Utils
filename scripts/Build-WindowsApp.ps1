@@ -99,6 +99,36 @@ if ($LASTEXITCODE -ne 0) { throw "Full application build failed with exit code $
 $exe = Join-Path $output 'J-Link Utils.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'MSBuild did not produce the expected application executable.' }
 
+$upxCmd = Get-Command upx.exe -ErrorAction SilentlyContinue
+if (-not $upxCmd) {
+    $upxCmd = Get-Command upx -ErrorAction SilentlyContinue
+}
+if (-not $upxCmd) {
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host 'UPX not found. Attempting auto-installation via winget...'
+        try {
+            & winget install --id UPX.UPX -e --source winget --accept-source-agreements --accept-package-agreements
+            $upxCmd = Get-Command upx.exe -ErrorAction SilentlyContinue
+            if (-not $upxCmd) {
+                $upxCmd = Get-Command upx -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-Host "Winget auto-installation of UPX failed: $_"
+        }
+    }
+}
+
+if ($upxCmd) {
+    Write-Host 'Compressing executable with UPX...'
+    & $upxCmd --best $exe
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "UPX compression failed with exit code $LASTEXITCODE"
+    }
+} else {
+    Write-Host 'UPX is not installed or available. Skipping executable compression.'
+}
+
 $package = Join-Path $repo "out/package/J-Link-Utils-$Architecture-Release"
 if (Test-Path $package) { Remove-Item -Recurse -Force $package }
 New-Item -ItemType Directory -Force $package | Out-Null
