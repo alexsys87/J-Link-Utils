@@ -99,29 +99,87 @@ if ($LASTEXITCODE -ne 0) { throw "Full application build failed with exit code $
 $exe = Join-Path $output 'J-Link Utils.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'MSBuild did not produce the expected application executable.' }
 
-$upxCmd = Get-Command upx.exe -ErrorAction SilentlyContinue
-if (-not $upxCmd) {
-    $upxCmd = Get-Command upx -ErrorAction SilentlyContinue
-}
-if (-not $upxCmd) {
+function Resolve-UpxExecutable {
+    function Find-UpxInSystem {
+        $cmd = Get-Command upx.exe -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+        $cmd = Get-Command upx -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+
+        $candidatePaths = @(
+            (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\upx.exe'),
+            (Join-Path $env:ProgramFiles 'UPX\upx.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'UPX\upx.exe'),
+            'C:\ProgramData\chocolatey\bin\upx.exe',
+            (Join-Path $env:USERPROFILE 'scoop\shims\upx.exe')
+        )
+        foreach ($p in $candidatePaths) {
+            if ($p -and (Test-Path -LiteralPath $p -PathType Leaf)) {
+                return $p
+            }
+        }
+
+        $wingetPkgDir = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        if (Test-Path -LiteralPath $wingetPkgDir -PathType Container) {
+            $found = Get-ChildItem -Path $wingetPkgDir -Filter 'upx.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+                return $found.FullName
+            }
+        }
+
+        return $null
+    }
+
+    $upx = Find-UpxInSystem
+    if ($upx) { return $upx }
+
+    try {
+        $regPaths = @(
+            [Environment]::GetEnvironmentVariable('PATH', 'User'),
+            [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+        ) -split ';' | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+        foreach ($p in $regPaths) {
+            if ($env:PATH -notlike "*$p*") {
+                $env:PATH = "$p;$env:PATH"
+            }
+        }
+    } catch {}
+
+    $upx = Find-UpxInSystem
+    if ($upx) { return $upx }
+
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($winget) {
         Write-Host 'UPX not found. Attempting auto-installation via winget...'
         try {
             & winget install --id UPX.UPX -e --source winget --accept-source-agreements --accept-package-agreements
-            $upxCmd = Get-Command upx.exe -ErrorAction SilentlyContinue
-            if (-not $upxCmd) {
-                $upxCmd = Get-Command upx -ErrorAction SilentlyContinue
-            }
+
+            try {
+                $regPaths = @(
+                    [Environment]::GetEnvironmentVariable('PATH', 'User'),
+                    [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+                ) -split ';' | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+                foreach ($p in $regPaths) {
+                    if ($env:PATH -notlike "*$p*") {
+                        $env:PATH = "$p;$env:PATH"
+                    }
+                }
+            } catch {}
+
+            $upx = Find-UpxInSystem
+            if ($upx) { return $upx }
         } catch {
             Write-Host "Winget auto-installation of UPX failed: $_"
         }
     }
+
+    return $null
 }
 
-if ($upxCmd) {
-    Write-Host 'Compressing executable with UPX...'
-    & $upxCmd --best $exe
+$upxExe = Resolve-UpxExecutable
+if ($upxExe) {
+    Write-Host "Compressing executable with UPX ($upxExe)..."
+    & $upxExe --best $exe
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "UPX compression failed with exit code $LASTEXITCODE"
     }
