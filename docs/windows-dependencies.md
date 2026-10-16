@@ -24,10 +24,11 @@ pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x86
 
 Each invocation installs **both Debug and Release** via the standard
 `x64-windows-static` or `x86-windows-static` triplet, which selects static
-libraries and `/MTd` / `/MT`. An alternate installed Visual Studio CMake
-generator can be selected with `-Generator 'Visual Studio 18 2026'`; changing
-generators requires removing `.dependencies/tool-build` and the corresponding
-`.dependencies/probe-*` directory first. Only VS 2022 is selected in CI.
+libraries and `/MTd` / `/MT`. By default, Visual Studio is detected automatically
+(`-Generator Auto`). An alternate installed Visual Studio CMake generator can be
+explicitly selected with e.g. `-Generator 'Visual Studio 18 2026'`; changing
+generators automatically cleans outdated CMake build caches (`.dependencies/tool-build`
+and `.dependencies/probe-*`).
 
 The application retains its original **v145** toolset and all unrelated
 compiler/linker options. Install that toolset to build it, or deliberately

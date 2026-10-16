@@ -1,19 +1,23 @@
 # Full Windows executable build
 
-Prerequisites: Windows, PowerShell 7.2+, Git, CMake, and Visual Studio 2022
-Desktop development with C++ (v143 compiler and Windows SDK). From repository root:
+Prerequisites: Windows, PowerShell 7.2+, Git, CMake, and Visual Studio (2022 or 2026)
+Desktop development with C++ and Windows SDK. From repository root:
 
 ```powershell
 pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x64
 pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x86
 ```
 
+By default, the script automatically detects the installed Visual Studio version
+(VS 2022 or VS 2026), selects the appropriate generator and platform toolset (`v143`
+or `v145`), cleans outdated CMake build caches if the Visual Studio version changed,
+and automatically builds/installs missing dependencies.
+
 Each command builds and tests the pinned open-source dependencies, then compiles
 and links the **complete application**, using Release `/MT` and the CMake-selected
 MSBuild. It packages `out/package/J-Link-Utils-<arch>-Release/`. The executable and
 MSBuild binary log also remain in `out/app/<arch>/Release/`.
-The script overrides `PlatformToolset=v143` on the command line; the IDE project's
-default **v145 is unchanged**. Other VS generators/toolsets can be selected using
+Other VS generators/toolsets can be explicitly selected using
 `-Generator` and `-PlatformToolset`; the script rejects a compiler-toolset mismatch
 with its dependencies.
 

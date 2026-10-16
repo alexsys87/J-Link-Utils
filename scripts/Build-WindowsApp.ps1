@@ -2,12 +2,67 @@
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'x86')][string]$Architecture = 'x64',
-    [ValidatePattern('^v[0-9]+$')][string]$PlatformToolset = 'v143',
-    [string]$Generator = 'Visual Studio 17 2022'
+    [string]$PlatformToolset = 'Auto',
+    [string]$Generator = 'Auto'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'Windows and Visual Studio C++ build tools are required.' }
+
+function Resolve-VisualStudioToolchain([string]$RequestedGenerator, [string]$RequestedToolset) {
+    $hasGen = $RequestedGenerator -and $RequestedGenerator -ne 'Auto'
+    $hasToolset = $RequestedToolset -and $RequestedToolset -ne 'Auto'
+
+    if ($hasGen -and $hasToolset) {
+        return [PSCustomObject]@{ Generator = $RequestedGenerator; PlatformToolset = $RequestedToolset }
+    }
+
+    if ($hasGen) {
+        $toolset = if ($RequestedGenerator -match 'Visual Studio 18') { 'v145' }
+                   elseif ($RequestedGenerator -match 'Visual Studio 17') { 'v143' }
+                   elseif ($RequestedGenerator -match 'Visual Studio 16') { 'v142' }
+                   else { 'v143' }
+        return [PSCustomObject]@{ Generator = $RequestedGenerator; PlatformToolset = $toolset }
+    }
+
+    if ($hasToolset) {
+        $gen = if ($RequestedToolset -eq 'v145') { 'Visual Studio 18 2026' }
+               elseif ($RequestedToolset -eq 'v143') { 'Visual Studio 17 2022' }
+               elseif ($RequestedToolset -eq 'v142') { 'Visual Studio 16 2019' }
+               else { 'Visual Studio 17 2022' }
+        return [PSCustomObject]@{ Generator = $gen; PlatformToolset = $RequestedToolset }
+    }
+
+    $vswherePaths = @(
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+    )
+    $vswhere = $vswherePaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $vswhere) {
+        $cmd = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+        if ($cmd) { $vswhere = $cmd.Source }
+    }
+    if ($vswhere) {
+        $vsJson = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json 2>$null | ConvertFrom-Json
+        if ($vsJson -and $vsJson.installationVersion) {
+            $ver = [version]$vsJson.installationVersion
+            if ($ver.Major -ge 18) {
+                return [PSCustomObject]@{ Generator = 'Visual Studio 18 2026'; PlatformToolset = 'v145' }
+            } elseif ($ver.Major -eq 17) {
+                return [PSCustomObject]@{ Generator = 'Visual Studio 17 2022'; PlatformToolset = 'v143' }
+            } elseif ($ver.Major -eq 16) {
+                return [PSCustomObject]@{ Generator = 'Visual Studio 16 2019'; PlatformToolset = 'v142' }
+            }
+        }
+    }
+    return [PSCustomObject]@{ Generator = 'Visual Studio 17 2022'; PlatformToolset = 'v143' }
+}
+
+$toolchain = Resolve-VisualStudioToolchain -RequestedGenerator $Generator -RequestedToolset $PlatformToolset
+$Generator = $toolchain.Generator
+$PlatformToolset = $toolchain.PlatformToolset
+Write-Host "Selected Visual Studio toolchain: $Generator ($PlatformToolset)"
+
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $state = Join-Path $repo '.dependencies'
 
