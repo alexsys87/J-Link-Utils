@@ -220,12 +220,14 @@ Windows DPI следует выполнять отдельно.
 ## Сборка в Windows
 
 Для **полной сборки исполняемого файла Release** установите инструменты сборки
-C++ Visual Studio 2022, Windows SDK, Git, CMake 3.25+ и PowerShell 7.2+, затем выполните:
+C++ Visual Studio (2022 или 2026), Windows SDK, Git, CMake 3.25+ и PowerShell 7.2+, затем выполните:
 
 ```powershell
 pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x64
 pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x86
 ```
+
+Скрипт **автоматически определяет установленную версию Visual Studio** (VS 2022 / VS 2026), выбирает подходящий генератор и набор инструментов (`v143` или `v145`), доустанавливает отсутствующие открытые зависимости и утилиты, а также при необходимости сбрасывает старый кэш настройки.
 
 Эти команды собирают открытые зависимости закреплённых версий, выполняют
 независимые проверки их линковки, затем компилируют и компонуют полное приложение
@@ -244,13 +246,10 @@ pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x86
 ошибку и завершается с кодом 2, не пытаясь вызывать функции SDK.
 Работа с оборудованием **не проверена**.
 
-Скрипт выбирает `v143` через командную строку; заданный в проекте для IDE набор
-инструментов `v145` и настройки C++17 сохраняются. Предоставленные обёртки
-используют Release `/MT`; полные сборки Debug с `/MTd` этой автоматизацией
-не поддерживаются.
+По умолчанию скрипт работает в режиме автовыбора Visual Studio (`-Generator Auto -PlatformToolset Auto`), но вы можете принудительно указать генератор или набор инструментов, например `-Generator "Visual Studio 18 2026"` или `-PlatformToolset v145`. Предоставленные обёртки используют Release `/MT`; полные сборки Debug с `/MTd` этой автоматизацией не поддерживаются.
 
 Отдельная [сборка зависимостей](docs/windows-dependencies.md) по-прежнему собирает
-и проверяет Debug и Release без J-Link и без полного приложения:
+и проверяет Debug и Release без J-Link и без полного приложения (автовыбор Visual Studio также работает):
 
 ```powershell
 pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x64
@@ -262,69 +261,12 @@ pwsh -File scripts/Build-WindowsDependencies.ps1 -Architecture x86
 тестов Linux; Dear ImGui, ImPlot, tinyxml2, lfqueue и однофайловый код по-прежнему
 компилируются из репозитория, а не заменяются копиями из vcpkg.
 
-### Сборка в Visual Studio 2026
+### Поддержка Visual Studio 2026 и автовыбор
 
-В **Visual Studio Installer → Изменить** установите **Разработка классических
-приложений на C++**, инструменты MSVC для x64/x86 (набор инструментов `v145`)
-и Windows 10 или Windows 11 SDK. Также нужны Git, PowerShell **7.2+** и CMake
-с поддержкой генератора **Visual Studio 18 2026**. Проверить доступные генераторы
-можно командой `cmake --help`.
+Visual Studio 2026 определяеся автоматически без отдельных команд и предварительной очистки каталогов.
+Если установлена VS 2026, скрипт самостоятельно выбирает генератор `Visual Studio 18 2026` и набор инструментов `v145`. Если ранее выполнялась сборка с другой версией Visual Studio, устаревший кэш настройки сбрасывается автоматически.
 
-Если PowerShell 7 или CMake ещё не установлены:
-
-```powershell
-winget install --id Microsoft.PowerShell --exact
-winget install --id Kitware.CMake --exact
-```
-
-После установки закройте и заново откройте терминал (при необходимости весь
-Windows Terminal или Visual Studio), чтобы обновился `PATH`. Проверьте инструменты:
-
-```powershell
-pwsh --version
-git --version
-cmake --version
-ctest --version
-tar --version
-```
-
-Если CMake установлен, но команда по-прежнему не найдена, добавьте его стандартный
-каталог в `PATH` **текущего сеанса** и повторите проверку:
-
-```powershell
-$env:PATH += ";C:\Program Files\CMake\bin"
-Get-Command cmake, ctest
-```
-
-Перейдите в каталог проекта (замените путь своим):
-
-```powershell
-cd F:\J-Link-Utils
-```
-
-Если ранее уже запускалась настройка для VS 2022, перед сменой генератора удалите
-только каталоги настройки и проверочных сборок. Исходники, скачанные архивы
-и установленные зависимости эта команда не удаляет:
-
-```powershell
-Remove-Item -Recurse -Force `
-    .dependencies\tool-build, `
-    .dependencies\tool-build-*, `
-    .dependencies\probe-x64, `
-    .dependencies\probe-x86 `
-    -ErrorAction SilentlyContinue
-```
-
-**Сборка только зависимостей** (для каждой архитектуры сразу Debug и Release;
-J-Link не требуется):
-
-```powershell
-pwsh -ExecutionPolicy Bypass -File scripts/Build-WindowsDependencies.ps1 -Architecture x64 -Generator "Visual Studio 18 2026"
-pwsh -ExecutionPolicy Bypass -File scripts/Build-WindowsDependencies.ps1 -Architecture x86 -Generator "Visual Studio 18 2026"
-```
-
-**Полная сборка EXE, Release** (зависимости также собираются автоматически,
-поэтому отдельный запуск предыдущих команд не обязателен):
+При необходимости вы можете явно передать параметры генератора и набора инструментов:
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File scripts/Build-WindowsApp.ps1 -Architecture x64 -Generator "Visual Studio 18 2026" -PlatformToolset v145

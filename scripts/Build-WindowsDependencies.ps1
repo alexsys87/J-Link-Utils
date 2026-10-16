@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'x86')][string]$Architecture = 'x64',
-    [string]$Generator = 'Visual Studio 17 2022'
+    [string]$Generator = 'Auto'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -18,6 +18,65 @@ function Assert-Hash([string]$Path, [string]$Expected) {
     }
 }
 
+function Resolve-VisualStudioGenerator([string]$RequestedGenerator) {
+    if ($RequestedGenerator -and $RequestedGenerator -ne 'Auto') {
+        return $RequestedGenerator
+    }
+    $vswherePaths = @(
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+    )
+    $vswhere = $vswherePaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $vswhere) {
+        $cmd = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+        if ($cmd) { $vswhere = $cmd.Source }
+    }
+    if ($vswhere) {
+        $vsJson = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json 2>$null | ConvertFrom-Json
+        if ($vsJson -and $vsJson.installationVersion) {
+            $ver = [version]$vsJson.installationVersion
+            if ($ver.Major -ge 18) { return 'Visual Studio 18 2026' }
+            if ($ver.Major -eq 17) { return 'Visual Studio 17 2022' }
+            if ($ver.Major -eq 16) { return 'Visual Studio 16 2019' }
+        }
+    }
+    return 'Visual Studio 17 2022'
+}
+
+$Generator = Resolve-VisualStudioGenerator $Generator
+Write-Host "Selected Visual Studio generator for dependencies: $Generator"
+
+$missingTools = @()
+foreach ($tool in 'git', 'cmake', 'ctest', 'tar') {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        $missingTools += $tool
+    }
+}
+if ($missingTools.Count -gt 0) {
+    Write-Host "Missing required system build tools: $($missingTools -join ', ')"
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host 'Attempting auto-installation of missing tools via winget...'
+        if ($missingTools -contains 'git') {
+            & winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements
+        }
+        if ($missingTools -contains 'cmake' -or $missingTools -contains 'ctest') {
+            & winget install --id Kitware.CMake -e --source winget --accept-source-agreements --accept-package-agreements
+        }
+        $stillMissing = @()
+        foreach ($tool in $missingTools) {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+                $stillMissing += $tool
+            }
+        }
+        if ($stillMissing.Count -gt 0) {
+            throw "Missing required system build tools: $($stillMissing -join ', '). Please restart your terminal after installation."
+        }
+    } else {
+        throw "Missing required system build tools: $($missingTools -join ', '). Please install them using winget or official downloads."
+    }
+}
+
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $state = Join-Path $repo '.dependencies'
 $vcpkg = Join-Path $state 'vcpkg'
@@ -25,7 +84,6 @@ $installed = Join-Path $state 'installed'
 $lock = Get-Content (Join-Path $repo 'build/dependencies/vcpkg-lock.json') -Raw | ConvertFrom-Json
 $manifest = Get-Content (Join-Path $repo 'vcpkg.json') -Raw | ConvertFrom-Json
 if ($manifest.'builtin-baseline' -ne $lock.commit) { throw 'Manifest baseline and bootstrap commit must match.' }
-foreach ($tool in 'git', 'cmake', 'ctest', 'tar') { Get-Command $tool -ErrorAction Stop | Out-Null }
 New-Item -ItemType Directory -Force $state | Out-Null
 
 if (-not (Test-Path "$vcpkg/.git")) {
@@ -66,6 +124,16 @@ if (-not (Test-Path $toolSource)) {
     catch { Remove-Item -Recurse -Force $toolSource; throw }
 }
 $toolBuild = Join-Path $state 'tool-build'
+if (Test-Path "$toolBuild/CMakeCache.txt") {
+    $existingGenEntry = Get-Content "$toolBuild/CMakeCache.txt" | Where-Object { $_ -match '^CMAKE_GENERATOR:INTERNAL=' }
+    if ($existingGenEntry) {
+        $existingGen = ($existingGenEntry -split '=', 2)[1]
+        if ($existingGen -ne $Generator) {
+            Write-Host "CMake generator changed from '$existingGen' to '$Generator'. Cleaning outdated tool build cache."
+            Remove-Item -LiteralPath $toolBuild -Recurse -Force
+        }
+    }
+}
 $toolConfigureArguments = @('-S', $toolSource, '-B', $toolBuild, '-G', $Generator, '-A', 'x64',
     '-DBUILD_TESTING=OFF', '-DVCPKG_DEVELOPMENT_WARNINGS=OFF', '-DVCPKG_MSVC_ANALYZE=OFF',
     "-DVCPKG_BASE_VERSION=$($lock.toolVersion)", "-DVCPKG_VERSION=$($lock.toolCommit)")
@@ -118,6 +186,16 @@ Invoke-Native "$vcpkg/vcpkg.exe" @('install', "--triplet=$triplet", '--host-trip
 
 $platform = if ($Architecture -eq 'x86') { 'Win32' } else { 'x64' }
 $build = Join-Path $state "probe-$Architecture"
+if (Test-Path "$build/CMakeCache.txt") {
+    $existingGenEntry = Get-Content "$build/CMakeCache.txt" | Where-Object { $_ -match '^CMAKE_GENERATOR:INTERNAL=' }
+    if ($existingGenEntry) {
+        $existingGen = ($existingGenEntry -split '=', 2)[1]
+        if ($existingGen -ne $Generator) {
+            Write-Host "CMake generator changed from '$existingGen' to '$Generator'. Cleaning outdated probe build cache."
+            Remove-Item -LiteralPath $build -Recurse -Force
+        }
+    }
+}
 Invoke-Native cmake @('-S', "$repo/build/dependencies", '-B', $build, '-G', $Generator, '-A', $platform,
     "-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake", "-DVCPKG_TARGET_TRIPLET=$triplet",
     "-DCMAKE_GENERATOR_INSTANCE=$env:VCPKG_VISUAL_STUDIO_PATH",
