@@ -99,92 +99,20 @@ if ($LASTEXITCODE -ne 0) { throw "Full application build failed with exit code $
 $exe = Join-Path $output 'J-Link Utils.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'MSBuild did not produce the expected application executable.' }
 
-function Resolve-UpxExecutable {
-    function Find-UpxInSystem {
-        $cmd = Get-Command upx.exe -ErrorAction SilentlyContinue
-        if ($cmd) { return $cmd.Source }
-        $cmd = Get-Command upx -ErrorAction SilentlyContinue
-        if ($cmd) { return $cmd.Source }
-
-        $candidatePaths = @(
-            (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\upx.exe'),
-            (Join-Path $env:ProgramFiles 'UPX\upx.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'UPX\upx.exe'),
-            'C:\ProgramData\chocolatey\bin\upx.exe',
-            (Join-Path $env:USERPROFILE 'scoop\shims\upx.exe')
-        )
-        foreach ($p in $candidatePaths) {
-            if ($p -and (Test-Path -LiteralPath $p -PathType Leaf)) {
-                return $p
-            }
-        }
-
-        $wingetPkgDir = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
-        if (Test-Path -LiteralPath $wingetPkgDir -PathType Container) {
-            $found = Get-ChildItem -Path $wingetPkgDir -Filter 'upx.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) {
-                return $found.FullName
-            }
-        }
-
-        return $null
-    }
-
-    $upx = Find-UpxInSystem
-    if ($upx) { return $upx }
-
-    try {
-        $regPaths = @(
-            [Environment]::GetEnvironmentVariable('PATH', 'User'),
-            [Environment]::GetEnvironmentVariable('PATH', 'Machine')
-        ) -split ';' | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-        foreach ($p in $regPaths) {
-            if ($env:PATH -notlike "*$p*") {
-                $env:PATH = "$p;$env:PATH"
-            }
-        }
-    } catch {}
-
-    $upx = Find-UpxInSystem
-    if ($upx) { return $upx }
-
-    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($winget) {
-        Write-Host 'UPX not found. Attempting auto-installation via winget...'
-        try {
-            & winget install --id UPX.UPX -e --source winget --accept-source-agreements --accept-package-agreements
-
-            try {
-                $regPaths = @(
-                    [Environment]::GetEnvironmentVariable('PATH', 'User'),
-                    [Environment]::GetEnvironmentVariable('PATH', 'Machine')
-                ) -split ';' | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-                foreach ($p in $regPaths) {
-                    if ($env:PATH -notlike "*$p*") {
-                        $env:PATH = "$p;$env:PATH"
-                    }
-                }
-            } catch {}
-
-            $upx = Find-UpxInSystem
-            if ($upx) { return $upx }
-        } catch {
-            Write-Host "Winget auto-installation of UPX failed: $_"
-        }
-    }
-
-    return $null
+$upx = Get-Command upx.exe -ErrorAction SilentlyContinue
+if (-not $upx -and (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+    Write-Host 'Attempting auto-installation of UPX via winget...'
+    & winget install --id UPX.UPX -e --source winget --accept-source-agreements --accept-package-agreements 2>$null
+    $upx = Get-Command upx.exe -ErrorAction SilentlyContinue
 }
-
-$upxExe = Resolve-UpxExecutable
-if ($upxExe) {
-    Write-Host "Compressing executable with UPX ($upxExe)..."
-    & $upxExe --best $exe
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "UPX compression failed with exit code $LASTEXITCODE"
-    }
+if ($upx) {
+    $beforeSize = (Get-Item -LiteralPath $exe).Length
+    Write-Host "Compressing executable with UPX ($beforeSize bytes)..."
+    & $upx.Source --best $exe
+    $afterSize = (Get-Item -LiteralPath $exe).Length
+    Write-Host "UPX compressed executable: $beforeSize -> $afterSize bytes"
 } else {
-    Write-Host 'UPX is not installed or available. Skipping executable compression.'
+    Write-Host 'UPX not found; skipping executable compression.'
 }
 
 $package = Join-Path $repo "out/package/J-Link-Utils-$Architecture-Release"
