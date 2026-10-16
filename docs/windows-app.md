@@ -15,7 +15,9 @@ and automatically builds/installs missing dependencies.
 
 Each command builds and tests the pinned open-source dependencies, then compiles
 and links the **complete application**, using Release `/MT` and the CMake-selected
-MSBuild. It packages `out/package/J-Link-Utils-<arch>-Release/`. The executable and
+MSBuild. It automatically compresses the output executable (`J-Link Utils.exe`) using
+UPX (`upx --best`) if UPX is installed or available via winget to reduce file size.
+It packages `out/package/J-Link-Utils-<arch>-Release/`. The executable and
 MSBuild binary log also remain in `out/app/<arch>/Release/`.
 Other VS generators/toolsets can be explicitly selected using
 `-Generator` and `-PlatformToolset`; the script rejects a compiler-toolset mismatch
