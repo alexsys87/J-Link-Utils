@@ -11,7 +11,8 @@ pwsh -File scripts/Build-WindowsApp.ps1 -Architecture x86
 By default, the script automatically detects the installed Visual Studio version
 (VS 2022 or VS 2026), selects the appropriate generator and platform toolset (`v143`
 or `v145`), cleans outdated CMake build caches if the Visual Studio version changed,
-and automatically builds/installs missing dependencies.
+automatically builds/installs missing dependencies, and compresses the final executable
+using UPX (`upx --best`) if UPX is available or installed via winget.
 
 Each command builds and tests the pinned open-source dependencies, then compiles
 and links the **complete application**, using Release `/MT` and the CMake-selected
